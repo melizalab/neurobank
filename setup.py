@@ -41,7 +41,7 @@ entry, which is a set of data channels that all start at the same time.
 
 """
 
-requirements = ["arf==2.1.0", "ewave==1.0.3"]
+requirements = []
 if sys.hexversion < 0x02070000:
     requirements.append("argparse==1.2.1")
 
@@ -59,15 +59,8 @@ setup(
 
     packages=find_packages(exclude=["*test*"]),
 
-    # entry_points={'arfx.io': ['.pcm = arfx.pcmio:pcmfile',
-    #                           '.wav = ewave:wavfile',
-    #                           '.pcm_seq2 = arfx.pcmseqio:pseqfile',
-    #                           '.pcm_seq = arfx.pcmseqio:pseqfile',
-    #                           '.pcmseq2 = arfx.pcmseqio:pseqfile',
-    #                           ],
-    #               'console_scripts': ['arfx = arfx.arfx:arfx',
-    #                                   'arfxplog = arfx.arfxplog:arfxplog'],
-    #               },
+    entry_points={'console_scripts': ['nbank = neurobank.script:main'],
+                  },
 
     install_requires=requirements,
     test_suite='nose.collector'

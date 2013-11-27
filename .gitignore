@@ -1,10 +1,7 @@
 /build/
-/arfx.egg-info/
+/*.egg-info/
 /dist/
-/test/
 /setuptools-*
 *.pyc
 *.so
-*.arf
-*.wav
 /examples/
