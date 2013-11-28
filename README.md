@@ -1,6 +1,6 @@
 # neurobank
 
-**neurobank** is a simple, low-overhead data management system for neural and behavioral data. It helps you generate unique identifiers for stimuli, protocols, recording units. No more guessing what version of a stimulus you presented in an experiment, where you stored an important recording, and whether you've backed it all up yet.  Your files are stored in a single directory hierarchy, and you get nice, human-readable, JSON-based metadata files to organize your records and analysis workflows.
+**neurobank** is a simple, low-overhead data management system for neural and behavioral data. It helps you generate unique identifiers for stimuli, protocols, and recording units. No more guessing what version of a stimulus you presented in an experiment, where you stored an important recording, and whether you've backed it all up yet.  Your files are stored in a single directory hierarchy, and you get nice, human-readable, JSON-based metadata files to organize your records and analysis workflows.
 
 ## Installation
 
@@ -10,11 +10,10 @@ Install the **neurobank** Python package and its dependencies:
 pip install neurobank
 ```
 
-Create an empty directory where you want the archive to live and initialize it:
+Initialize the archive. The archive has to live on a locally-accessible filesystem (which may be mounted over NFS, SSHFS).
 
 ```bash
-cd my-archive-path
-nbank init
+nbank init my-archive-path
 ```
 
 ## Usage
@@ -32,14 +31,14 @@ Each stimulus will be renamed to match its identifier (keeping the same extensio
 Use the renamed stimulus files to run your experiment. If your data collection program doesn't store the names of the stimuli in the generated data files, you'll need to record the names manually. Next, import the data into the archive:
 
 ```bash
-nbank record dataset-name datafile-1 datafile-2 ...
+nbank deposit dataset-name datafile-1 datafile-2 ...
 ```
 
 By default, the import script will treat each datafile as a separate recording. Some storage formats may include multiple recordings (for example, from multiple electrodes). **neurobank** understands the structure of ARF (https://github.com/melizalab/arf) files and will assign identifiers to each channel. Support for other multi-recording formats can be added through plugins. The script will move the data to the archive and generate a JSON file (`dataset-name.json`) with the mappings from the original names to the identifiers.
 
 Imported data files can be found in the archive in the `data/` directory in the subdirectory with the first three characters of the identifier.
 
-You can control how identifiers are generated (for example, to include the original filename) and other aspects of the *nbank* script's behavior with commandline options. See `nbank <command> -h` for more information about each command.
+You can control how identifiers are generated (for example, to include the original filename or a shared suffix) and other aspects of the *nbank* script's behavior with commandline options. See `nbank <command> -h` for more information about each command.
 
 ## API Reference
 

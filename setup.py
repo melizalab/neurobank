@@ -8,11 +8,11 @@ if sys.hexversion < 0x02060000:
 # setuptools 0.7+ doesn't play nice with distribute, so try to use existing
 # package if possible
 try:
-    from setuptools import setup, find_packages, Extension
+    from setuptools import setup, find_packages
 except ImportError:
     from ez_setup import use_setuptools
     use_setuptools()
-    from setuptools import setup, find_packages, Extension
+    from setuptools import setup, find_packages
 
 import sys
 
@@ -32,12 +32,15 @@ Operating System :: MacOS :: MacOS X
 Natural Language :: English
 """
 
-short_desc = "Advanced Recording Format Tools"
+short_desc = "Simple data management system for neuroscience"
 
-long_desc = """Commandline tools for reading and writing Advanced Recording Format files.
-ARF files are HDF5 files used to store audio and neurophysiological recordings
-in a rational, hierarchical format. Data are organized around the concept of an
-entry, which is a set of data channels that all start at the same time.
+long_desc = """A simple, low-overhead data management system for neural and behavioral data.
+It helps you generate unique identifiers for stimuli, protocols, and recording
+units. No more guessing what version of a stimulus you presented in an
+experiment, where you stored an important recording, and whether you've backed
+it all up yet. Your files are stored in a single directory hierarchy, and you
+get nice, human-readable, JSON-based metadata files to organize your records and
+analysis workflows.
 
 """
 
@@ -65,5 +68,6 @@ setup(
     install_requires=requirements,
     test_suite='nose.collector'
 )
+
 # Variables:
 # End:
