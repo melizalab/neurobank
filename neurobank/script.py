@@ -6,8 +6,10 @@ Copyright (C) 2013 Dan Meliza <dan@meliza.org>
 Created Tue Nov 26 22:48:58 2013
 """
 import os
-import nbank
+import sys
 import json
+
+import nbank
 
 nbank_env_path = 'NBANK_PATH'
 
@@ -26,6 +28,9 @@ def register_files(args):
     if cfg is None:
         print "ERROR: %s not a neurobank archive. Use '-A' or set NBANK_PATH." % args.archive
         return
+
+    if args.read_stdin:
+        args.file.extend(l.strip() for l in sys.stdin)
 
     ids = []
     for fname in args.file:
@@ -87,8 +92,10 @@ def main(argv=None):
                        "replaced with symlinks to the stored source files")
     p_reg.add_argument('metafile',
                        help="specify the name of the output JSON metadata file")
-    p_reg.add_argument('file', nargs='+',
+    p_reg.add_argument('file', nargs='*',
                        help='path of file(s) to add to the repository')
+    p_reg.add_argument('-', dest="read_stdin", action='store_true',
+                       help="read additional file names from stdin")
     p_reg.set_defaults(func=register_files)
 
     args = p.parse_args(argv)

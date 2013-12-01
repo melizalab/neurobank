@@ -191,7 +191,7 @@ def id_stub(id):
     """Returns a short version of id, used for sorting objects into subdirectories.
 
     """
-    return id[:3] if isinstance(id, basestring) else None
+    return id[:2] if isinstance(id, basestring) else None
 
 
 # Variables:
