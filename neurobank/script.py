@@ -22,19 +22,10 @@ def init_archive(args):
 
 
 def register_files(args):
-    print args
     cfg = nbank.archive_config(args.archive)
     if cfg is None:
         print "ERROR: %s not a neurobank archive. Use '-A' or set NBANK_PATH." % args.archive
         return
-
-    if cfg['policy']['source']['deposit_metadata']:
-        meta_fname = os.path.join(args.archive, nbank._meta_dirname, args.metafile)
-        if os.path.exists(meta_fname):
-            print "ERROR: source set '%s' already exists"
-            return
-    else:
-        meta_fname = None
 
     ids = []
     for fname in args.file:
@@ -42,23 +33,31 @@ def register_files(args):
         id = nbank.source_id(fname)
         if cfg['policy']['source']['keep_filename']:
             id += '_' + base
+        if args.suffix:
+            id += '_' + args.suffix
         if cfg['policy']['source']['keep_extension']:
             id += ext
-        ids.append((id, fname, base))
+        ids.append((id, fname))
 
     print "Copying source files to archive:"
-    for id, fname, base in ids:
-        if nbank.register_source(args.archive, fname, id) is not None:
+    meta = dict(namespace='neurobank.sourcelist',
+                version=nbank._fmt_version,
+                sources=[])
+    for id, fname in ids:
+        path, base, ext = nbank.fileparts(fname)
+        tgt = nbank.register_source(args.archive, fname, id)
+        meta['sources'].append({'id': id, 'name': base + ext})
+        if tgt is not None:
             print "%s -> %s" % (fname, id)
             if not args.keep:
+                os.symlink(os.path.abspath(tgt), os.path.join(path, id))
                 os.remove(fname)
         else:
             print "%s already in archive as %s" % (fname, id)
 
-    meta = dict(namespace='neurobank.sourcelist',
-                version=nbank._fmt_version,
-                sources=[dict(id=id, name=base) for (id, fname, base) in ids])
-    nbank.update_json_file(args.metafile, **meta)
+    fname = args.metafile + '.json'
+    json.dump(meta, open(fname, 'wt'), indent=2)
+    print "Wrote source list to '%s'" % fname
 
 
 def main(argv=None):

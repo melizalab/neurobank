@@ -10,7 +10,6 @@ import json
 _README_fname = 'README.md'
 _config_fname = 'project.json'
 _fmt_version = "1.0"
-_meta_dirname = 'metadata'
 
 _README = """
 This directory contains a neurobank data management archive. The following
@@ -47,8 +46,7 @@ _project_json = """{
   "policy": {
     "source": {
       "keep_extension": true,
-      "keep_filename": false,
-      "deposit_metadata": false
+      "keep_filename": false
     }
   }
 }
@@ -125,8 +123,7 @@ def init_archive(archive_path):
     import os.path
     import subprocess
 
-    # TODO directory for metadata?
-    dirs = [os.path.join(archive_path, p) for p in ('sources', 'data')]
+    dirs = [os.path.join(archive_path, p) for p in ('sources', 'data', 'metadata')]
     dircmd = ['mkdir', '-p'] + dirs
     ret = subprocess.call(dircmd) # don't expand shell variables/globs
     if ret != 0:
@@ -147,10 +144,9 @@ def register_source(archive_path, fname, id):
     """Registers fname as a source file in the repository under a unique identifier.
 
     Checks whether the identifier already exists in the archive. If not, copies
-    the file to the archive under the identifer and creates a soft link to the
-    archived file (using the absolute path, so the link is relocatable). Returns
-    the path of the archived file. If the identifier is already taken, returns
-    None and takes no other action.
+    the file to the archive under the identifer and returns the path of the
+    archived file. If the identifier is already taken, returns None and takes no
+    other action.
 
     """
     import os
@@ -158,7 +154,6 @@ def register_source(archive_path, fname, id):
 
     tgt_dir = os.path.join(archive_path, "sources", id_stub(id))
     tgt_file = os.path.join(tgt_dir, id)
-    tgt_link = os.path.join(os.path.dirname(fname), id)
     if os.path.exists(tgt_file):
         return None
 
@@ -167,8 +162,6 @@ def register_source(archive_path, fname, id):
     if not os.path.exists(tgt_dir):
         os.mkdir(tgt_dir)
     shutil.copy2(fname, tgt_file)
-    if not os.path.exists(tgt_link):
-        os.symlink(os.path.abspath(tgt_file), tgt_link)
     return tgt_file
 
 
