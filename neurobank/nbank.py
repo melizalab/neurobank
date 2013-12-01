@@ -7,7 +7,10 @@ Created Mon Nov 25 08:52:28 2013
 """
 import json
 
+_README_fname = 'README.md'
+_config_fname = 'project.json'
 _fmt_version = "1.0"
+_meta_dirname = 'metadata'
 
 _README = """
 This directory contains a neurobank data management archive. The following
@@ -50,8 +53,6 @@ _project_json = """{
   }
 }
 """ % _fmt_version
-
-_config_fname = 'project.json'
 
 
 def fileparts(fname):
@@ -131,7 +132,7 @@ def init_archive(archive_path):
     if ret != 0:
         raise OSError("unable to create archive directories")
 
-    fname = os.path.join(archive_path, '_README.md')
+    fname = os.path.join(archive_path, _README_fname)
     if not os.path.exists(fname):
         with open(fname, 'wt') as fp:
             fp.write(_README)

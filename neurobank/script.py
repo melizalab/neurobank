@@ -28,6 +28,14 @@ def register_files(args):
         print "ERROR: %s not a neurobank archive. Use '-A' or set NBANK_PATH." % args.archive
         return
 
+    if cfg['policy']['source']['deposit_metadata']:
+        meta_fname = os.path.join(args.archive, nbank._meta_dirname, args.metafile)
+        if os.path.exists(meta_fname):
+            print "ERROR: source set '%s' already exists"
+            return
+    else:
+        meta_fname = None
+
     ids = []
     for fname in args.file:
         path, base, ext = nbank.fileparts(fname)
@@ -50,7 +58,7 @@ def register_files(args):
     meta = dict(namespace='neurobank.sourcelist',
                 version=nbank._fmt_version,
                 sources=[dict(id=id, name=base) for (id, fname, base) in ids])
-    json.dump(open
+    nbank.update_json_file(args.metafile, **meta)
 
 
 def main(argv=None):
