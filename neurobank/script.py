@@ -9,10 +9,7 @@ import os
 import sys
 import json
 
-import nbank
-
-nbank_env_path = 'NBANK_PATH'
-
+from neurobank import nbank
 
 def init_archive(args):
     try:
@@ -24,7 +21,7 @@ def init_archive(args):
 
 
 def register_files(args):
-    cfg = nbank.archive_config(args.archive)
+    cfg = nbank.get_config(args.archive)
     if cfg is None:
         print "ERROR: %s not a neurobank archive. Use '-A' or set NBANK_PATH." % args.archive
         return
@@ -80,11 +77,11 @@ def main(argv=None):
     p_init.set_defaults(func=init_archive)
 
     p_reg = sub.add_parser('register', help='register source files')
-    p_reg.add_argument('-A', '--archive', default=os.environ.get(nbank_env_path, '.'),
+    p_reg.add_argument('-A', '--archive', default=os.environ.get(nbank.env_path, '.'),
                        type=os.path.abspath,
                        help="specify the path of the archive. Default is to use the "
                        "current directory or the value of the environment variable "
-                       "%s" % nbank_env_path)
+                       "%s" % nbank.env_path)
     p_reg.add_argument('--suffix',
                        help='add a constant suffix to the generated identifiers')
     p_reg.add_argument('--keep', action='store_true',

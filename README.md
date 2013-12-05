@@ -10,15 +10,17 @@ Install the **neurobank** Python package and its dependencies:
 pip install neurobank
 ```
 
-Initialize the archive. The archive has to live on a locally-accessible filesystem (which may be mounted over NFS, SSHFS).
+Initialize an archive. The archive has to live on a locally-accessible filesystem (however, it can be mounted over NFS, SSHFS, etc).
 
 ```bash
 nbank init my-archive-path
 ```
 
+You may want to edit the `README.md` and `package.json` files created in the archive directory to describe your project and set policies.
+
 ## Usage
 
-The data management strategy behind **neurobank** is simple. First, every file you use to control an experiment gets a unique identifier, renamed to match the identifier, and archived. You run the experiment using the renamed files, so that the identifiers are stored with the data. When the experiment is done, you archive the raw data files and they're assigned their own identifiers. Now every file generated in the experiment is uniquely identified, and points unambiguously to the data used in the experiment. At every stage you get a metadata JSON file that stores the mapping from the original names to the identifiers.
+The data management strategy behind **neurobank** is simple. First, every file you use to control an experiment gets a unique identifier. Files are renamed to match the identifier and archived. You run the experiment using the renamed files, so that the identifiers are stored with the data. When the experiment is done, you archive the raw data files and they're assigned their own identifiers. Now every file generated in the experiment is uniquely identified, and points unambiguously to the data used in the experiment. At every stage you get a metadata JSON file that stores the mapping from the original names to the identifiers.
 
 For example, let's say you're presenting a set of acoustic stimuli to an animal while recording neural responses. To register the stimuli:
 
@@ -26,7 +28,7 @@ For example, let's say you're presenting a set of acoustic stimuli to an animal 
 nbank register stimset-name stimfile-1 stimfile-2 ...
 ```
 
-Each stimulus will be renamed to match its identifier (keeping the same extension), and you'll have a file called `stimset-name.json` with the mappings from the identifiers to the new names. You can find your stimuli file in the archive in the `stimuli/` directory under a subdirectory with the first three characters of the identifier. For example, if the identifier is `14955422a0fbe3a2bb45111dc91e46e6`, you'll find the file under `stimuli/149`.
+Each stimulus will be renamed to match its identifier (keeping the same extension), and you'll have a file called `stimset-name.json` with the mappings from the identifiers to the new names. You can find your stimuli file in the archive in the `sources/` directory under a subdirectory with the first two characters of the identifier. For example, if the identifier is `14955422a0fbe3a2bb45111dc91e46e6`, you'll find the file under `sources/14`.
 
 Use the renamed stimulus files to run your experiment. If your data collection program doesn't store the names of the stimuli in the generated data files, you'll need to record the names manually. Next, import the data into the archive:
 

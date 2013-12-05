@@ -5,25 +5,30 @@
 Copyright (C) 2013 Dan Meliza <dan@meliza.org>
 Created Mon Nov 25 08:52:28 2013
 """
+import os
 import json
+
+env_path = "NBANK_PATH"
+fmt_version = "1.0"
 
 _README_fname = 'README.md'
 _config_fname = 'project.json'
-_fmt_version = "1.0"
 
 _README = """
 This directory contains a neurobank data management archive. The following
 files and directories are part of the archive:
 
 + README.md: this file
-+ project.json: configuration for the archive
++ project.json: information and configuration for the archive
 + sources/:  directory with registered source files for experiments,
 + data/:     directory with deposited data files
-+ metadata/: directory with stored JSON metadata (stimulus lists, analysis groups,
-             etc)
++ metadata/: directory with stored domain-specific JSON metadata (stimulus
+             lists, analysis groups, etc)
 
 Files in sources and data are organized into subdirectories based on the first
-three characters of the files' identifiers.
+three characters of the files' identifiers. Source files may have attributes
+associated with them stored in JSON files. The name of the attribute file is the
+identifier plus `.json`.
 
 # Archive contents
 
@@ -50,67 +55,24 @@ _project_json = """{
     }
   }
 }
-""" % _fmt_version
+""" % fmt_version
 
-
-def fileparts(fname):
-    """Returns the dirname, basename of fname without extension, and extension"""
-    import os.path
-    pn, fn = os.path.split(fname)
-    base, ext = os.path.splitext(fn)
-    return pn, base, ext
-
-
-def update_json_data(mapping, **kwargs):
-    """Update the values in a json mapping with kwargs using the following rules:
-
-    - If a key is absent in the map, adds it
-    - If a key is present and has a scalar value, compares to the new value,
-      raising an error if the value doesn't match
-    - If the key is present and the value is a list, appends new items to the list
-    - If the key is present and is a dictionary, calls .update() with the new value
-
-    Modifies the mapping in place, so not safe for concurrent calls
-    """
-    for key, val in kwargs.items():
-        if key not in mapping:
-            mapping[key] = val
-        elif isinstance(val, dict):
-            mapping[key].update(val)
-        elif isinstance(val, list):
-            mapping[key].extend(val)
-        elif val != mapping[key]:
-            raise ValueError("mapping value for %s (%s) doesn't match argument value (%s)" %
-                             (key, val, kwargs[key]))
-
-
-def update_json_file(fname, **kwargs):
-    """Update or create a json file with kwargs mapping
-
-    If fname does not exist, creates a JSON file with the mapping in kwargs. If
-    fname does exist, opens it, loads the contents, updates with the kwargs
-    mapping, and writes the new data to disk.
-
-    """
-    import os.path
-    if os.path.exists(fname):
-        mapping = json.load(open(fname, 'rU'))
-        update_json_data(**kwargs)
-    else:
-        mapping = kwargs
-    json.dump(open(fname, 'wt'), mapping)
-
-
-def archive_config(path):
-
+def get_config(path):
     """Returns the configuration for the archive specified by path, or None
     if the path does not refer to a valid neurobank archive.
 
     """
-    import os.path
     fname = os.path.join(path, _config_fname)
     if os.path.exists(fname):
         return json.load(open(fname, 'rt'))
+
+
+def get_source(id, path):
+    """Returns the absolute path for a source file with id in the archive under path.
+
+    Does not check for the validity of the path or id.
+    """
+    return os.path.abspath(os.path.join(path, 'sources', id_stub(id), id))
 
 
 def init_archive(archive_path):
@@ -120,7 +82,6 @@ def init_archive(archive_path):
     files or directories. Raises OSError for failed operations.
 
     """
-    import os.path
     import subprocess
 
     dirs = [os.path.join(archive_path, p) for p in ('sources', 'data', 'metadata')]
@@ -139,6 +100,11 @@ def init_archive(archive_path):
         with open(fname, 'wt') as fp:
             fp.write(_project_json)
 
+    fname = os.path.join(archive_path, '.gitignore')
+    if not os.path.exists(fname):
+        with open(fname, 'wt') as fp:
+            fp.writelines(('sources/', 'data/'))
+
 
 def register_source(archive_path, fname, id):
     """Registers fname as a source file in the repository under a unique identifier.
@@ -149,7 +115,6 @@ def register_source(archive_path, fname, id):
     other action.
 
     """
-    import os
     import shutil
 
     tgt_dir = os.path.join(archive_path, "sources", id_stub(id))
@@ -192,6 +157,52 @@ def id_stub(id):
 
     """
     return id[:2] if isinstance(id, basestring) else None
+
+
+def fileparts(fname):
+    """Returns the dirname, basename of fname without extension, and extension"""
+    pn, fn = os.path.split(fname)
+    base, ext = os.path.splitext(fn)
+    return pn, base, ext
+
+
+def update_json_data(mapping, **kwargs):
+    """Update the values in a json mapping with kwargs using the following rules:
+
+    - If a key is absent in the map, adds it
+    - If a key is present and has a scalar value, compares to the new value,
+      raising an error if the value doesn't match
+    - If the key is present and the value is a list, appends new items to the list
+    - If the key is present and is a dictionary, calls .update() with the new value
+
+    Modifies the mapping in place, so not safe for concurrent calls
+    """
+    for key, val in kwargs.items():
+        if key not in mapping:
+            mapping[key] = val
+        elif isinstance(val, dict):
+            mapping[key].update(val)
+        elif isinstance(val, list):
+            mapping[key].extend(val)
+        elif val != mapping[key]:
+            raise ValueError("mapping value for %s (%s) doesn't match argument value (%s)" %
+                             (key, val, kwargs[key]))
+
+
+def update_json_file(fname, **kwargs):
+    """Update or create a json file with kwargs mapping
+
+    If fname does not exist, creates a JSON file with the mapping in kwargs. If
+    fname does exist, opens it, loads the contents, updates with the kwargs
+    mapping, and writes the new data to disk.
+
+    """
+    if os.path.exists(fname):
+        mapping = json.load(open(fname, 'rU'))
+        update_json_data(**kwargs)
+    else:
+        mapping = kwargs
+    json.dump(open(fname, 'wt'), mapping)
 
 
 # Variables:
