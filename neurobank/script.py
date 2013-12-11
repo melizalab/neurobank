@@ -29,24 +29,24 @@ def register_files(args):
     if args.read_stdin:
         args.file.extend(l.strip() for l in sys.stdin)
 
-    ids = []
+    meta = dict(namespace='neurobank.sourcelist',
+                version=nbank.fmt_version,
+                sources=[])
     for fname in args.file:
         path, base, ext = nbank.fileparts(fname)
-        id = nbank.source_id(fname)
+        try:
+            id = nbank.source_id(fname)
+        except IOError, e:
+            print "E: %s" % e
+            continue
+
         if cfg['policy']['source']['keep_filename']:
             id += '_' + base
         if args.suffix:
             id += '_' + args.suffix
         if cfg['policy']['source']['keep_extension']:
             id += ext
-        ids.append((id, fname))
 
-    print "Copying source files to archive:"
-    meta = dict(namespace='neurobank.sourcelist',
-                version=nbank._fmt_version,
-                sources=[])
-    for id, fname in ids:
-        path, base, ext = nbank.fileparts(fname)
         tgt = nbank.register_source(args.archive, fname, id)
         meta['sources'].append({'id': id, 'name': base + ext})
         if tgt is not None:
