@@ -57,6 +57,7 @@ _project_json = """{
 }
 """ % fmt_version
 
+
 def get_config(path):
     """Returns the configuration for the archive specified by path, or None
     if the path does not refer to a valid neurobank archive.
@@ -70,7 +71,7 @@ def get_config(path):
 def get_source(id, path):
     """Returns the absolute path for a source file with id in the archive under path.
 
-    Does not check for the validity of the path or id.
+    Does not check the validity of the path or id.
     """
     return os.path.abspath(os.path.join(path, 'sources', id_stub(id), id))
 

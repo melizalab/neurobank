@@ -44,7 +44,7 @@ analysis workflows.
 
 """
 
-requirements = []
+requirements = ['toelis>=2.0']
 if sys.hexversion < 0x02070000:
     requirements.append("argparse==1.2.1")
 
@@ -62,7 +62,8 @@ setup(
 
     packages=find_packages(exclude=["*test*"]),
 
-    entry_points={'console_scripts': ['nbank = neurobank.script:main'],
+    entry_points={'console_scripts': ['nbank = neurobank.script:main',
+                                      'json2toelis = neurobank.jsontoelis:main'],
                   },
 
     install_requires=requirements,

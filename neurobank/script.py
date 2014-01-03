@@ -58,7 +58,7 @@ def register_files(args):
             print "%s already in archive as %s" % (fname, id)
 
     fname = args.metafile + '.json'
-    json.dump(meta, open(fname, 'wt'), indent=2)
+    json.dump(meta, open(fname, 'wt'), indent=2, separators=(',', ': '))
     print "Wrote source list to '%s'" % fname
 
 

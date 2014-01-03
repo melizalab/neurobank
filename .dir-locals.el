@@ -1,2 +1,2 @@
-((nil . ((virtualenv-workon . "neurobank")
+((nil . ((virtualenv-workon . "mspikes")
          (virtualenv-default-directory . "/Users/dmeliza/Devel/neurobank"))))
