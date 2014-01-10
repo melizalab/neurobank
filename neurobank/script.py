@@ -8,22 +8,26 @@ Created Tue Nov 26 22:48:58 2013
 import os
 import sys
 import json
+import logging
 
 from neurobank import nbank
+
+log = logging.getLogger('nbank')   # root logger
 
 def init_archive(args):
     try:
         nbank.init_archive(args.directory)
-    except OSError, e:
-        print "Error initializing archive:", e
+    except OSError as e:
+        log.error("Error initializing archive: %s", e)
     else:
-        print "Initialized neurobank archive in", os.path.abspath(args.directory)
+        log.info("Initialized neurobank archive in %s", os.path.abspath(args.directory))
 
 
 def register_files(args):
     cfg = nbank.get_config(args.archive)
     if cfg is None:
-        print "ERROR: %s not a neurobank archive. Use '-A' or set NBANK_PATH." % args.archive
+        log.error("ERROR: %s not a neurobank archive. Use '-A' or set NBANK_PATH.",
+                  args.archive)
         return
 
     if args.read_stdin:
@@ -36,8 +40,8 @@ def register_files(args):
         path, base, ext = nbank.fileparts(fname)
         try:
             id = nbank.source_id(fname)
-        except IOError, e:
-            print "E: %s" % e
+        except IOError as e:
+            log.warn("E: %s", e)
             continue
 
         if cfg['policy']['source']['keep_filename']:
@@ -50,20 +54,24 @@ def register_files(args):
         tgt = nbank.register_source(args.archive, fname, id)
         meta['sources'].append({'id': id, 'name': base + ext})
         if tgt is not None:
-            print "%s -> %s" % (fname, id)
+            log.info("%s -> %s", fname, id)
             if not args.keep:
-                os.symlink(os.path.abspath(tgt), os.path.join(path, id))
-                os.remove(fname)
+                try:
+                    os.symlink(os.path.abspath(tgt), os.path.join(path, id))
+                    os.remove(fname)
+                except OSError as e:
+                    log.error("E: %s", e)
         else:
-            print "%s already in archive as %s" % (fname, id)
+            log.info("%s already in archive as %s", fname, id)
 
     fname = args.metafile + '.json'
     json.dump(meta, open(fname, 'wt'), indent=2, separators=(',', ': '))
-    print "Wrote source list to '%s'" % fname
+    log.info("Wrote source list to '%s'", fname)
 
 
 def main(argv=None):
     import argparse
+    import datetime
 
     p = argparse.ArgumentParser(description='manage source files and collected data')
     sub = p.add_subparsers(title='subcommands')
@@ -89,13 +97,24 @@ def main(argv=None):
                        "replaced with symlinks to the stored source files")
     p_reg.add_argument('metafile',
                        help="specify the name of the output JSON metadata file")
-    p_reg.add_argument('file', nargs='*',
+    p_reg.add_argument('file', nargs='+',
                        help='path of file(s) to add to the repository')
     p_reg.add_argument('-', dest="read_stdin", action='store_true',
                        help="read additional file names from stdin")
     p_reg.set_defaults(func=register_files)
 
     args = p.parse_args(argv)
+
+    ch = logging.StreamHandler()
+    formatter = logging.Formatter("[%(name)s] %(message)s")
+    loglevel = logging.INFO
+    log.setLevel(loglevel)
+    ch.setLevel(loglevel)  # change
+    ch.setFormatter(formatter)
+    log.addHandler(ch)
+    log.info("version: %s", nbank.__version__)
+    log.info("run time: %s", datetime.datetime.now())
+
     args.func(args)
 
 
