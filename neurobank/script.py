@@ -33,9 +33,14 @@ def register_files(args):
     if args.read_stdin:
         args.file.extend(l.strip() for l in sys.stdin)
 
-    meta = dict(namespace='neurobank.sourcelist',
-                version=nbank.fmt_version,
-                sources=[])
+    try:
+        meta = json.load(open(args.metafile, 'rU'))
+        if not meta['namespace'] == 'neurobank.sourcelist':
+            raise ValueError("'%s' is not a sourcelist" % args.metafile)
+        sources = { e['id'] : e for e in meta['sources'] }
+    except IOError:
+        sources = {}
+
     for fname in args.file:
         path, base, ext = nbank.fileparts(fname)
         try:
@@ -52,21 +57,33 @@ def register_files(args):
             id += ext
 
         tgt = nbank.register_source(args.archive, fname, id)
-        meta['sources'].append({'id': id, 'name': base + ext})
+        # add id/name mapping to sourcelist, skipping if it exists
+        try:
+            if sources[id]['name'] != base + ext:
+                log.warn("in %s, '%s' is named '%s', not '%s'; keeping old mapping",
+                         args.metafile, id, sources[id]['name'], base + ext)
+            else:
+                log.info("'%s' already in %s", id, args.metafile)
+        except KeyError:
+            sources[id] = {'id': id, 'name': base + ext}
+        # copy file to neurobank if it's not already there
         if tgt is not None:
             log.info("%s -> %s", fname, id)
             if not args.keep:
+                # try to replace file with a symlink
                 try:
                     os.symlink(os.path.abspath(tgt), os.path.join(path, id))
                     os.remove(fname)
                 except OSError as e:
                     log.error("E: %s", e)
         else:
-            log.info("%s already in archive as %s", fname, id)
+            log.info("%s already in archive as '%s'", fname, id)
 
-    fname = args.metafile + '.json'
-    json.dump(meta, open(fname, 'wt'), indent=2, separators=(',', ': '))
-    log.info("Wrote source list to '%s'", fname)
+    json.dump({'namespace': 'neurobank.sourcelist',
+               'version': nbank.fmt_version,
+               'sources': list(sources.values())},
+              open(args.metafile, 'wt'), indent=2, separators=(',', ': '))
+    log.info("Wrote source list to %s", args.metafile)
 
 
 def main(argv=None):
@@ -96,7 +113,8 @@ def main(argv=None):
                        help="don't delete source files. By default, files are"
                        "replaced with symlinks to the stored source files")
     p_reg.add_argument('metafile',
-                       help="specify the name of the output JSON metadata file")
+                       help="specify a file to store name-id mappings in JSON. "
+                       "If the file exists, new source files are added to it." )
     p_reg.add_argument('file', nargs='+',
                        help='path of file(s) to add to the repository')
     p_reg.add_argument('-', dest="read_stdin", action='store_true',
