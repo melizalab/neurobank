@@ -22,7 +22,7 @@ def main(argv=None):
 
     p = argparse.ArgumentParser(description="Convert json-evt file to toelis format. "
                                 "Creates directories named after units, "
-                                "and files named after units and stimuli.")
+                                "and files named after stimuli.")
     p.add_argument("-a", "--align",
                    help="align spike times to field (default '%(default)s')",
                    default="stim_on")
@@ -33,16 +33,15 @@ def main(argv=None):
     with open(opts.json, 'rU') as fp:
         data = json.load(fp)
 
-        # sort by unit, stimulus, offset
-        trials = sorted(data['trials'], key= lambda x: (x['unit'], x['stim'], x['offset']))
+        # sort by unit, stimulus, time
+        trials = sorted(data['trials'], key= lambda x: (x['unit'], x['stim'], x['time']))
         for unitname, unit in itertools.groupby(trials, lambda x: x['unit']):
             if not os.path.exists(unitname):
                 os.mkdir(unitname)
             count = 0
             for stimname, trial in itertools.groupby(unit, lambda x: x['stim']):
-                fname = os.path.join(unitname, "%s_%s.toe_lis" % (unitname,
-                                                                  os.path.splitext(stimname)[0]))
-                events = [nx.asarray(t['events']) - t[opts.align]
+                fname = os.path.join(unitname, "%s.toe_lis" % os.path.splitext(stimname)[0])
+                events = [1000. * (nx.asarray(t['events']) - t[opts.align])
                           for t in trial]
                 with open(fname, 'wt') as fp:
                     toelis.write(fp, events)
