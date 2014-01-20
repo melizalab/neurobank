@@ -21,13 +21,12 @@ files and directories are part of the archive:
 
 + README.md: this file
 + project.json: information and configuration for the archive
-+ sources/:  directory with registered source files for experiments,
-+ data/:     directory with deposited data files
-+ metadata/: directory with stored domain-specific JSON metadata (stimulus
-             lists, analysis groups, etc)
++ sources/:  registered source files for experiments,
++ data/:     deposited data files
++ metadata/: metadata (stimulus lists, analysis groups, etc) in JSON format
 
-Files in sources and data are organized into subdirectories based on the first
-three characters of the files' identifiers. Source files may have attributes
+Files in `sources` and `data` are organized into subdirectories based on the
+first two characters of the files' identifiers. Source files may have attributes
 associated with them stored in JSON files. The name of the attribute file is the
 identifier plus `.json`.
 
@@ -156,10 +155,18 @@ def source_id(fname, method='sha1'):
         return hashlib.new(method, fp.read()).hexdigest()
 
 
-def data_id(fname, method='uuid4'):
-    """Returns a uuid-based identifier for a data file"""
+def data_id(fname):
+    """Returns a uuid-based identifier for a data file.
+
+    If the base filename has the form of a uuid, attempts to use this value;
+    otherwise returns a randomly generated uuid.
+
+    """
     import uuid
-    return str(getattr(uuid, method)())
+    try:
+        return str(uuid.UUID(hex=os.path.basename(fname)[:36]))
+    except ValueError:
+        return str(uuid.uuid4())
 
 
 def id_stub(id):

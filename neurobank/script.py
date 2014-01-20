@@ -116,7 +116,6 @@ def main(argv=None):
     p_reg.set_defaults(func=store_files, target='sources', func_id=nbank.source_id)
     p_dep = sub.add_parser('deposit', help='deposit data file(s)')
     p_dep.set_defaults(func=store_files, target='data', func_id=nbank.data_id)
-    # p_dep = sub.add_parser('deposit', help='deposit data file(s)')
 
     for psub in (p_reg, p_dep):
         psub.add_argument('-A', '--archive', default=os.environ.get(nbank.env_path, '.'),
