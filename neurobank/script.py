@@ -23,7 +23,7 @@ def init_archive(args):
         log.info("Initialized neurobank archive in %s", os.path.abspath(args.directory))
 
 
-def register_files(args):
+def store_files(args):
     cfg = nbank.get_config(args.archive)
     if cfg is None:
         log.error("ERROR: %s not a neurobank archive. Use '-A' or set NBANK_PATH.",
@@ -34,38 +34,49 @@ def register_files(args):
         args.file.extend(l.strip() for l in sys.stdin)
 
     try:
-        meta = json.load(open(args.metafile, 'rU'))
-        if not meta['namespace'] == 'neurobank.sourcelist':
-            raise ValueError("'%s' is not a sourcelist" % args.metafile)
-        sources = { e['id'] : e for e in meta['sources'] }
+        meta = json.load(open(args.catalog, 'rU'))
+        if not meta['namespace'] == 'neurobank.catalog':
+            raise ValueError("'%s' is not a catalog" % args.catalog)
+        files = { e['id'] : e for e in meta['files'] }
     except IOError:
-        sources = {}
+        files = {}
 
     for fname in args.file:
         path, base, ext = nbank.fileparts(fname)
         try:
-            id = nbank.source_id(fname)
+            id = args.func_id(fname)
         except IOError as e:
             log.warn("E: %s", e)
             continue
 
-        if cfg['policy']['source']['keep_filename']:
+        if cfg['policy'][args.target]['keep_filename']:
             id += '_' + base
         if args.suffix:
             id += '_' + args.suffix
-        if cfg['policy']['source']['keep_extension']:
+        if cfg['policy'][args.target]['keep_extension']:
             id += ext
 
-        tgt = nbank.register_source(args.archive, fname, id)
-        # add id/name mapping to sourcelist, skipping if it exists
         try:
-            if sources[id]['name'] != base + ext:
+            mode = int(cfg['policy'][args.target]['mode'], base=8)
+        except (KeyError, ValueError) as e:
+            log.warn("E: %s", e)
+            mode = 0o440
+
+        tgt = nbank.store_file(os.path.join(args.archive, args.target), fname, id, mode)
+        if args.target == 'data' and tgt is None:
+            # id collisions are errors for data files. This should never happen
+            # with uuids
+            raise ValueError("id assigned to %s already exists in archive: %s" % (fname, id))
+
+        # add id/name mapping to catalog, skipping if it exists
+        try:
+            if files[id]['name'] != base + ext:
                 log.warn("in %s, '%s' is named '%s', not '%s'; keeping old mapping",
-                         args.metafile, id, sources[id]['name'], base + ext)
+                         args.catalog, id, files[id]['name'], base + ext)
             else:
-                log.info("'%s' already in %s", id, args.metafile)
+                log.info("'%s' already in %s", id, args.catalog)
         except KeyError:
-            sources[id] = {'id': id, 'name': base + ext}
+            files[id] = {'id': id, 'name': base + ext}
         # copy file to neurobank if it's not already there
         if tgt is not None:
             log.info("%s -> %s", fname, id)
@@ -79,11 +90,11 @@ def register_files(args):
         else:
             log.info("%s already in archive as '%s'", fname, id)
 
-    json.dump({'namespace': 'neurobank.sourcelist',
+    json.dump({'namespace': 'neurobank.catalog',
                'version': nbank.fmt_version,
-               'sources': list(sources.values())},
-              open(args.metafile, 'wt'), indent=2, separators=(',', ': '))
-    log.info("Wrote source list to %s", args.metafile)
+               'files': list(files.values())},
+              open(args.catalog, 'wt'), indent=2, separators=(',', ': '))
+    log.info("Wrote source list to %s", args.catalog)
 
 
 def main(argv=None):
@@ -101,25 +112,31 @@ def main(argv=None):
                         "any files or directories.")
     p_init.set_defaults(func=init_archive)
 
-    p_reg = sub.add_parser('register', help='register source files')
-    p_reg.add_argument('-A', '--archive', default=os.environ.get(nbank.env_path, '.'),
-                       type=os.path.abspath,
-                       help="specify the path of the archive. Default is to use the "
-                       "current directory or the value of the environment variable "
-                       "%s" % nbank.env_path)
-    p_reg.add_argument('--suffix',
-                       help='add a constant suffix to the generated identifiers')
-    p_reg.add_argument('--keep', action='store_true',
-                       help="don't delete source files. By default, files are"
-                       "replaced with symlinks to the stored source files")
-    p_reg.add_argument('metafile',
-                       help="specify a file to store name-id mappings in JSON. "
-                       "If the file exists, new source files are added to it." )
-    p_reg.add_argument('file', nargs='+',
-                       help='path of file(s) to add to the repository')
-    p_reg.add_argument('-', dest="read_stdin", action='store_true',
-                       help="read additional file names from stdin")
-    p_reg.set_defaults(func=register_files)
+    p_reg = sub.add_parser('register', help='register source file(s)')
+    p_reg.set_defaults(func=store_files, target='sources', func_id=nbank.source_id)
+    p_dep = sub.add_parser('deposit', help='deposit data file(s)')
+    p_dep.set_defaults(func=store_files, target='data', func_id=nbank.data_id)
+    # p_dep = sub.add_parser('deposit', help='deposit data file(s)')
+
+    for psub in (p_reg, p_dep):
+        psub.add_argument('-A', '--archive', default=os.environ.get(nbank.env_path, '.'),
+                           type=os.path.abspath,
+                           help="specify the path of the archive. Default is to use the "
+                           "current directory or the value of the environment variable "
+                           "%s" % nbank.env_path)
+        psub.add_argument('--suffix',
+                           help='add a constant suffix to the generated identifiers')
+        psub.add_argument('--keep', action='store_true',
+                           help="don't delete source files. By default, files are"
+                           "replaced with symlinks to the stored source files")
+        psub.add_argument('catalog',
+                           help="specify a file to store name-id mappings in JSON format. "
+                           "If the file exists, new source files are added to it." )
+        psub.add_argument('file', nargs='*',
+                           help='path of file(s) to add to the repository')
+        psub.add_argument('-@', dest="read_stdin", action='store_true',
+                           help="read additional file names from stdin")
+
 
     args = p.parse_args(argv)
 

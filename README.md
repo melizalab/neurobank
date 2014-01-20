@@ -16,31 +16,31 @@ Initialize an archive. The archive has to live on a locally-accessible filesyste
 nbank init my-archive-path
 ```
 
-You may want to edit the `README.md` and `package.json` files created in the archive directory to describe your project and set policies.
+You should edit the `README.md` and `package.json` files created in the archive directory to describe your project and set policies. You should also set permissions and default access control lists at this time so that files are added to the repository with the appropriate access restrictions.
 
 ## Usage
 
-The data management strategy behind **neurobank** is simple. First, every file you use to control an experiment gets a unique identifier. Files are renamed to match the identifier and archived. You run the experiment using the renamed files, so that the identifiers are stored with the data. When the experiment is done, you archive the raw data files and they're assigned their own identifiers. Now every file generated in the experiment is uniquely identified, and points unambiguously to the data used in the experiment. At every stage you get a metadata JSON file that stores the mapping from the original names to the identifiers.
+The data management strategy behind **neurobank** is simple. First, every file you use to control an experiment gets a unique identifier. Files are renamed to match the identifier and archived. You run the experiment using the renamed files, so that the identifiers are stored with the data. When the experiment is done, you archive the raw data files and they're assigned their own identifiers. Now every file generated in the experiment is uniquely identified, and points unambiguously to the data sources used in the experiment. At every stage you get a metadata JSON file that stores the mapping from the original names to the identifiers.
 
 For example, let's say you're presenting a set of acoustic stimuli to an animal while recording neural responses. To register the stimuli:
 
 ```bash
-nbank register stimset-name stimfile-1 stimfile-2 ...
+nbank register stimset.json stimfile-1 stimfile-2 ...
 ```
 
-Each stimulus will be renamed to match its identifier (keeping the same extension), and you'll have a file called `stimset-name.json` with the mappings from the identifiers to the new names. You can find your stimuli file in the archive in the `sources/` directory under a subdirectory with the first two characters of the identifier. For example, if the identifier is `14955422a0fbe3a2bb45111dc91e46e6`, you'll find the file under `sources/14`.
+Each stimulus will be renamed to match its identifier (keeping the same extension), and you'll have a file called `stimset.json` with the mappings from the identifiers to the new names. You can find your stimulus files in the archive in the `sources/` directory under subdirectories with the first two characters of the identifier. For example, if the identifier is `14955422a0fbe3a2bb45111dc91e46e6.wav`, you'll find the file under `sources/14`.
 
-Use the renamed stimulus files to run your experiment. If your data collection program doesn't store the names of the stimuli in the generated data files, you'll need to record the names manually. Next, import the data into the archive:
+Use the renamed stimulus files to run your experiment. If your data collection program doesn't store the names of the stimuli in the generated data files, you'll need to record the names manually. After the experiment, import the data into the archive:
 
 ```bash
-nbank deposit dataset-name datafile-1 datafile-2 ...
+nbank deposit dataset.json datafile-1 datafile-2 ...
 ```
 
-By default, the import script will treat each datafile as a separate recording. Some storage formats may include multiple recordings (for example, from multiple electrodes). **neurobank** understands the structure of ARF (https://github.com/melizalab/arf) files and will assign identifiers to each channel. Support for other multi-recording formats can be added through plugins. The script will move the data to the archive and generate a JSON file (`dataset-name.json`) with the mappings from the original names to the identifiers.
+As with the `register` command, `deposit` will assign a unique identifier to each file. Files may be containers (e.g., ARF files, https://github.com/melizalab/arf), in which case you are responsible for assigning identifiers within the files. The script will move the data to the archive and generate a JSON file (`dataset.json`) with the mappings from the original names to the identifiers.
 
-Imported data files can be found in the archive in the `data/` directory in the subdirectory with the first three characters of the identifier.
+Imported data files can be found in the archive in the `data/` directory in the subdirectory with the first two characters of the identifier.
 
-You can control how identifiers are generated (for example, to include the original filename or a shared suffix) and other aspects of the *nbank* script's behavior with commandline options. See `nbank <command> -h` for more information about each command.
+You can control how identifiers are generated (for example, to include the original filename or a shared suffix) and other policies for a data archive by editing the `project.json` file.
 
 ## API Reference
 
@@ -50,9 +50,15 @@ The **neurobank** python module supplies some functions for locating data and st
 
 docs
 
-## Import plugins
+## Best practices
 
-plugin api
+One of the primary uses for neurobank is to allow multiple users to share a common set of data, thereby reducing the need for temporary copies and ensuring that a canonical, centralized backup of critical data can be maintained. In this case, the following practices are suggested (on POSIX operating systems):
+
+1. For each project, create a separate group and make the archived owned by the group. To give a user access to the data, add them to the group.
+2. To restrict access to users not in the project group, set the umask to 027 before creating the archive.
+3. Set the setgid (or setuid) bit on the subdirectories of the archive, so that files added to the archive become owned by the group. (`chmod 3770 sources data metadata`). You may also consider setting the sticky bit so that files and directories can't be accidentally deleted.
+4. If your filesystem supports it, set the default ACL on subdirectories so that added files are accessible only to the group. (`setfacl -d -m u::rwx,g::rwx,o::- sources data metadata`).
+
 
 ## License
 

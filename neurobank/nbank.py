@@ -50,9 +50,15 @@ _project_json = """{
     "email": null
   },
   "policy": {
-    "source": {
+    "sources": {
       "keep_extension": true,
-      "keep_filename": false
+      "keep_filename": false,
+      "mode": "440"
+    },
+    "data": {
+      "keep_extension": true,
+      "keep_filename": false,
+      "mode": "440"
     }
   }
 }
@@ -108,8 +114,13 @@ def init_archive(archive_path):
             fp.writelines(('sources/', 'data/'))
 
 
-def register_source(archive_path, fname, id):
-    """Registers fname as a source file in the repository under a unique identifier.
+def store_file(tgt_dir, fname, id, mode=0o440):
+    """Stores fname in the repository under a unique identifier.
+
+    tgt_dir - the directory to store the file
+    fname - the path of the file
+    id - the identifier of the file
+    mode - the file access mode to set for the file once it's in the archive
 
     Checks whether the identifier already exists in the archive. If not, copies
     the file to the archive under the identifer and returns the path of the
@@ -119,7 +130,7 @@ def register_source(archive_path, fname, id):
     """
     import shutil
 
-    tgt_dir = os.path.join(archive_path, "sources", id_stub(id))
+    tgt_dir = os.path.join(tgt_dir, id_stub(id))
     tgt_file = os.path.join(tgt_dir, id)
     if os.path.exists(tgt_file):
         return None
@@ -129,17 +140,8 @@ def register_source(archive_path, fname, id):
     if not os.path.exists(tgt_dir):
         os.mkdir(tgt_dir)
     shutil.copy2(fname, tgt_file)
+    os.chmod(tgt_file, mode)
     return tgt_file
-
-
-def deposit_data(archive_path, fname):
-    """Record a data file in the archive.
-
-    Arguments:
-    - `archive_path`:
-    - `fname`:
-    """
-    pass
 
 
 def source_id(fname, method='sha1'):
@@ -152,6 +154,12 @@ def source_id(fname, method='sha1'):
     import hashlib
     with open(fname, 'rb') as fp:
         return hashlib.new(method, fp.read()).hexdigest()
+
+
+def data_id(fname, method='uuid4'):
+    """Returns a uuid-based identifier for a data file"""
+    import uuid
+    return str(getattr(uuid, method)())
 
 
 def id_stub(id):
