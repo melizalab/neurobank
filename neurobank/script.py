@@ -77,14 +77,15 @@ def store_files(args):
                 log.info("'%s' already in %s", id, args.catalog)
         except KeyError:
             files[id] = {'id': id, 'name': base + ext}
-        # copy file to neurobank if it's not already there
+
         if tgt is not None:
+            # file was copied to database
             log.info("%s -> %s", fname, id)
             if not args.keep:
                 # try to replace file with a symlink
                 try:
-                    os.symlink(os.path.abspath(tgt), os.path.join(path, id))
                     os.remove(fname)
+                    os.symlink(os.path.abspath(tgt), os.path.join(path, id))
                 except OSError as e:
                     log.error("E: %s", e)
         else:
