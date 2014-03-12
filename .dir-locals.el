@@ -1,2 +1,1 @@
-((nil . ((virtualenv-workon . "mspikes")
-         (virtualenv-default-directory . "/Users/dmeliza/Devel/neurobank"))))
+((nil . ((pyvenv-workon . "mspikes"))))
