@@ -5,9 +5,15 @@
 Copyright (C) 2013 Dan Meliza <dan@meliza.org>
 Created Tue Nov 26 22:48:58 2013
 """
+from __future__ import absolute_import
+from __future__ import print_function
+from __future__ import division
+from __future__ import unicode_literals
+
 import os
 import sys
 import json
+import datetime
 import logging
 
 from neurobank import nbank
@@ -15,6 +21,8 @@ from neurobank import nbank
 log = logging.getLogger('nbank')   # root logger
 
 def init_archive(args):
+    log.info("version: %s", nbank.__version__)
+    log.info("run time: %s", datetime.datetime.now())
     try:
         nbank.init_archive(args.directory)
     except OSError as e:
@@ -24,6 +32,10 @@ def init_archive(args):
 
 
 def store_files(args):
+    from catalog import _ns as catalog_ns
+    log.info("version: %s", nbank.__version__)
+    log.info("run time: %s", datetime.datetime.now())
+
     cfg = nbank.get_config(args.archive)
     if cfg is None:
         log.error("ERROR: %s not a neurobank archive. Use '-A' or set NBANK_PATH.",
@@ -35,7 +47,7 @@ def store_files(args):
 
     try:
         meta = json.load(open(args.catalog, 'rU'))
-        if not meta['namespace'] == 'neurobank.catalog':
+        if not meta['namespace'] == catalog_ns:
             raise ValueError("'%s' is not a catalog" % args.catalog)
         files = { e['id'] : e for e in meta['files'] }
     except IOError:
@@ -91,16 +103,35 @@ def store_files(args):
         else:
             log.info("%s already in archive as '%s'", fname, id)
 
-    json.dump({'namespace': 'neurobank.catalog',
+    json.dump({'namespace': catalog_ns,
                'version': nbank.fmt_version,
-               'files': list(files.values())},
+               'files': list(files.values()),
+               'description': '',
+               'long_desc': ''},
               open(args.catalog, 'wt'), indent=2, separators=(',', ': '))
     log.info("Wrote source list to %s", args.catalog)
 
 
+def id_by_name(args):
+    import neurobank.catalog as cat
+
+    for catalog in cat.iter_catalogs(args.archive, args.catalog):
+        for match in cat.filter_regex(catalog['value']['files'], args.regex, 'name'):
+            print("%s: %s/%s" % (match['name'], catalog['key'], match['id']))
+
+
+def props_by_id(args):
+    import pprint
+    import neurobank.catalog as cat
+
+    for catalog in cat.iter_catalogs(args.archive, args.catalog):
+        for match in cat.filter_regex(catalog['value']['files'], args.regex, 'id'):
+            print("%s:" % catalog['key'])
+            pprint.pprint(match)
+
+
 def main(argv=None):
     import argparse
-    import datetime
 
     p = argparse.ArgumentParser(description='manage source files and collected data')
     sub = p.add_subparsers(title='subcommands')
@@ -137,6 +168,21 @@ def main(argv=None):
         psub.add_argument('-@', dest="read_stdin", action='store_true',
                            help="read additional file names from stdin")
 
+    p_id = sub.add_parser('id', help='look up name in catalog(s) and return identifiers')
+    p_id.set_defaults(func=id_by_name)
+
+    p_props = sub.add_parser('props', help='look up properties in catalog(s) by id')
+    p_props.set_defaults(func=props_by_id)
+    for psub in (p_id, p_props):
+        psub.add_argument('-A', '--archive', default=os.environ.get(nbank.env_path, '.'),
+                          type=os.path.abspath,
+                          help="specify the path of the archive. Default is to use the "
+                          "current directory or the value of the environment variable "
+                          "%s" % nbank.env_path)
+        psub.add_argument('-c', '--catalog', action='append', default=None,
+                          help="specify one or more metadata catalogs to search for the "
+                          "name. Default is to search all catalogs in the archive.")
+        psub.add_argument('regex', help='the string or regular expression to match against')
 
     args = p.parse_args(argv)
 
@@ -147,8 +193,6 @@ def main(argv=None):
     ch.setLevel(loglevel)  # change
     ch.setFormatter(formatter)
     log.addHandler(ch)
-    log.info("version: %s", nbank.__version__)
-    log.info("run time: %s", datetime.datetime.now())
 
     args.func(args)
 

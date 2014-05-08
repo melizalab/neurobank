@@ -8,12 +8,13 @@ Created Mon Nov 25 08:52:28 2013
 import os
 import json
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 env_path = "NBANK_PATH"
 fmt_version = "1.0"
 
 _README_fname = 'README.md'
 _config_fname = 'project.json'
+_config_ns = 'neurobank.config'
 
 _README = """
 This directory contains a neurobank data management archive. The following
@@ -38,7 +39,7 @@ Add notes about the contents of the data archive here. You should also edit
 """
 
 _project_json = """{
-  "namespace": "neurobank.config",
+  "namespace": "%s",
   "version": "%s",
   "project": {
     "name": null,
@@ -61,7 +62,7 @@ _project_json = """{
     }
   }
 }
-""" % fmt_version
+""" % (_config_ns, fmt_version)
 
 
 def get_config(path):
@@ -89,9 +90,10 @@ def init_archive(archive_path):
     files or directories. Raises OSError for failed operations.
 
     """
+    from catalog import _subdir as catalog_subdir
     import subprocess
 
-    dirs = [os.path.join(archive_path, p) for p in ('sources', 'data', 'metadata')]
+    dirs = [os.path.join(archive_path, p) for p in ('sources', 'data', catalog_subdir)]
     dircmd = ['mkdir', '-p'] + dirs
     ret = subprocess.call(dircmd) # don't expand shell variables/globs
     if ret != 0:
@@ -207,7 +209,7 @@ def update_json_data(mapping, **kwargs):
 
 
 def update_json_file(fname, **kwargs):
-    """Update or create a json file with kwargs mapping
+    """Updates or creates a json file with kwargs mapping
 
     If fname does not exist, creates a JSON file with the mapping in kwargs. If
     fname does exist, opens it, loads the contents, updates with the kwargs
