@@ -117,7 +117,7 @@ def id_by_name(args):
 
     for catalog in cat.iter_catalogs(args.archive, args.catalog):
         for match in cat.filter_regex(catalog['value']['files'], args.regex, 'name'):
-            print("%s: %s/%s" % (match['name'], catalog['key'], match['id']))
+            print("%s/%s : %s" % (catalog['key'], match['name'], match['id']))
 
 
 def props_by_id(args):
@@ -171,7 +171,7 @@ def main(argv=None):
     p_id = sub.add_parser('id', help='look up name in catalog(s) and return identifiers')
     p_id.set_defaults(func=id_by_name)
 
-    p_props = sub.add_parser('props', help='look up properties in catalog(s) by id')
+    p_props = sub.add_parser('prop', help='look up properties in catalog(s) by id')
     p_props.set_defaults(func=props_by_id)
     for psub in (p_id, p_props):
         psub.add_argument('-A', '--archive', default=os.environ.get(nbank.env_path, '.'),
