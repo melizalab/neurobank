@@ -117,7 +117,7 @@ def id_by_name(args):
 
     for catalog in cat.iter_catalogs(args.archive, args.catalog):
         for match in cat.filter_regex(catalog['value']['files'], args.regex, 'name'):
-            print("%s/%s : %s" % (catalog['key'], match['name'], match['id']))
+            print("%s/%s : %s" % (catalog['key'], match['name'], match.get('id', None)))
 
 
 def props_by_id(args):

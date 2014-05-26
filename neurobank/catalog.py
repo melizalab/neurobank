@@ -26,7 +26,7 @@ def filter_regex(arr, regex, key):
     if not hasattr(regex, 'match'):
         import re
         regex = re.compile(regex)
-    return (x for x in arr if regex.match(x[key]) is not None)
+    return (x for x in arr if (key in x and regex.match(x[key]) is not None))
 
 
 def iter_catalogs(archive, files=None):
