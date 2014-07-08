@@ -106,7 +106,7 @@ def init_archive(archive_path):
     fname = os.path.join(archive_path, '.gitignore')
     if not os.path.exists(fname):
         with open(fname, 'wt') as fp:
-            fp.writelines(('sources/', 'data/'))
+            fp.writelines(('resources/',))
 
 
 def store_file(src, archive_path, id, mode=0o440):
@@ -134,7 +134,7 @@ def store_file(src, archive_path, id, mode=0o440):
     if not os.path.exists(tgt):
         os.mkdir(tgt)
     shutil.move(src, tgt_file)
-    os.chmod(tgt_file, mode)
+    chmod(tgt_file, mode)
     return tgt_file
 
 
@@ -169,6 +169,22 @@ def id_stub(id):
 
     """
     return id[:2] if isinstance(id, str) else None
+
+
+def chmod(path, mode):
+    """Sets permission bits on path or the contents its subdirectories (if path is a dir)"""
+    if os.path.isfile(path):
+        os.chmod(path, mode)
+    elif os.path.isdir(path):
+        assert mode < 0o1000, "invalid permissions mode"
+        dirmode = (mode >> 2) | mode
+        os.chmod(path, dirmode)
+        for root, dirs, files in os.walk(path):
+            for dir in dirs:
+                os.chmod(os.path.join(root, dir), dirmode)
+            for file in files:
+                os.chmod(os.path.join(root, file), mode)
+
 
 
 # Variables:

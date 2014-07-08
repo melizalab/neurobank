@@ -61,6 +61,9 @@ def store_files(args):
         files = {}
 
     for fname in args.file:
+        if not os.path.isfile(fname) and not os.path.isdir(fname):
+            log.warn("warning: '%s' is not a file or directory - skipping", fname)
+            continue
         path, base, ext = util.fileparts(fname)
         try:
             id = args.func_id(fname)
