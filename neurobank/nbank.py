@@ -8,7 +8,7 @@ Created Mon Nov 25 08:52:28 2013
 import os
 import json
 
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 env_path = "NBANK_PATH"
 fmt_version = "1.0"
 
@@ -123,7 +123,7 @@ def store_file(tgt_dir, fname, id, mode=0o440):
     id - the identifier of the file
     mode - the file access mode to set for the file once it's in the archive
 
-    Checks whether the identifier already exists in the archive. If not, copies
+    Checks whether the object already exists in the archive. If not, copies
     the file to the archive under the identifer and returns the path of the
     archived file. If the identifier is already taken, returns None and takes no
     other action.
@@ -175,11 +175,11 @@ def id_stub(id):
     """Returns a short version of id, used for sorting objects into subdirectories.
 
     """
-    return id[:2] if isinstance(id, basestring) else None
+    return id[:2] if isinstance(id, str) else None
 
 
 def fileparts(fname):
-    """Returns the dirname, basename of fname without extension, and extension"""
+    """Returns components of fname: dirname, basename of fname without extension, and extension"""
     pn, fn = os.path.split(fname)
     base, ext = os.path.splitext(fn)
     return pn, base, ext

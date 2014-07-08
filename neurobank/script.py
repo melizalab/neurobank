@@ -38,7 +38,7 @@ def store_files(args):
 
     cfg = nbank.get_config(args.archive)
     if cfg is None:
-        log.error("ERROR: %s not a neurobank archive. Use '-A' or set NBANK_PATH.",
+        log.error("ERROR: %s not a neurobank archive. Use '-A' or set NBANK_PATH in environment.",
                   args.archive)
         return
 
