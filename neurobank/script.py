@@ -106,7 +106,7 @@ def store_files(args):
         if tgt is not None:
             # file was moved to database
             log.info("%s -> %s", fname, id)
-            if not args.no_link:
+            if args.link:
                 try:
                     os.symlink(os.path.abspath(tgt), os.path.join(path, id))
                 except OSError as e:
@@ -149,6 +149,14 @@ def main(argv=None):
     import argparse
 
     p = argparse.ArgumentParser(description='manage source files and collected data')
+    p.add_argument('-v','--version', action="version",
+                   version="%(prog)s " + nbank.__version__)
+    p.add_argument('-A', '--archive', default=os.environ.get(nbank.env_path, '.'),
+                   type=os.path.abspath,
+                   help="specify the path of the archive. Default is to use the "
+                   "current directory or the value of the environment variable "
+                   "%s" % nbank.env_path)
+
     sub = p.add_subparsers(title='subcommands')
 
     p_init = sub.add_parser('init', help='initialize a data archive')
@@ -164,15 +172,10 @@ def main(argv=None):
     p_dep.set_defaults(func=store_files, target='data', func_id=nbank.data_id)
 
     for psub in (p_reg, p_dep):
-        psub.add_argument('-A', '--archive', default=os.environ.get(nbank.env_path, '.'),
-                           type=os.path.abspath,
-                           help="specify the path of the archive. Default is to use the "
-                           "current directory or the value of the environment variable "
-                           "%s" % nbank.env_path)
         psub.add_argument('--suffix',
                            help='add a constant suffix to the generated identifiers')
-        psub.add_argument('--no-link', action='store_true',
-                           help="don't make links to archived files")
+        psub.add_argument('--link', action='store_true',
+                           help="make links to archived files")
         psub.add_argument('catalog',
                            help="specify a file to store name-id mappings in JSON format. "
                            "If the file exists, new source files are added to it." )
@@ -189,11 +192,6 @@ def main(argv=None):
     p_props = sub.add_parser('prop', help='look up properties in catalog(s) by id')
     p_props.set_defaults(func=props_by_id)
     for psub in (p_id, p_props):
-        psub.add_argument('-A', '--archive', default=os.environ.get(nbank.env_path, '.'),
-                          type=os.path.abspath,
-                          help="specify the path of the archive. Default is to use the "
-                          "current directory or the value of the environment variable "
-                          "%s" % nbank.env_path)
         psub.add_argument('-c', '--catalog', action='append', default=None,
                           help="specify one or more metadata catalogs to search for the "
                           "name. Default is to search all catalogs in the archive.")

@@ -59,7 +59,7 @@ One of the primary uses for neurobank is to allow multiple users to share a comm
 1. For each project, create a separate group and make the archive owned by the group. To give a user access to the data, add them to the group.
 2. To restrict access to users not in the project group, set your umask to 027 before creating the archive.
 3. Set the setgid (or setuid) bit on the subdirectories of the archive, so that files added to the archive become owned by the group. (`chmod 3770 sources data metadata`). You may also consider setting the sticky bit so that files and directories can't be accidentally deleted.
-4. If your filesystem supports it, set the default ACL on subdirectories so that added files are accessible only to the group. (`setfacl -d -m u::rwx,g::rwx,o::- sources data metadata`).
+4. If your filesystem supports it, set the default ACL on subdirectories so that added files are accessible only to the group. (`setfacl -d -m u::rwx,g::rwx,o::- resources metadata`).
 
 ## License
 
