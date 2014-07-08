@@ -16,6 +16,8 @@ _README_fname = 'README.md'
 _config_fname = 'project.json'
 _config_ns = 'neurobank.config'
 
+_resource_subdir = "resources"
+
 _README = """
 This directory contains a neurobank data management archive. The following
 files and directories are part of the archive:
@@ -85,7 +87,7 @@ def init_archive(archive_path):
     from neurobank.catalog import _subdir as catalog_subdir
     import subprocess
 
-    dirs = [os.path.join(archive_path, p) for p in ('sources', 'data', catalog_subdir)]
+    dirs = [os.path.join(archive_path, p) for p in (_resource_subdir, catalog_subdir)]
     dircmd = ['mkdir', '-p'] + dirs
     ret = subprocess.call(dircmd) # don't expand shell variables/globs
     if ret != 0:
@@ -107,10 +109,9 @@ def init_archive(archive_path):
             fp.writelines(('sources/', 'data/'))
 
 
-def store_file(src, tgt, id, mode=0o440):
-    """Stores file or dir (src) in the repository under a unique identifier.
+def store_file(src, archive_path, id, mode=0o440):
+    """Stores resource (src) in the repository under a unique identifier.
 
-    tgt - the subdirectory to store src
     src - the path of the file or directory
     id - the identifier of the file
     mode - the file access mode to set for the file once it's in the archive
@@ -123,7 +124,7 @@ def store_file(src, tgt, id, mode=0o440):
     """
     import shutil
 
-    tgt = os.path.join(tgt, id_stub(id))
+    tgt = os.path.join(archive_path, _resource_subdir, id_stub(id))
     tgt_file = os.path.join(tgt, id)
     if os.path.exists(tgt_file):
         return None

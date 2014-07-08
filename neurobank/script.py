@@ -87,7 +87,7 @@ def store_files(args):
             log.warn("E: %s", e)
             mode = 0o440
 
-        tgt = nbank.store_file(fname, os.path.join(args.archive, args.target), id, mode)
+        tgt = nbank.store_file(fname, args.archive, id, mode)
         if args.target == 'data' and tgt is None:
             # id collisions are errors for data files. This should never happen
             # with uuids
@@ -128,7 +128,10 @@ def id_by_name(args):
 
     for catalog in cat.iter_catalogs(args.archive, args.catalog):
         for match in cat.filter_regex(catalog['value']['resources'], args.regex, 'name'):
-            print("%s/%s : %s" % (catalog['key'], match['name'], match.get('id', None)))
+            id = match.get('id', None)
+            if args.path:
+                id = os.path.join(args.archive, id)
+            print("%s/%s : %s" % (catalog['key'], match['name'], id))
 
 
 def props_by_id(args):
@@ -138,7 +141,8 @@ def props_by_id(args):
     for catalog in cat.iter_catalogs(args.archive, args.catalog):
         for match in cat.filter_regex(catalog['value']['resources'], args.regex, 'id'):
             print("%s:" % catalog['key'])
-            pprint.pprint(match)
+            sys.stdout.write("  ")
+            pprint.pprint(match, indent=2)
 
 
 def main(argv=None):
@@ -178,6 +182,8 @@ def main(argv=None):
                            help="read additional file names from stdin")
 
     p_id = sub.add_parser('search', help='look up name in catalog(s) and return identifiers')
+    p_id.add_argument('-p','--path', action="store_true",
+                      help="show full paths of resource files")
     p_id.set_defaults(func=id_by_name)
 
     p_props = sub.add_parser('prop', help='look up properties in catalog(s) by id')
