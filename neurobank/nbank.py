@@ -8,7 +8,7 @@ Created Mon Nov 25 08:52:28 2013
 import os
 import json
 
-__version__ = '0.2.1'
+__version__ = '0.3.0'
 env_path = "NBANK_PATH"
 fmt_version = "1.0"
 
@@ -22,14 +22,14 @@ files and directories are part of the archive:
 
 + README.md: this file
 + project.json: information and configuration for the archive
-+ sources/:  registered source files for experiments,
-+ data/:     deposited data files
++ resources/:  registered source files and deposited data
 + metadata/: metadata (stimulus lists, analysis groups, etc) in JSON format
 
-Files in `sources` and `data` are organized into subdirectories based on the
-first two characters of the files' identifiers. Source files may have attributes
-associated with them stored in JSON files. The name of the attribute file is the
-identifier plus `.json`.
+Files in `resources` are organized into subdirectories based on the first two
+characters of the files' identifiers.
+
+For more information, consult the neurobank website at
+https://github.com/melizalab/neurobank
 
 # Archive contents
 
@@ -75,14 +75,6 @@ def get_config(path):
         return json.load(open(fname, 'rt'))
 
 
-def get_source(id, path):
-    """Returns the absolute path for a source file with id in the archive under path.
-
-    Does not check the validity of the path or id.
-    """
-    return os.path.abspath(os.path.join(path, 'sources', id_stub(id), id))
-
-
 def init_archive(archive_path):
     """Initializes a new data archive in archive_path.
 
@@ -90,7 +82,7 @@ def init_archive(archive_path):
     files or directories. Raises OSError for failed operations.
 
     """
-    from catalog import _subdir as catalog_subdir
+    from neurobank.catalog import _subdir as catalog_subdir
     import subprocess
 
     dirs = [os.path.join(archive_path, p) for p in ('sources', 'data', catalog_subdir)]
@@ -115,15 +107,15 @@ def init_archive(archive_path):
             fp.writelines(('sources/', 'data/'))
 
 
-def store_file(tgt_dir, fname, id, mode=0o440):
-    """Stores fname in the repository under a unique identifier.
+def store_file(src, tgt, id, mode=0o440):
+    """Stores file or dir (src) in the repository under a unique identifier.
 
-    tgt_dir - the directory to store the file
-    fname - the path of the file
+    tgt - the subdirectory to store src
+    src - the path of the file or directory
     id - the identifier of the file
     mode - the file access mode to set for the file once it's in the archive
 
-    Checks whether the object already exists in the archive. If not, copies
+    Checks whether the object already exists in the archive. If not, moves
     the file to the archive under the identifer and returns the path of the
     archived file. If the identifier is already taken, returns None and takes no
     other action.
@@ -131,16 +123,16 @@ def store_file(tgt_dir, fname, id, mode=0o440):
     """
     import shutil
 
-    tgt_dir = os.path.join(tgt_dir, id_stub(id))
-    tgt_file = os.path.join(tgt_dir, id)
+    tgt = os.path.join(tgt, id_stub(id))
+    tgt_file = os.path.join(tgt, id)
     if os.path.exists(tgt_file):
         return None
 
     # execute commands in this order to prevent data loss; source file is not
     # renamed unless it's copied
-    if not os.path.exists(tgt_dir):
-        os.mkdir(tgt_dir)
-    shutil.copy2(fname, tgt_file)
+    if not os.path.exists(tgt):
+        os.mkdir(tgt)
+    shutil.move(src, tgt_file)
     os.chmod(tgt_file, mode)
     return tgt_file
 
@@ -176,52 +168,6 @@ def id_stub(id):
 
     """
     return id[:2] if isinstance(id, str) else None
-
-
-def fileparts(fname):
-    """Returns components of fname: dirname, basename of fname without extension, and extension"""
-    pn, fn = os.path.split(fname)
-    base, ext = os.path.splitext(fn)
-    return pn, base, ext
-
-
-def update_json_data(mapping, **kwargs):
-    """Update the values in a json mapping with kwargs using the following rules:
-
-    - If a key is absent in the map, adds it
-    - If a key is present and has a scalar value, compares to the new value,
-      raising an error if the value doesn't match
-    - If the key is present and the value is a list, appends new items to the list
-    - If the key is present and is a dictionary, calls .update() with the new value
-
-    Modifies the mapping in place, so not safe for concurrent calls
-    """
-    for key, val in kwargs.items():
-        if key not in mapping:
-            mapping[key] = val
-        elif isinstance(val, dict):
-            mapping[key].update(val)
-        elif isinstance(val, list):
-            mapping[key].extend(val)
-        elif val != mapping[key]:
-            raise ValueError("mapping value for %s (%s) doesn't match argument value (%s)" %
-                             (key, val, kwargs[key]))
-
-
-def update_json_file(fname, **kwargs):
-    """Updates or creates a json file with kwargs mapping
-
-    If fname does not exist, creates a JSON file with the mapping in kwargs. If
-    fname does exist, opens it, loads the contents, updates with the kwargs
-    mapping, and writes the new data to disk.
-
-    """
-    if os.path.exists(fname):
-        mapping = json.load(open(fname, 'rU'))
-        update_json_data(**kwargs)
-    else:
-        mapping = kwargs
-    json.dump(open(fname, 'wt'), mapping)
 
 
 # Variables:

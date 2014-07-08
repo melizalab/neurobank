@@ -18,7 +18,7 @@ import sys
 
 # --- Distutils setup and metadata --------------------------------------------
 
-VERSION = '0.2.1'
+VERSION = '0.3.0-SNAPSHOT'
 
 cls_txt = """
 Development Status :: 5 - Production/Stable
@@ -44,7 +44,7 @@ analysis workflows.
 
 """
 
-requirements = ['toelis>=2.0']
+requirements = []
 if sys.hexversion < 0x02070000:
     requirements.append("argparse==1.2.1")
 
@@ -62,9 +62,7 @@ setup(
 
     packages=find_packages(exclude=["*test*"]),
 
-    entry_points={'console_scripts': ['nbank = neurobank.script:main',
-                                      'json2toelis = neurobank.jsontoelis:main'],
-                  },
+    entry_points={'console_scripts': ['nbank = neurobank.script:main'] },
 
     install_requires=requirements,
     test_suite='nose.collector'

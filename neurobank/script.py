@@ -16,9 +16,10 @@ import json
 import datetime
 import logging
 
-from neurobank import nbank
+from neurobank import nbank, util
 
 log = logging.getLogger('nbank')   # root logger
+
 
 def init_archive(args):
     log.info("version: %s", nbank.__version__)
@@ -32,33 +33,45 @@ def init_archive(args):
 
 
 def store_files(args):
-    from catalog import _ns as catalog_ns
+    from neurobank.catalog import _ns as catalog_ns
     log.info("version: %s", nbank.__version__)
     log.info("run time: %s", datetime.datetime.now())
 
     cfg = nbank.get_config(args.archive)
     if cfg is None:
-        log.error("ERROR: %s not a neurobank archive. Use '-A' or set NBANK_PATH in environment.",
+        log.error("error: %s not a neurobank archive. Use '-A' or set NBANK_PATH in environment.",
                   args.archive)
         return
 
     if args.read_stdin:
         args.file.extend(l.strip() for l in sys.stdin)
 
+    if len(args.file) == 0:
+        log.error("error: no files specified")
+        return
+
     try:
         meta = json.load(open(args.catalog, 'rU'))
         if not meta['namespace'] == catalog_ns:
             raise ValueError("'%s' is not a catalog" % args.catalog)
-        files = { e['id'] : e for e in meta['files'] }
+        files = { e['id'] : e for e in meta['resources'] }
+        log.info("opened catalog '%s', resource count %d", args.catalog, len(files))
     except IOError:
+        log.info("catalog '%s' doesn't exist, will be created", args.catalog)
         files = {}
 
     for fname in args.file:
-        path, base, ext = nbank.fileparts(fname)
+        path, base, ext = util.fileparts(fname)
         try:
             id = args.func_id(fname)
         except IOError as e:
-            log.warn("E: %s", e)
+            if os.path.exists(fname):
+                log.warn(
+                    "warning: '%s' is a directory, can't be used a a source file - skipping",
+                    fname
+                )
+            else:
+                log.warn("warning: '%s' does not exist - skipping", fname)
             continue
 
         if cfg['policy'][args.target]['keep_filename']:
@@ -74,11 +87,11 @@ def store_files(args):
             log.warn("E: %s", e)
             mode = 0o440
 
-        tgt = nbank.store_file(os.path.join(args.archive, args.target), fname, id, mode)
+        tgt = nbank.store_file(fname, os.path.join(args.archive, args.target), id, mode)
         if args.target == 'data' and tgt is None:
             # id collisions are errors for data files. This should never happen
             # with uuids
-            raise ValueError("id assigned to %s already exists in archive: %s" % (fname, id))
+            raise ValueError("id assigned to '%s' already exists in archive: %s" % (fname, id))
 
         # add id/name mapping to catalog, skipping if it exists
         try:
@@ -91,32 +104,30 @@ def store_files(args):
             files[id] = {'id': id, 'name': base + ext}
 
         if tgt is not None:
-            # file was copied to database
+            # file was moved to database
             log.info("%s -> %s", fname, id)
-            if not args.keep:
-                # try to replace file with a symlink
+            if not args.no_link:
                 try:
-                    os.remove(fname)
                     os.symlink(os.path.abspath(tgt), os.path.join(path, id))
                 except OSError as e:
-                    log.error("E: %s", e)
+                    log.warn("error creating link: %s", e)
         else:
-            log.info("%s already in archive as '%s'", fname, id)
+            log.info("'%s' already in archive as '%s'", fname, id)
 
     json.dump({'namespace': catalog_ns,
                'version': nbank.fmt_version,
-               'files': list(files.values()),
+               'resources': list(files.values()),
                'description': '',
                'long_desc': ''},
               open(args.catalog, 'wt'), indent=2, separators=(',', ': '))
-    log.info("Wrote source list to %s", args.catalog)
+    log.info("wrote resource catalog to '%s'", args.catalog)
 
 
 def id_by_name(args):
     import neurobank.catalog as cat
 
     for catalog in cat.iter_catalogs(args.archive, args.catalog):
-        for match in cat.filter_regex(catalog['value']['files'], args.regex, 'name'):
+        for match in cat.filter_regex(catalog['value']['resources'], args.regex, 'name'):
             print("%s/%s : %s" % (catalog['key'], match['name'], match.get('id', None)))
 
 
@@ -125,7 +136,7 @@ def props_by_id(args):
     import neurobank.catalog as cat
 
     for catalog in cat.iter_catalogs(args.archive, args.catalog):
-        for match in cat.filter_regex(catalog['value']['files'], args.regex, 'id'):
+        for match in cat.filter_regex(catalog['value']['resources'], args.regex, 'id'):
             print("%s:" % catalog['key'])
             pprint.pprint(match)
 
@@ -137,11 +148,10 @@ def main(argv=None):
     sub = p.add_subparsers(title='subcommands')
 
     p_init = sub.add_parser('init', help='initialize a data archive')
-    p_init.add_argument('directory', nargs='?', default='.',
+    p_init.add_argument('directory',
                         help="path of the (possibly non-existent) directory "
                         "for the archive. If the directory does not exist it's created. "
-                        "If not supplied the current directory is used. Does not overwrite "
-                        "any files or directories.")
+                        " Does not overwrite any files or directories.")
     p_init.set_defaults(func=init_archive)
 
     p_reg = sub.add_parser('register', help='register source file(s)')
@@ -157,9 +167,8 @@ def main(argv=None):
                            "%s" % nbank.env_path)
         psub.add_argument('--suffix',
                            help='add a constant suffix to the generated identifiers')
-        psub.add_argument('--keep', action='store_true',
-                           help="don't delete source files. By default, files are"
-                           "replaced with symlinks to the stored source files")
+        psub.add_argument('--no-link', action='store_true',
+                           help="don't make links to archived files")
         psub.add_argument('catalog',
                            help="specify a file to store name-id mappings in JSON format. "
                            "If the file exists, new source files are added to it." )
@@ -168,7 +177,7 @@ def main(argv=None):
         psub.add_argument('-@', dest="read_stdin", action='store_true',
                            help="read additional file names from stdin")
 
-    p_id = sub.add_parser('id', help='look up name in catalog(s) and return identifiers')
+    p_id = sub.add_parser('search', help='look up name in catalog(s) and return identifiers')
     p_id.set_defaults(func=id_by_name)
 
     p_props = sub.add_parser('prop', help='look up properties in catalog(s) by id')
@@ -194,7 +203,10 @@ def main(argv=None):
     ch.setFormatter(formatter)
     log.addHandler(ch)
 
-    args.func(args)
+    try:
+        args.func(args)
+    except AttributeError:
+        p.print_usage()
 
 
 # Variables:
