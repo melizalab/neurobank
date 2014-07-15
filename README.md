@@ -42,7 +42,7 @@ nbank deposit dataset.json datafile-1 datafile-2 ...
 
 As with the `register` command, `deposit` will assign a unique identifier to each resource and move the resource. Data resource identifiers are randomly-generated UUIDs, and they are not tied to the contents of the file.
 
-Resources may be directories or files that act as containers (e.g., ARF files, https://github.com/melizalab/arf), in which case you are responsible for assigning identifiers within the container or directory. The `dataset.json` file will contain the mappings from the original names to the new identifiers. You can edit this file to add additional information about the files or analysis units, and then store it in the archive metadata using the following command:
+Resources may be regular files, directories or files that act as containers (e.g., ARF files, https://github.com/melizalab/arf). If you deposit containers or directories, you're responsible for organizing the contents and assigning any internal identifiers. The `dataset.json` file will contain the mappings from the original names to the new identifiers. You can edit this file to add additional information about the files or analysis units, and then store it in the archive metadata using the following command:
 
 ```bash
 nbank catalog dataset.json target-catalog.json
