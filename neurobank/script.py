@@ -10,13 +10,20 @@ from __future__ import print_function
 from __future__ import division
 from __future__ import unicode_literals
 
+try:
+    input = raw_input
+except NameError:
+    pass
+
 import os
 import sys
 import json
 import datetime
 import logging
+import pprint
 
 from neurobank import nbank, util
+import neurobank.catalog as cat
 
 log = logging.getLogger('nbank')   # root logger
 
@@ -24,42 +31,29 @@ log = logging.getLogger('nbank')   # root logger
 def init_archive(args):
     log.info("version: %s", nbank.__version__)
     log.info("run time: %s", datetime.datetime.now())
-    try:
-        nbank.init_archive(args.directory)
-    except OSError as e:
-        log.error("Error initializing archive: %s", e)
-    else:
-        log.info("Initialized neurobank archive in %s", os.path.abspath(args.directory))
+    nbank.init_archive(args.directory)
+    log.info("Initialized neurobank archive in %s", os.path.abspath(args.directory))
 
 
 def store_files(args):
-    from neurobank.catalog import _ns as catalog_ns
     log.info("version: %s", nbank.__version__)
     log.info("run time: %s", datetime.datetime.now())
 
     cfg = nbank.get_config(args.archive)
     if cfg is None:
-        log.error("error: %s not a neurobank archive. Use '-A' or set NBANK_PATH in environment.",
-                  args.archive)
-        return
+        raise ValueError("%s not a neurobank archive. Use '-A' or set NBANK_PATH in environment." %
+                         args.archive)
 
     if args.read_stdin:
         args.file.extend(l.strip() for l in sys.stdin)
 
     if len(args.file) == 0:
-        log.error("error: no files specified")
-        return
+        raise ValueError("no files specified")
 
-    try:
-        meta = json.load(open(args.catalog, 'rU'))
-        if not meta['namespace'] == catalog_ns:
-            raise ValueError("'%s' is not a catalog" % args.catalog)
-        files = { e['id'] : e for e in meta['resources'] }
-        log.info("opened catalog '%s', resource count %d", args.catalog, len(files))
-    except IOError:
-        log.info("catalog '%s' doesn't exist, will be created", args.catalog)
-        files = {}
+    if os.path.exists(args.catalog):
+        raise ValueError("catalog '%s' already exists. Write to a new file, then merge" % args.catalog)
 
+    files = []
     for fname in args.file:
         if not os.path.isfile(fname) and not os.path.isdir(fname):
             log.warn("warning: '%s' is not a file or directory - skipping", fname)
@@ -96,15 +90,7 @@ def store_files(args):
             # with uuids
             raise ValueError("id assigned to '%s' already exists in archive: %s" % (fname, id))
 
-        # add id/name mapping to catalog, skipping if it exists
-        try:
-            if files[id]['name'] != base + ext:
-                log.warn("in %s, '%s' is named '%s', not '%s'; keeping old mapping",
-                         args.catalog, id, files[id]['name'], base + ext)
-            else:
-                log.info("'%s' already in %s", id, args.catalog)
-        except KeyError:
-            files[id] = {'id': id, 'name': base + ext}
+        files.append({'id': id, 'name': base + ext})
 
         if tgt is not None:
             # file was moved to database
@@ -117,9 +103,9 @@ def store_files(args):
         else:
             log.info("'%s' already in archive as '%s'", fname, id)
 
-    json.dump({'namespace': catalog_ns,
+    json.dump({'namespace': cat._ns,
                'version': nbank.fmt_version,
-               'resources': list(files.values()),
+               'resources': files,
                'description': '',
                'long_desc': ''},
               open(args.catalog, 'wt'), indent=2, separators=(',', ': '))
@@ -127,8 +113,6 @@ def store_files(args):
 
 
 def id_by_name(args):
-    import neurobank.catalog as cat
-
     for catalog in cat.iter_catalogs(args.archive, args.catalog):
         for match in cat.filter_regex(catalog['value']['resources'], args.regex, 'name'):
             id = match.get('id', None)
@@ -138,14 +122,55 @@ def id_by_name(args):
 
 
 def props_by_id(args):
-    import pprint
-    import neurobank.catalog as cat
-
     for catalog in cat.iter_catalogs(args.archive, args.catalog):
         for match in cat.filter_regex(catalog['value']['resources'], args.regex, 'id'):
             print("%s:" % catalog['key'])
             sys.stdout.write("  ")
             pprint.pprint(match, indent=2)
+
+
+def merge_cat(args):
+    import shutil
+    if not os.path.exists(args.target):
+        args.target = os.path.join(args.archive, cat._subdir, os.path.basename(args.target))
+
+    if not os.path.exists(args.target):
+        shutil.copy(args.source, args.target)
+        log.info("copied '%s' to '%s'", args.source, args.target)
+        return
+
+    src = json.load(open(args.source, 'rU'))
+    tgt = json.load(open(args.target, 'rU'))
+    if not src['namespace'] == cat._ns:
+        raise ValueError("'%s' is not a catalog" % args.source)
+    if not tgt['namespace'] == cat._ns:
+        raise ValueError("'%s' is not a catalog" % args.target)
+    log.info("appending to '%s', resources=%d", args.target, len(tgt['resources']))
+
+    tgt_res = { r['id'] : r for r in tgt['resources'] }
+    for resource in src['resources']:
+        id = resource['id']
+        if id in tgt_res:
+            if tgt_res[id] == resource:
+                log.info("skipping duplicate '%s'", id)
+                continue
+            log.info("mismatch for id '%s'", id)
+            sys.stdout.write("original:\n  ")
+            pprint.pprint(tgt_res[id], indent=2)
+            sys.stdout.write("new:\n  ")
+            pprint.pprint(resource, indent=2)
+            inpt = None
+            while not args.merge and inpt not in ('y','Y', 'n', 'N', ''):
+                inpt = input("Merge new? (Y/n)? ")
+            if args.merge or inpt in ('y', 'Y', ''):
+                log.info("updated '%s' with new data", id)
+                tgt_res[id].update(resource)
+        else:
+            tgt_res[id] = resource
+
+    tgt['resources'] = list(tgt_res.values())
+    json.dump(tgt, open(args.target, 'wt'), indent=2, separators=(',', ': '))
+    log.info("wrote merged catalog '%s', resources=%d", args.target, len(tgt['resources']))
 
 
 def main(argv=None):
@@ -200,6 +225,15 @@ def main(argv=None):
                           "name. Default is to search all catalogs in the archive.")
         psub.add_argument('regex', help='the string or regular expression to match against')
 
+    p_merge = sub.add_parser('catalog', help="merge catalog into archive metadata")
+    p_merge.set_defaults(func=merge_cat)
+    p_merge.add_argument("-y","--merge", help="merge new data without asking for confirmation",
+                         action="store_true")
+    p_merge.add_argument("source", help="the JSON file to merge into the catalog")
+    p_merge.add_argument("target", help="the target catalog (just the filename). If the "
+                         "file doesn't exist, it's created")
+
+
     args = p.parse_args(argv)
 
     ch = logging.StreamHandler()
@@ -210,10 +244,14 @@ def main(argv=None):
     ch.setFormatter(formatter)
     log.addHandler(ch)
 
-    try:
-        args.func(args)
-    except AttributeError:
+    if not hasattr(args, 'func'):
         p.print_usage()
+    else:
+        try:
+            args.func(args)
+        except Exception as e:
+            log.error("error: %s", e)
+
 
 
 # Variables:

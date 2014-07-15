@@ -42,7 +42,13 @@ nbank deposit dataset.json datafile-1 datafile-2 ...
 
 As with the `register` command, `deposit` will assign a unique identifier to each resource and move the resource. Data resource identifiers are randomly-generated UUIDs, and they are not tied to the contents of the file.
 
-Resources may be directories or files that act as containers (e.g., ARF files, https://github.com/melizalab/arf), in which case you are responsible for assigning identifiers within the container or directory. The `dataset.json` file will contain the mappings from the original names to the new identifiers.
+Resources may be directories or files that act as containers (e.g., ARF files, https://github.com/melizalab/arf), in which case you are responsible for assigning identifiers within the container or directory. The `dataset.json` file will contain the mappings from the original names to the new identifiers. You can edit this file to add additional information about the files or analysis units, and then store it in the archive metadata using the following command:
+
+```bash
+nbank catalog dataset.json target-catalog.json
+```
+
+This command will attempt to find `target-catalog.json` in the archive metadata directory. If it exists, the resources in `dataset.json` will be merged into the file. If there are duplicate identifiers, you'll be asked whether you want to keep the old metadata or merge in the new metadata. If `target-catalog.json` doesn't exist, `dataset.json` is simply copied to the metadata directory. You need to store the catalog in this way in order to use the search functions described in the next section.
 
 You can control how identifiers are generated (for example, to include the original filename or a shared suffix) and other policies for a data archive by editing the `project.json` file.
 
