@@ -171,6 +171,11 @@ def id_stub(id):
     return id[:2] if isinstance(id, str) else None
 
 
+def find_resource(id, archive_path):
+    """Returns path of the resource specified by id"""
+    return os.path.join(archive_path, "resources", id_stub(id), id)
+
+
 def chmod(path, mode):
     """Sets permission bits on path or the contents its subdirectories (if path is a dir)"""
     if os.path.isfile(path):
