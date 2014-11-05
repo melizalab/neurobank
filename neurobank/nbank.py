@@ -165,15 +165,13 @@ def data_id(fname):
 
 
 def id_stub(id):
-    """Returns a short version of id, used for sorting objects into subdirectories.
-
-    """
-    return id[:2] if isinstance(id, str) else None
+    """Returns a short version of id, used for sorting objects into subdirectories. """
+    return id[:2]
 
 
-def find_resource(id, archive_path):
-    """Returns path of the resource specified by id"""
-    return os.path.join(archive_path, "resources", id_stub(id), id)
+def find_resource(id):
+    """Returns path of the resource specified by id, relative to the archive root"""
+    return os.path.join("resources", id_stub(id), id)
 
 
 def chmod(path, mode):
