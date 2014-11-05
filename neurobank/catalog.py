@@ -91,6 +91,12 @@ def merge(source, target, no_confirm=False):
 
     target['resources'] = list(tgt_res.values())
 
+def search_by(archive, key, pattern):
+    """Returns a lazy sequence of objects in archive where key matches pattern"""
+    for catalog in iter_catalogs(archive):
+        for match in filter_regex(catalog['value']['resources'], pattern, key):
+            yield match
+
 
 
 # Variables:
