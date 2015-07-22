@@ -112,8 +112,9 @@ def id_by_name(args):
         for match in cat.filter_regex(catalog['value']['resources'], args.regex, 'name'):
             id = match.get('id', None)
             if args.path:
-                id = os.path.join(args.archive, id)
-            print("%s/%s : %s" % (catalog['key'], match['name'], id))
+                print(os.path.join(args.archive, nbank.find_resource(id)))
+            else:
+                print("%s/%s : %s" % (catalog['key'], match['name'], id))
 
 
 def props_by_id(args):

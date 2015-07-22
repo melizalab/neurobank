@@ -8,7 +8,7 @@ Created Mon Nov 25 08:52:28 2013
 import os
 import json
 
-__version__ = '0.4.2'
+__version__ = '0.4.4'
 env_path = "NBANK_PATH"
 fmt_version = "1.0"
 
