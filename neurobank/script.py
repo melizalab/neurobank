@@ -103,12 +103,7 @@ def store_files(args):
         else:
             log.info("'%s' already in archive as '%s'", fname, id)
 
-    json.dump({'namespace': cat._ns,
-               'version': nbank.fmt_version,
-               'resources': files,
-               'description': '',
-               'long_desc': ''},
-              open(args.catalog, 'wt'), indent=2, separators=(',', ': '))
+    json.dump(cat.new(files), open(args.catalog, 'wt'), indent=2, separators=(',', ': '))
     log.info("wrote resource catalog to '%s'", args.catalog)
 
 
@@ -130,45 +125,25 @@ def props_by_id(args):
 
 
 def merge_cat(args):
-    import shutil
     if not os.path.exists(args.target):
         args.target = os.path.join(args.archive, cat._subdir, os.path.basename(args.target))
 
     if not os.path.exists(args.target):
-        shutil.copy(args.source, args.target)
-        log.info("copied '%s' to '%s'", args.source, args.target)
-        return
-
-    src = json.load(open(args.source, 'rU'))
-    tgt = json.load(open(args.target, 'rU'))
-    if not src['namespace'] == cat._ns:
-        raise ValueError("'%s' is not a catalog" % args.source)
-    if not tgt['namespace'] == cat._ns:
-        raise ValueError("'%s' is not a catalog" % args.target)
+        tgt = cat.new()
+    else:
+        tgt = json.load(open(args.target, 'rU'))
+        if not tgt['namespace'] == cat._ns:
+            raise ValueError("'%s' is not a catalog" % args.target)
     log.info("appending to '%s', resources=%d", args.target, len(tgt['resources']))
 
-    tgt_res = { r['id'] : r for r in tgt['resources'] }
-    for resource in src['resources']:
-        id = resource['id']
-        if id in tgt_res:
-            if tgt_res[id] == resource:
-                log.info("skipping duplicate '%s'", id)
-                continue
-            log.info("mismatch for id '%s'", id)
-            sys.stdout.write("original:\n  ")
-            pprint.pprint(tgt_res[id], indent=2)
-            sys.stdout.write("new:\n  ")
-            pprint.pprint(resource, indent=2)
-            inpt = None
-            while not args.merge and inpt not in ('y','Y', 'n', 'N', ''):
-                inpt = input("Merge new? (Y/n)? ")
-            if args.merge or inpt in ('y', 'Y', ''):
-                log.info("updated '%s' with new data", id)
-                tgt_res[id].update(resource)
-        else:
-            tgt_res[id] = resource
+    for source in args.source:
+        src = json.load(open(source, 'rU'))
+        if not src['namespace'] == cat._ns:
+            log.error("'%s' is not a catalog; skipping" % source)
+            continue
+        log.info("reading from '%s', resources=%d", source, len(src['resources']))
+        cat.merge(src, tgt, args.no_confirm)
 
-    tgt['resources'] = list(tgt_res.values())
     json.dump(tgt, open(args.target, 'wt'), indent=2, separators=(',', ': '))
     log.info("wrote merged catalog '%s', resources=%d", args.target, len(tgt['resources']))
 
@@ -227,9 +202,9 @@ def main(argv=None):
 
     p_merge = sub.add_parser('catalog', help="merge catalog into archive metadata")
     p_merge.set_defaults(func=merge_cat)
-    p_merge.add_argument("-y","--merge", help="merge new data without asking for confirmation",
+    p_merge.add_argument("-y","--no-confirm", help="merge new data without asking for confirmation",
                          action="store_true")
-    p_merge.add_argument("source", help="the JSON file to merge into the catalog")
+    p_merge.add_argument("source", help="the JSON file to merge into the catalog", nargs='+')
     p_merge.add_argument("target", help="the target catalog (just the filename). If the "
                          "file doesn't exist, it's created")
 

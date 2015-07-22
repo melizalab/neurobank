@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # -*- mode: python -*-
-"""Functions for searching metadata catalogs
+"""Functions for interacting with metadata catalogs
 
 Copyright (C) 2014 Dan Meliza <dmeliza@gmail.com>
 Created Thu May  8 11:23:36 2014
@@ -11,10 +11,23 @@ from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import division
 from __future__ import unicode_literals
+import sys
+import pprint
 
 _ns = "neurobank.catalog"
 _subdir = 'metadata'
 
+from neurobank.nbank import fmt_version
+
+import logging
+log = logging.getLogger("nbank")
+
+def new(resources=[]):
+    return {'namespace': _ns,
+            'version': fmt_version,
+            'resources': resources,
+            'description': '',
+            'long_desc': ''}
 
 def filter_regex(arr, regex, key):
     """Returns a lazy sequence of objects in arr where 'key' field matches 'regex'
@@ -51,6 +64,32 @@ def iter_catalogs(archive, files=None):
             except (ValueError, KeyError):
                 pass
 
+def merge(source, target, no_confirm=False):
+    """ Merge source metadata dictionary into target """
+
+    tgt_res = { r['id'] : r for r in target['resources'] }
+    for resource in source['resources']:
+        id = resource['id']
+        if id in tgt_res:
+            if tgt_res[id] == resource:
+                log.info("no changes for id '%s'", id)
+                continue
+            log.info("mismatch for id '%s'", id)
+            sys.stdout.write("original:\n  ")
+            pprint.pprint(tgt_res[id], indent=2)
+            sys.stdout.write("new:\n  ")
+            pprint.pprint(resource, indent=2)
+            inpt = None
+            while not no_confirm and inpt not in ('y','Y', 'n', 'N', ''):
+                inpt = input("Merge new? (Y/n)? ")
+                if no_confirm or inpt in ('y', 'Y', ''):
+                    log.info("updated '%s' with new data", id)
+                    tgt_res[id].update(resource)
+        else:
+            log.info("adding id '%s'", id)
+            tgt_res[id] = resource
+
+    target['resources'] = list(tgt_res.values())
 
 
 

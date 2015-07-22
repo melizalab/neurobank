@@ -18,7 +18,7 @@ import sys
 
 # --- Distutils setup and metadata --------------------------------------------
 
-VERSION = '0.4.1-SNAPSHOT'
+VERSION = '0.4.2'
 
 cls_txt = """
 Development Status :: 5 - Production/Stable
