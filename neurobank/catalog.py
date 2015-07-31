@@ -64,6 +64,11 @@ def iter_catalogs(archive, files=None):
             except (ValueError, KeyError):
                 pass
 
+def find_by_name(archive, regex, catalogs=None):
+    for catalog in iter_catalogs(archive, catalogs):
+        for match in filter_regex(catalog['value']['resources'], regex, 'name'):
+            yield (catalog['key'], match)
+
 def merge(source, target, no_confirm=False):
     """ Merge source metadata dictionary into target """
 

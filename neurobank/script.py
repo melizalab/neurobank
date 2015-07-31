@@ -108,13 +108,12 @@ def store_files(args):
 
 
 def id_by_name(args):
-    for catalog in cat.iter_catalogs(args.archive, args.catalog):
-        for match in cat.filter_regex(catalog['value']['resources'], args.regex, 'name'):
-            id = match.get('id', None)
-            if args.path:
-                print(os.path.join(args.archive, nbank.find_resource(id)))
-            else:
-                print("%s/%s : %s" % (catalog['key'], match['name'], id))
+    for catalog, match in cat.find_by_name(args.archive, args.regex, args.catalog):
+        id = match.get('id', None)
+        if args.path:
+            print(os.path.join(args.archive, nbank.find_resource(id)))
+        else:
+            print("%s/%s : %s" % (catalog, match['name'], id))
 
 
 def props_by_id(args):
@@ -226,6 +225,7 @@ def main(argv=None):
         try:
             args.func(args)
         except Exception as e:
+            raise
             log.error("error: %s", e)
 
 
