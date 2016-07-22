@@ -8,7 +8,7 @@ Created Mon Nov 25 08:52:28 2013
 import os
 import json
 
-__version__ = '0.4.6'
+__version__ = '0.4.7'
 env_path = "NBANK_PATH"
 fmt_version = "1.0"
 
@@ -19,8 +19,8 @@ _config_ns = 'neurobank.config'
 _resource_subdir = "resources"
 
 _README = """
-This directory contains a neurobank data management archive. The following
-files and directories are part of the archive:
+This directory contains a [neurobank](https://github.com/melizalab/neurobank)
+data management archive. The following files and directories are part of the archive:
 
 + README.md: this file
 + project.json: information and configuration for the archive
@@ -37,6 +37,17 @@ https://github.com/melizalab/neurobank
 
 Add notes about the contents of the data archive here. You should also edit
 `project.json` to set information and policy for your project.
+
+# Quick reference
+
+Register source files: `nbank register sourceset.json file-1 [file-2 [file-3]]`
+Deposit data: `nbank deposit dataset.json file-1 [file-2 [file-3]]`
+Add/update catalog: `nbank catalog data-or-sourceset.json target-catalog.json`
+
+Registered or deposited files are given the permissions specified in `project.json`.
+However, when entire directories are deposited, ownership and access may not be set correctly.
+If you have issues accessing files, run the following commands (usually, as root):
+`find resources -type d -exec chmod 2770 {} \+` and `setfacl -R -d -m u::rwx,g::rwx,o::- resources`
 
 """
 
