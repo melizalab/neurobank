@@ -8,7 +8,7 @@ Created Mon Nov 25 08:43:19 2013
 from __future__ import absolute_import
 
 from neurobank.nbank import env_path, fmt_version, get_config, __version__, find_resource
-from neurobank.catalog import new, merge, find_by_name
+from neurobank.catalog import new, merge, find_by_name, find_by_id
 
 # Variables:
 # End:

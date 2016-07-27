@@ -32,7 +32,7 @@ def new(resources=[]):
 def filter_regex(arr, regex, key):
     """Returns a lazy sequence of objects in arr where 'key' field matches 'regex'
 
-    Equivalent to (x for x in arr if regex.match(o['key']))
+    Equivalent to (x for x in arr if regex.match(x[key]))
 
     regex - can be a compiled regular expression or a raw string
     """
@@ -64,10 +64,18 @@ def iter_catalogs(archive, files=None):
             except (ValueError, KeyError):
                 pass
 
+
 def find_by_name(archive, regex, catalogs=None):
     for catalog in iter_catalogs(archive, catalogs):
         for match in filter_regex(catalog['value']['resources'], regex, 'name'):
             yield (catalog['key'], match)
+
+
+def find_by_id(archive, regex, catalogs=None):
+    for catalog in iter_catalogs(archive, catalogs):
+        for match in filter_regex(catalog['value']['resources'], regex, 'id'):
+            yield (catalog['key'], match)
+
 
 def merge(source, target, no_confirm=False):
     """ Merge source metadata dictionary into target """
@@ -95,6 +103,7 @@ def merge(source, target, no_confirm=False):
             tgt_res[id] = resource
 
     target['resources'] = list(tgt_res.values())
+
 
 def search_by(archive, key, pattern):
     """Returns a lazy sequence of objects in archive where key matches pattern"""
