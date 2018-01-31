@@ -2,17 +2,17 @@
 # -*- coding: utf-8 -*-
 # -*- mode: python -*-
 import sys
-if sys.hexversion < 0x02060000:
-    raise RuntimeError("Python 2.6 or higher required")
 from setuptools import setup, find_packages
 
+if sys.hexversion < 0x02060000:
+    raise RuntimeError("Python 2.6 or higher required")
 
 # --- Distutils setup and metadata --------------------------------------------
 
-VERSION = '0.5.0'
+VERSION = '0.7.0'
 
 cls_txt = """
-Development Status :: 5 - Production/Stable
+Development Status :: 4 - Beta
 Intended Audience :: Science/Research
 License :: OSI Approved :: GNU General Public License (GPL)
 Programming Language :: Python
@@ -30,7 +30,7 @@ data. It helps you generate unique identifiers for stimuli, protocols, and
 recording units. No more guessing what version of a stimulus you presented in an
 experiment, where you stored an important recording, and whether you've backed
 it all up yet. Your files are stored in a single directory hierarchy, and you
-get nice, human-readable, JSON-based metadata files to organize your records and
+get nice, human-readable, JSON-based metadata to organize your records and
 analysis workflows.
 
 """
@@ -46,14 +46,14 @@ setup(
     long_description=long_desc,
     classifiers=[x for x in cls_txt.split("\n") if x],
     author='Dan Meliza',
-    author_email='"dan" at the domain "meliza.org"',
+    author_email="dan@meliza.org",
     maintainer='Dan Meliza',
-    maintainer_email='"dan" at the domain "meliza.org"',
+    maintainer_email="dan@meliza.org",
     url="https://github.com/melizalab/neurobank",
 
     packages=find_packages(exclude=["*test*"]),
 
-    entry_points={'console_scripts': ['nbank = neurobank.script:main'] },
+    entry_points={'console_scripts': ['nbank = nbank.script:main'] },
 
     install_requires=requirements,
     test_suite='nose.collector'
