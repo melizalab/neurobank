@@ -5,3 +5,4 @@
 *.pyc
 *.so
 /examples/
+venv/
