@@ -15,6 +15,7 @@ _README_fname = 'README.md'
 _config_fname = 'nbank.json'
 _config_schema = 'https://melizalab.github.io/neurobank/config.json#'
 _resource_subdir = "resources"
+_default_umask = 0o027
 
 _README = """
 This directory contains a [neurobank](https://github.com/melizalab/neurobank)
@@ -47,7 +48,7 @@ If you have issues accessing files, run the following commands (usually, as root
 """
 
 _nbank_json = """{
-  "$schema": "{schema}",
+  "$schema": "%(schema)s",
   "project": {
     "name": null,
     "description": null
@@ -62,9 +63,9 @@ _nbank_json = """{
     "keep_extensions": true,
     "allow_directories": false,
     "access": {
-      "user": {user},
-      "group": {group},
-      "umask": "027"
+      "user": "%(user)s",
+      "group": "%(group)s",
+      "umask": "%(umask)o"
     }
   }
 }
@@ -78,12 +79,14 @@ def get_config(path):
     """
     fname = os.path.join(path, _config_fname)
     if os.path.exists(fname):
-        ret = json.load(open(fname, 'rt'))
-        ret["path"] = path
-        return ret
+        with open(fname, 'rt') as fp:
+            ret = json.load(fp)
+            ret['policy']['access']['umask'] = int(ret['policy']['access']['umask'], 8)
+            ret["path"] = path
+            return ret
 
 
-def create(archive_path):
+def create(archive_path, umask=_default_umask):
     """Initializes a new data archive in archive_path.
 
     Creates archive_path and all parents as needed. Does not overwrite existing
@@ -94,34 +97,44 @@ def create(archive_path):
     import grp
     import subprocess
 
+    umask &= 0o777  # mask out the umask
+
     resdir = os.path.join(archive_path, _resource_subdir)
     dircmd = ['mkdir', '-p', resdir]
     ret = subprocess.call(dircmd) # don't expand shell variables/globs
     if ret != 0:
         raise OSError("unable to create archive directories")
+    os.chmod(archive_path, 0o777 & ~umask)
     # try to set setgid bit on directory; this fails in some cases
-    os.chmod(resdir, 0o2775)
+    os.chmod(resdir, 0o2777 & ~umask)
+
     # try to set default facl; fail silently if setfacl doesn't exist
     faclcmd = "setfacl -d -m -u::rwx,g::rwx,o::- resources".split()
-    ret = subprocess.call(faclcmd)
+    try:
+        ret = subprocess.call(faclcmd)
+    except FileNotFoundError:
+        log.debug("setfacl does not exist on this platform")
 
     fname = os.path.join(archive_path, _README_fname)
     if not os.path.exists(fname):
         with open(fname, 'wt') as fp:
             fp.write(_README)
+    os.chmod(fname, 0o666 & ~umask)
 
     user = pwd.getpwuid(os.getuid())
     group = grp.getgrgid(os.getgid())
-    project_json = _nbank_json.format(schema=_config_schema, user=user.pw_name, group=group.gr_name)
+    project_json = _nbank_json % dict(schema=_config_schema, user=user.pw_name, group=group.gr_name, umask=umask)
     fname = os.path.join(archive_path, _config_fname)
     if not os.path.exists(fname):
         with open(fname, 'wt') as fp:
             fp.write(project_json)
+    os.chmod(fname, 0o666 & ~umask)
 
     fname = os.path.join(archive_path, '.gitignore')
     if not os.path.exists(fname):
         with open(fname, 'wt') as fp:
             fp.writelines(('resources/',))
+    os.chmod(fname, 0o666 & ~umask)
 
 
 def id_stub(id):
@@ -157,11 +170,15 @@ def store_resource(cfg, src, id=None):
     violates the archive policies on directories. Extensions are stripped or
     added to filenames according to policy.
 
+    NB: the policy on disk can always be overridden by modifying the config
+    dictionary. This avoids reading and parsing the file repeatedly, but could be
+    exploited by a malicious caller.
+
     """
     import shutil
 
     if not cfg['policy']['allow_directories'] and os.path.isdir(src):
-        raise ValueError("this archive does not allow directories as resources")
+        raise TypeError("this archive does not allow directories as resources")
 
     if id is None:
         id = os.path.basename(src)
@@ -181,13 +198,14 @@ def store_resource(cfg, src, id=None):
     # execute commands in this order to prevent data loss; source file is not
     # renamed unless it's copied
     if not os.path.exists(tgt_dir):
-        os.mkdir(tgt)
+        os.mkdir(tgt_dir)
+        fix_permissions(cfg, tgt_dir, walk=False)
     shutil.move(src, tgt_file)
-    chmod(tgt_file, mode)
+    fix_permissions(cfg, tgt_file)
     return tgt_file
 
 
-def fix_permissions(cfg, id):
+def fix_permissions(cfg, tgt, walk=True):
     """Fixes permission bits on resource and its contents, if the resource is a dir
 
     This is needed because we try to move files whenever possible, so the uid,
@@ -197,14 +215,17 @@ def fix_permissions(cfg, id):
     import pwd
     import grp
 
-    if os.path.isfile(path):
-        os.chmod(path, mode)
-    elif os.path.isdir(path):
-        assert mode < 0o1000, "invalid permissions mode"
-        dirmode = (mode >> 2) | mode
-        os.chmod(path, dirmode)
-        for root, dirs, files in os.walk(path):
-            for dir in dirs:
-                os.chmod(os.path.join(root, dir), dirmode)
-            for file in files:
-                os.chmod(os.path.join(root, file), mode)
+    uid = pwd.getpwnam(cfg['policy']['access']['user']).pw_uid
+    gid = grp.getgrnam(cfg['policy']['access']['group']).gr_gid
+    umask = cfg['policy']['access']['umask']
+
+    def fix(fname):
+        os.chown(fname, uid, gid)
+        os.chmod(fname, os.stat(fname).st_mode & ~umask)
+
+    fix(tgt)
+    for root, dirs, files in os.walk(tgt):
+        for dir in dirs:
+            fix(os.path.join(root, dir))
+        for file in files:
+            fix(os.path.join(root, file))
