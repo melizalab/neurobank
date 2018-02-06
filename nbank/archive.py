@@ -57,7 +57,7 @@ _nbank_json = """{
     "name": null,
     "email": null
   },
-  "registry": "url_of_registry_endpoint",
+  "registry": "%(registry_url)s",
   "policy": {
     "auto_identifiers": false,
     "keep_extensions": true,
@@ -65,7 +65,7 @@ _nbank_json = """{
     "access": {
       "user": "%(user)s",
       "group": "%(group)s",
-      "umask": "%(umask)o"
+      "umask": "%(umask)03o"
     }
   }
 }
@@ -86,8 +86,12 @@ def get_config(path):
             return ret
 
 
-def create(archive_path, umask=_default_umask):
+def create(archive_path, registry_url, umask=_default_umask):
     """Initializes a new data archive in archive_path.
+
+    archive_path: the absolute or relative path of the archive
+    registry_url: the URL of the registry service
+    umask: the default umask (as an integer)
 
     Creates archive_path and all parents as needed. Does not overwrite existing
     files or directories. Raises OSError for failed operations.
@@ -123,7 +127,8 @@ def create(archive_path, umask=_default_umask):
 
     user = pwd.getpwuid(os.getuid())
     group = grp.getgrgid(os.getgid())
-    project_json = _nbank_json % dict(schema=_config_schema, user=user.pw_name, group=group.gr_name, umask=umask)
+    project_json = _nbank_json % dict(schema=_config_schema, registry_url=registry_url,
+                                      user=user.pw_name, group=group.gr_name, umask=umask)
     fname = os.path.join(archive_path, _config_fname)
     if not os.path.exists(fname):
         with open(fname, 'wt') as fp:

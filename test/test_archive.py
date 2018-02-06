@@ -21,7 +21,7 @@ class ArchiveTestBase(TestCase):
         self.tmpd = tempfile.mkdtemp()
         self.root = os.path.join(self.tmpd, "archive")
         # create archive
-        archive.create(self.root)
+        archive.create(self.root, "https://localhost:8000/neurobank")
 
     def tearDown(self):
         super(ArchiveTestBase, self).tearDown()

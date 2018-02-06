@@ -21,18 +21,12 @@ import json
 import datetime
 import logging
 import pprint
+import requests as rq
 
-from neurobank import nbank, util
-import neurobank.catalog as cat
+import nbank
+from nbank import archive, registry
 
 log = logging.getLogger('nbank')   # root logger
-
-
-def init_archive(args):
-    log.info("version: %s", nbank.__version__)
-    log.info("run time: %s", datetime.datetime.now())
-    nbank.init_archive(args.directory)
-    log.info("Initialized neurobank archive in %s", os.path.abspath(args.directory))
 
 
 def store_files(args):
@@ -148,66 +142,86 @@ def merge_cat(args):
     log.info("wrote merged catalog '%s', resources=%d", args.target, len(tgt['resources']))
 
 
+def userpwd(arg):
+    """ If arg is of the form username:password, returns them as a tuple. Otherwise None. """
+    ret = arg.split(':')
+    return tuple(ret) if len(ret) == 2 else None
+
+
+def octalint(arg):
+    return int(arg, base=8)
+
+
 def main(argv=None):
     import argparse
 
     p = argparse.ArgumentParser(description='manage source files and collected data')
     p.add_argument('-v','--version', action="version",
                    version="%(prog)s " + nbank.__version__)
-    p.add_argument('-A', '--archive', default=os.environ.get(nbank.env_path, '.'),
-                   type=os.path.abspath,
-                   help="specify the path of the archive. Default is to use the "
-                   "current directory or the value of the environment variable "
-                   "%s" % nbank.env_path)
+    # p.add_argument('-A', dest='archive', default=os.environ.get(nbank.env_path, '.'),
+    #                type=os.path.abspath,
+    #                help="specify the path of the archive. Default is to use the "
+    #                "current directory or the value of the environment variable "
+    #                "%s" % nbank.env_path)
 
     sub = p.add_subparsers(title='subcommands')
 
     p_init = sub.add_parser('init', help='initialize a data archive')
     p_init.add_argument('directory',
-                        help="path of the (possibly non-existent) directory "
-                        "for the archive. If the directory does not exist it's created. "
-                        " Does not overwrite any files or directories.")
+                        help="path of the directory "
+                        "for the archive. The directory must be empty or not exist. ")
+    p_init.add_argument('registry_url',
+                        help="URL of the registry service")
+    p_init.add_argument('-a', dest='auth', help="username:password to authenticate with registry. "
+                        "If not supplied, will attempt to use .netrc file",
+                        type=userpwd, default=None)
+    p_init.add_argument('-n', dest='name', help="name to give the archive in the registry. "
+                        "The default is to use the directory name of the archive.",
+                        default=None)
+    p_init.add_argument('-u', dest='umask', help="umask for newly created files in archive, "
+                        "as an octal. The default is %(default)03o.",
+                        type=octalint, default=archive._default_umask)
+
     p_init.set_defaults(func=init_archive)
 
-    p_reg = sub.add_parser('register', help='register source file(s)')
-    p_reg.set_defaults(func=store_files, target='sources', func_id=nbank.source_id)
-    p_dep = sub.add_parser('deposit', help='deposit data file(s)')
-    p_dep.set_defaults(func=store_files, target='data', func_id=nbank.data_id)
+    # p_reg = sub.add_parser('register', help='register source file(s)')
+    # p_reg.set_defaults(func=store_files, target='sources', func_id=nbank.source_id)
+    # p_dep = sub.add_parser('deposit', help='deposit data file(s)')
+    # p_dep.set_defaults(func=store_files, target='data', func_id=nbank.data_id)
 
-    for psub in (p_reg, p_dep):
-        psub.add_argument('--suffix',
-                           help='add a constant suffix to the generated identifiers')
-        psub.add_argument('--link', action='store_true',
-                           help="make links to archived files")
-        psub.add_argument('catalog',
-                           help="specify a file to store name-id mappings in JSON format. "
-                           "If the file exists, new source files are added to it." )
-        psub.add_argument('file', nargs='*',
-                           help='path of file(s) to add to the repository')
-        psub.add_argument('-@', dest="read_stdin", action='store_true',
-                           help="read additional file names from stdin")
+    # for psub in (p_reg, p_dep):
+    #     psub.add_argument('--suffix',
+    #                        help='add a constant suffix to the generated identifiers')
+    #     psub.add_argument('--link', action='store_true',
+    #                        help="make links to archived files")
+    #     psub.add_argument('catalog',
+    #                        help="specify a file to store name-id mappings in JSON format. "
+    #                        "If the file exists, new source files are added to it." )
+    #     psub.add_argument('file', nargs='*',
+    #                        help='path of file(s) to add to the repository')
+    #     psub.add_argument('-@', dest="read_stdin", action='store_true',
+    #                        help="read additional file names from stdin")
 
-    p_id = sub.add_parser('search', help='look up name in catalog(s) and return identifiers')
-    p_id.add_argument('-p','--path', action="store_true",
-                      help="show full paths of resource files")
-    p_id.set_defaults(func=id_by_name)
+    # p_id = sub.add_parser('search', help='look up name in catalog(s) and return identifiers')
+    # p_id.add_argument('-p','--path', action="store_true",
+    #                   help="show full paths of resource files")
+    # p_id.set_defaults(func=id_by_name)
 
-    p_props = sub.add_parser('prop', help='look up properties in catalog(s) by id')
-    p_props.set_defaults(func=props_by_id)
-    for psub in (p_id, p_props):
-        psub.add_argument('-c', '--catalog', action='append', default=None,
-                          help="specify one or more metadata catalogs to search for the "
-                          "name. Default is to search all catalogs in the archive.")
-        psub.add_argument('regex', help='the string or regular expression to match against')
+    # p_props = sub.add_parser('prop', help='look up properties in catalog(s) by id')
+    # p_props.set_defaults(func=props_by_id)
+    # for psub in (p_id, p_props):
+    #     psub.add_argument('-c', '--catalog', action='append', default=None,
+    #                       help="specify one or more metadata catalogs to search for the "
+    #                       "name. Default is to search all catalogs in the archive.")
+    #     psub.add_argument('regex', help='the string or regular expression to match against')
 
-    p_merge = sub.add_parser('catalog', help="merge catalog into archive metadata")
-    p_merge.set_defaults(func=merge_cat)
-    p_merge.add_argument("-y","--no-confirm", help="merge new data without asking for confirmation",
-                         action="store_true")
-    p_merge.add_argument("source", help="the JSON file to merge into the catalog", nargs='+')
-    p_merge.add_argument("target", help="the target catalog (just the filename). If the "
-                         "file doesn't exist, it's created")
-
+    # p_merge = sub.add_parser('catalog', help="merge catalog into archive metadata")
+    # p_merge.set_defaults(func=merge_cat)
+    # p_merge.add_argument("-y","--no-confirm", help="merge new data without asking for confirmation",
+    #                      action="store_true")
+    # p_merge.add_argument("source", help="the JSON file to merge into the catalog", nargs='+')
+    # p_merge.add_argument("target", help="the target catalog (just the filename). If the "
+    #                      "file doesn't exist, it's created")
 
     args = p.parse_args(argv)
 
@@ -221,13 +235,35 @@ def main(argv=None):
 
     if not hasattr(args, 'func'):
         p.print_usage()
-    else:
-        try:
-            args.func(args)
-        except Exception as e:
-            raise
-            log.error("error: %s", e)
+        return 0
 
+    # do the error handling here because a lot of it is common
+    try:
+        args.func(args)
+    except rq.exceptions.ConnectionError as e:
+        log.error("ERROR: unable to contact registry server at %s", args.registry_url)
+    except rq.exceptions.HTTPError as e:
+        if e.response.status_code == 403:
+            log.error("ERROR: unable to authenticate access to %s", args.registry_url)
+        elif e.response.status_code == 400:
+            log.error("ERROR: bad request to registry: %s", pprint.pformat(e.response.json(), indent=2))
+        else:
+            log.error("ERROR: %s", e)
+
+
+
+def init_archive(args):
+    log.info("version: %s", nbank.__version__)
+    log.info("run time: %s", datetime.datetime.now())
+    args.directory = os.path.abspath(args.directory)
+    if args.name is None:
+        args.name = os.path.basename(args.directory)
+
+    registry.add_domain(args.registry_url, args.name, registry._neurobank_scheme, args.directory,
+                        args.auth)
+    log.info("registered '%s' as domain '%s'", args.directory, args.name)
+    archive.create(args.directory, args.registry_url, args.umask)
+    log.info("initialized neurobank archive in %s", args.directory)
 
 
 # Variables:

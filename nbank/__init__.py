@@ -7,6 +7,9 @@ Created Mon Nov 25 08:43:19 2013
 """
 from __future__ import absolute_import
 
+__version__ = '0.7.0'
+env_path = "NBANK_PATH"
+
 #from nbank.core import env_path, fmt_version, get_config, __version__, find_resource
 #from nbank.catalog import new, merge, find_by_name, find_by_id
 
