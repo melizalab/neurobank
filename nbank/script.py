@@ -21,6 +21,7 @@ import json
 import datetime
 import logging
 import pprint
+import argparse
 import requests as rq
 
 import nbank
@@ -152,8 +153,22 @@ def octalint(arg):
     return int(arg, base=8)
 
 
+class ParseKeyVal(argparse.Action):
+
+    def __call__(self, parser, namespace, arg, option_string=None):
+        kv = getattr(namespace, self.dest)
+        if kv is None:
+            kv = dict()
+        if not arg.count('=') == 1:
+            raise ValueError(
+                "-k %s argument badly formed; needs key=value" % arg)
+        else:
+            key, val = arg.split('=')
+            kv[key] = val
+        setattr(namespace, self.dest, kv)
+
+
 def main(argv=None):
-    import argparse
 
     p = argparse.ArgumentParser(description='manage source files and collected data')
     p.add_argument('-v','--version', action="version",
@@ -166,41 +181,46 @@ def main(argv=None):
 
     sub = p.add_subparsers(title='subcommands')
 
-    p_init = sub.add_parser('init', help='initialize a data archive')
-    p_init.add_argument('directory',
-                        help="path of the directory "
-                        "for the archive. The directory must be empty or not exist. ")
-    p_init.add_argument('registry_url',
-                        help="URL of the registry service")
-    p_init.add_argument('-a', dest='auth', help="username:password to authenticate with registry. "
+    pp = sub.add_parser('init', help='initialize a data archive')
+    pp.add_argument('directory',
+                        help="path of the directory for the archive. "
+                        "The directory should be empty or not exist. ")
+    pp.add_argument('-r', dest='registry_url', help="URL of the registry service. "
+                    "Default is to use the environment variable '%s'" % nbank.env_registry,
+                    default=os.environ.get(nbank.env_registry, None))
+    pp.add_argument('-a', dest='auth', help="username:password to authenticate with registry. "
                         "If not supplied, will attempt to use .netrc file",
                         type=userpwd, default=None)
-    p_init.add_argument('-n', dest='name', help="name to give the archive in the registry. "
+    pp.add_argument('-n', dest='name', help="name to give the archive in the registry. "
                         "The default is to use the directory name of the archive.",
                         default=None)
-    p_init.add_argument('-u', dest='umask', help="umask for newly created files in archive, "
+    pp.add_argument('-u', dest='umask', help="umask for newly created files in archive, "
                         "as an octal. The default is %(default)03o.",
                         type=octalint, default=archive._default_umask)
+    pp.set_defaults(func=init_archive)
 
-    p_init.set_defaults(func=init_archive)
+    pp = sub.add_parser('deposit', help='deposit resource(s)')
+    pp.add_argument('directory', help="path of the archive ")
+    pp.add_argument('-a', dest='auth', help="username:password to authenticate with registry. "
+                        "If not supplied, will attempt to use .netrc file",
+                        type=userpwd, default=None)
+    pp.add_argument('-d','--dtype', help="specify the datatype for the deposited resources")
+    pp.add_argument('-H','--hash', action="store_true",
+                    help="calculate a SHA1 hash of each file and store in the registry")
+    pp.add_argument('-A','--auto-id', action="store_true",
+                    help="ask the registry to generate an id for each resource")
+    pp.add_argument('-s','--symlink', action="store_true",
+                    help="make a symbolic link to the archived resource")
+    pp.add_argument('-k', help="specify metadata field (use multiple -k for multiple values",
+                    action=ParseKeyVal, default=dict(), metavar="KEY=VALUE", dest='metadata')
+    pp.add_argument('-j', "--json-out", action="store_true",
+                    help="output each deposited file to stdout as line-deliminated JSON")
+    pp.add_argument('-@', dest="read_stdin", action='store_true',
+                       help="read additional file names from stdin")
+    pp.add_argument('file', nargs='*',
+                       help='path of file(s) to add to the repository')
+    pp.set_defaults(func=store_resources)
 
-    # p_reg = sub.add_parser('register', help='register source file(s)')
-    # p_reg.set_defaults(func=store_files, target='sources', func_id=nbank.source_id)
-    # p_dep = sub.add_parser('deposit', help='deposit data file(s)')
-    # p_dep.set_defaults(func=store_files, target='data', func_id=nbank.data_id)
-
-    # for psub in (p_reg, p_dep):
-    #     psub.add_argument('--suffix',
-    #                        help='add a constant suffix to the generated identifiers')
-    #     psub.add_argument('--link', action='store_true',
-    #                        help="make links to archived files")
-    #     psub.add_argument('catalog',
-    #                        help="specify a file to store name-id mappings in JSON format. "
-    #                        "If the file exists, new source files are added to it." )
-    #     psub.add_argument('file', nargs='*',
-    #                        help='path of file(s) to add to the repository')
-    #     psub.add_argument('-@', dest="read_stdin", action='store_true',
-    #                        help="read additional file names from stdin")
 
     # p_id = sub.add_parser('search', help='look up name in catalog(s) and return identifiers')
     # p_id.add_argument('-p','--path', action="store_true",
@@ -223,6 +243,7 @@ def main(argv=None):
     # p_merge.add_argument("target", help="the target catalog (just the filename). If the "
     #                      "file doesn't exist, it's created")
 
+
     args = p.parse_args(argv)
 
     ch = logging.StreamHandler()
@@ -237,19 +258,20 @@ def main(argv=None):
         p.print_usage()
         return 0
 
-    # do the error handling here because a lot of it is common
+    # some of the error handling is common; sub-funcs should only catch specific errors
     try:
         args.func(args)
     except rq.exceptions.ConnectionError as e:
-        log.error("ERROR: unable to contact registry server at %s", args.registry_url)
+        log.error("registry error: unable to contact server")
     except rq.exceptions.HTTPError as e:
         if e.response.status_code == 403:
-            log.error("ERROR: unable to authenticate access to %s", args.registry_url)
-        elif e.response.status_code == 400:
-            log.error("ERROR: bad request to registry: %s", pprint.pformat(e.response.json(), indent=2))
+            log.error("registry error: authenticate required with '-a username:password' or .netrc file")
         else:
-            log.error("ERROR: %s", e)
-
+            log.error("internal registry error:")
+            raise e
+    except RuntimeError as e:
+        log.error("MAJOR ERROR: archive may have become corrupted")
+        raise e
 
 
 def init_archive(args):
@@ -259,12 +281,41 @@ def init_archive(args):
     if args.name is None:
         args.name = os.path.basename(args.directory)
 
-    registry.add_domain(args.registry_url, args.name, registry._neurobank_scheme, args.directory,
-                        args.auth)
-    log.info("registered '%s' as domain '%s'", args.directory, args.name)
-    archive.create(args.directory, args.registry_url, args.umask)
-    log.info("initialized neurobank archive in %s", args.directory)
+    if args.registry_url is None:
+        log.error("error: supply a registry url with '-r' or %s environment variable", nbank.env_registry)
+        return
 
+    try:
+        registry.add_domain(args.registry_url, args.name, registry._neurobank_scheme,
+                            args.directory, args.auth)
+    except rq.exceptions.HTTPError as e:
+        # bad request means the domain name is taken or badly formed
+        if e.response.status_code == 400:
+            log.error("unable to create domain. Name must match [0-9a-zA-Z_-]+, and name and path must be unique")
+        else:
+            raise e
+    else:
+        log.info("registered '%s' as domain '%s'", args.directory, args.name)
+        archive.create(args.directory, args.registry_url, args.umask)
+        log.info("initialized neurobank archive in %s", args.directory)
+
+
+def store_resources(args):
+    from nbank.core import deposit
+    log.info("version: %s", nbank.__version__)
+    log.info("run time: %s", datetime.datetime.now())
+    try:
+        deposit(args.directory, args.file, dtype=args.dtype, hash=args.hash, auto_id=args.auto_id,
+                auth=args.auth, stdout=args.json_out, **args.metadata)
+    except rq.exceptions.HTTPError as e:
+        # bad request means the domain name is taken or badly formed
+        if e.response.status_code == 400:
+            data = e.response.json()
+            for k, v in data.items():
+                for vv in v:
+                    log.error("   error: %s", vv)
+        else:
+            raise e
 
 # Variables:
 # End:

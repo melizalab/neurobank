@@ -31,20 +31,51 @@ def json(url, **params):
 
 
 def get_datatypes(base_url):
-    """ Return a list of known content types and their names """
+    """ Return a list of known content type names """
     url = path.join(base_url, "datatypes/")
     return json(url)
 
 
+def get_datatype(base_url, dtype):
+    """ Return info about dtype """
+    url = path.join(base_url, "datatypes/", dtype, "/")
+    return json(url)
+
+
+def get_domain(base_url, domain):
+    """ Get info about domain, or raise an error if it does not exist """
+    url = path.join(base_url, "domains", domain, "/")
+    return json(url)
+
+
 def get_domains(base_url):
-    """ Return a list of known domains and their names """
+    """ Return a list of known domains names """
     url = path.join(base_url, "domains/")
     return json(url)
 
 
+def find_domain_by_path(base_url, root):
+    """Return the domain name associated with path, or None if no such domain is defined
+
+    Users are required to look up the domain name associated with an archive to
+    avoid putting data somewhere it can't be found.
+
+    """
+    url = path.join(base_url, "domains/")
+    try:
+        return json(url, scheme=_neurobank_scheme, root=root)[0]["name"]
+    except IndexError:
+        return None
+
+
+def resource_url(base_url, id):
+    """ Return the full URL-based identifier for id """
+    return path.join(base_url, "resources", id, "/")
+
+
 def get_resource(base_url, id):
     """Look up a resource in the registry"""
-    pass
+    return json(resource_url(base_url, id))
 
 
 def add_datatype(base_url, name, content_type, auth=None):
@@ -67,16 +98,10 @@ def add_domain(base_url, name, scheme, root, auth=None):
 
 def add_resource(base_url, id, dtype, domain, sha1=None, auth=None, **metadata):
     """Add a resource to the registry"""
-    # ensure that domain exists before adding resource
-    url = path.join(base_url, "domains", domain)
-    dominfo = json(url)
     # add the resource
     url = path.join(base_url, "resources/")
-    data = {"name": id, "dtype": dtype, "sha1": sha1}
+    data = {"name": id, "dtype": dtype, "sha1": sha1, "locations": [domain]}
     data.update(metadata)
     r = rq.post(url, auth=auth, data=data)
     r.raise_for_status()
-    # add the location; it would be nice if this could be done idempotently
-    url = path.join(url, id, "locations")
-    rr = rq.post(url, auth=auth, data={"domain_name": domain})
-    rr.raise_for_status()
+    return r.json()

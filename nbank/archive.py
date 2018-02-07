@@ -182,9 +182,6 @@ def store_resource(cfg, src, id=None):
     """
     import shutil
 
-    if not cfg['policy']['allow_directories'] and os.path.isdir(src):
-        raise TypeError("this archive does not allow directories as resources")
-
     if id is None:
         id = os.path.basename(src)
 
