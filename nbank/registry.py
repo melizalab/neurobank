@@ -36,20 +36,8 @@ def get_datatypes(base_url):
     return json(url)
 
 
-def get_datatype(base_url, dtype):
-    """ Return info about dtype """
-    url = path.join(base_url, "datatypes/", dtype) + "/"
-    return json(url)
-
-
-def get_domain(base_url, domain):
-    """ Get info about domain, or raise an error if it does not exist """
-    url = path.join(base_url, "domains", domain) + "/"
-    return json(url)
-
-
 def get_domains(base_url):
-    """ Return a list of known domains names """
+    """ Return a list of known domain names """
     url = path.join(base_url, "domains/")
     return json(url)
 
@@ -67,15 +55,39 @@ def find_domain_by_path(base_url, root):
     except IndexError:
         return None
 
+def find_resource_by_name(base_url, query):
+    url = path.join(base_url, "resources/")
+    return json(url, name=query)
 
-def resource_url(base_url, id):
+
+def parse_resource_id(base_url, id):
+    """ Parse a full or short resource identifier into base url and id
+
+    http://domain.name/app/resources/id/ -> (http://domain.name/app/, id)
+    id -> (base_url, id)
+    """
+    import posixpath as pp
+    try:
+        from urllib.parse import urlparse
+    except ImportError:
+        from urlparse import urlparse
+    pr = urlparse(id)
+    if pr.scheme and pr.netloc:
+        base, sid = pp.split(id)
+        return pp.dirname(base), id
+    else:
+        return base_url, id
+
+
+def full_url(base_url, id):
     """ Return the full URL-based identifier for id """
     return path.join(base_url, "resources", id) + "/"
 
 
 def get_resource(base_url, id):
     """Look up a resource in the registry"""
-    return json(resource_url(base_url, id))
+    return json(full_url(base_url, id))
+
 
 def get_locations(base_url, id):
     url = path.join(base_url, "resources", id, "locations") + "/"
@@ -109,3 +121,15 @@ def add_resource(base_url, id, dtype, domain, sha1=None, auth=None, **metadata):
     r = rq.post(url, auth=auth, data=data)
     r.raise_for_status()
     return r.json()
+
+
+# def get_datatype(base_url, dtype):
+#     """ Return info about dtype """
+#     url = path.join(base_url, "datatypes/", dtype) + "/"
+#     return json(url)
+
+
+# def get_domain(base_url, domain):
+#     """ Get info about domain, or raise an error if it does not exist """
+#     url = path.join(base_url, "domains", domain) + "/"
+#     return json(url)

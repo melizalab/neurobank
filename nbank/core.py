@@ -39,18 +39,18 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
 
     """
     from nbank.archive import get_config, store_resource
-    from nbank.registry import add_resource, find_domain_by_path, resource_url
+    from nbank.registry import add_resource, find_domain_by_path, full_url
     archive_path = os.path.abspath(archive_path)
     cfg = get_config(archive_path)
-    log.info("archive directory: %s", archive_path)
+    log.info("archive: %s", archive_path)
     registry_url = cfg["registry"]
-    log.info("registry: %s", registry_url)
+    log.info("   registry: %s", registry_url)
     auto_id = cfg['policy']['auto_identifiers'] or auto_id
     allow_dirs = cfg['policy']['allow_directories']
 
     # check that domain exists for this path
     domain = find_domain_by_path(registry_url, archive_path)
-    log.info("domain name for this archive: %s", domain)
+    log.info("   domain name: %s", domain)
     if domain is None:
         raise RuntimeError("archive '%s' not in registry. did it move?" % archive_path)
 
@@ -65,7 +65,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
         id = None if auto_id else util.id_from_fname(src)
         sha1 = None if not hash else util.hash(src)
         result = add_resource(registry_url, id, dtype, domain, sha1, auth, **metadata)
-        id = resource_url(registry_url, result["name"])
+        id = full_url(registry_url, result["name"])
         log.info("   registered as %s", id)
         tgt = store_resource(cfg, src, id=result["name"])
         log.info("   deposited in %s", tgt)
