@@ -147,7 +147,7 @@ def id_stub(id):
     return id[:2]
 
 
-def find_resource(cfg, id):
+def find_resource(archive_path, id):
     """Returns path of the resource specified by id
 
     The returned filename has the same extension as the resource. If the no such
@@ -155,7 +155,7 @@ def find_resource(cfg, id):
 
     """
     import glob
-    base = os.path.join(cfg["path"], _resource_subdir, id_stub(id), id)
+    base = os.path.join(archive_path, _resource_subdir, id_stub(id), id)
     if os.path.exists(base):
         return base
     for fn in glob.iglob(base + ".*"):
@@ -186,7 +186,7 @@ def store_resource(cfg, src, id=None):
         id = os.path.basename(src)
 
     # check for existing resource
-    if find_resource(cfg, id) is not None:
+    if find_resource(cfg["path"], id) is not None:
         raise KeyError("a file already exists for id %s", id)
 
     if cfg['policy']['keep_extensions']:

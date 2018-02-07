@@ -73,5 +73,22 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
             json.dump({"name": src, "id": id, "sha1": sha1}, fp=sys.stdout)
             sys.stdout.write("\n")
 
+
+def locate(base_url, id):
+    """ Yields the absolute paths and URLs where id can be found """
+    from nbank.registry import get_locations
+    from nbank.archive import find_resource
+    try:
+        from urllib.parse import urlunparse
+    except ImportError:
+        from urlparse import urlunparse
+    for loc in get_locations(base_url, id):
+        if loc["scheme"] == "neurobank":
+            yield find_resource(loc["root"], loc["resource_name"])
+        else:
+            yield urlunparse((loc["scheme"], loc["root"], loc["resource_name"], '', '', ''))
+
+
+
 # Variables:
 # End:

@@ -38,13 +38,13 @@ def get_datatypes(base_url):
 
 def get_datatype(base_url, dtype):
     """ Return info about dtype """
-    url = path.join(base_url, "datatypes/", dtype, "/")
+    url = path.join(base_url, "datatypes/", dtype) + "/"
     return json(url)
 
 
 def get_domain(base_url, domain):
     """ Get info about domain, or raise an error if it does not exist """
-    url = path.join(base_url, "domains", domain, "/")
+    url = path.join(base_url, "domains", domain) + "/"
     return json(url)
 
 
@@ -70,12 +70,16 @@ def find_domain_by_path(base_url, root):
 
 def resource_url(base_url, id):
     """ Return the full URL-based identifier for id """
-    return path.join(base_url, "resources", id, "/")
+    return path.join(base_url, "resources", id) + "/"
 
 
 def get_resource(base_url, id):
     """Look up a resource in the registry"""
     return json(resource_url(base_url, id))
+
+def get_locations(base_url, id):
+    url = path.join(base_url, "resources", id, "locations") + "/"
+    return json(url)
 
 
 def add_datatype(base_url, name, content_type, auth=None):

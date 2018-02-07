@@ -21,14 +21,16 @@ pip install neurobank
 First, initialize an archive:
 
 ```bash
-nbank init [-a username:password] [-n name] registry-url my-archive-path
+nbank [-a username:password] [-r registry-url] init [-n name] my-archive-path
 ```
 
 `my-archive-path` must be a directory on a locallly-accessible filesystem (which could be an NFS or SSHFS mount).
 
-`registry-url` specifies the registry to use, which can be any service that implements the API defined in [django-neurobank](https://github.com/melizalab/django-neurobank) can be used. This URL also determines the base URL for the resource identifiers. For example, if the registry is at `http://melizalab.org/neurobank/resources/` and you deposit a resource with the identifier `st32_1_2_1`, the full identifier is `http://melizalab.org/neurobank/resources/st32_1_2_1`. `st32_1_2_1` is guaranteed to be unique within this domain. If your registry requires authentication, this must be supplied with the `-a` flag, or in your [netrc](https://www.gnu.org/software/inetutils/manual/html_node/The-_002enetrc-file.html) file.
+`registry-url` specifies the registry to use, which can be any service that implements the API defined in [django-neurobank](https://github.com/melizalab/django-neurobank) can be used. If not supplied, the script will try to use the value of the environment variable `NBANK_REGISTRY`. The registry URL also determines the base URL for the resource identifiers. For example, if the registry is at `http://melizalab.org/neurobank/resources/` and you deposit a resource with the identifier `st32_1_2_1`, the full identifier is `http://melizalab.org/neurobank/resources/st32_1_2_1/`. `st32_1_2_1` is guaranteed to be unique within this domain.
 
-The script will attempt to contact the registry server through the supplied url and add the archive to the list of domains. By default, the archive is named after the basename of the archive path. For example, `/home/data/intracellular` would have the name `intracellular`. You can can override this behavior with the `-n` flag. Then the script will create and initialize the archive under `my-archive-path`. You'll get an error if the target directory already exists, or if the registry already has a domain with the same name.
+If your registry requires authentication, this must be supplied with the `-a` flag, or in your [netrc](https://www.gnu.org/software/inetutils/manual/html_node/The-_002enetrc-file.html) file.
+
+The script will attempt to contact the registry service through the supplied URL and add the archive to the list of domains. By default, the archive is named after the basename of the archive path. For example, `/home/data/intracellular` would have the name `intracellular`. You can can override this behavior with the `-n` flag; however, the registry may only allow you to have one domain name for each path to avoid confusion. Then the script will create and initialize the archive under `my-archive-path`. You'll get an error if the target directory already exists, or if the registry already has a domain with the same name.
 
 ### Archive policies
 
@@ -47,18 +49,18 @@ Edit the `README.md` and `nbank.json` files created in the archive directory to 
 Before you start an experiment, register all the resources you plan to use. For example, let's say you're presenting a set of acoustic stimuli to an animal while recording neural responses. To register the stimuli:
 
 ```bash
-nbank [-A my-archive-path] deposit [options] stimfile-1 stimfile-2 ...
+nbank [-a user:pass] deposit [options] my-archive-path stimfile-1 stimfile-2 ...
 ```
 
-Each stimulus will be given an identifier and moved to the archive. The command will output a JSON-encoded list of the resources that were deposited, including a mapping from the identifiers to the old filenames, if automatic identifiers were used. You need to specify the archive loction either with the `-A` flag or by setting the `NBANK_PATH` environment variable.
+Each stimulus will be given an identifier and moved to the archive. The command will output a JSON-encoded list of the resources that were deposited, including a mapping from the identifiers to the old filenames, if automatic identifiers were used.
 
 The `deposit` command takes several options:
 
- - `-d,--dtype`: specify the datatype for the deposited resources. Your registry may require this.
+ - `-d, --dtype`: specify the datatype for the deposited resources. Your registry may require this.
  - `-k`: specify a metadata key-value pair. You can use this flag multiple times to set multiple fields.
- - `-h,--hash`: if set, `nbank` will calculate a SHA1 hash of each file and store it in the registry. Use this if you expect the contents of the file to be unique.
- - `-a,--auto-id`: if set, `nbank` will ask the registry to assign each file an automatically generated identifier, overriding the `auto_identifiers` policy if it is set to false.
- - `-s,--symlink`: if set, makes a symbolic link to the archived resource. This option is useful for stimulus files you need to run an experiment.
+ - `-H, --hash`: if set, `nbank` will calculate a SHA1 hash of each file and store it in the registry. Use this if you expect the contents of the file to be unique.
+ - `-A, --auto-id`: if set, `nbank` will ask the registry to assign each file an automatically generated identifier, overriding the `auto_identifiers` policy if it is set to false.
+ - `-j, --json-out`: if set, the script will output info about each deposited file as line-deliminated JSON
 
 Now run your experiment, making sure to record the identifiers of the stimuli. The short identifier suffices in most cases, but make sure you record the registry URL somewhere, too.
 
@@ -69,13 +71,13 @@ After the experiment, deposit the data files into the archive using the same com
 Depending on your registry implementation, you may be required to specify a datatype for each deposited resource. This feature allows a single registry to store information about different kinds of resources. Each datatype has a name and a MIME content-type. Content-types can be from the  [official list](https://www.iana.org/assignments/media-types/media-types.xhtml), or they can be user-defined, like the content-type for [pprox](https://meliza.org/spec:2/pprox/). You can get a list of the known datatypes with
 
 ``` bash
-nbank dtype list
+nbank [-r registry-url] dtype list
 ```
 
 You may be able to add datatypes to the registry with:
 
 ``` bash
-nbank dtype add dtype-name content-type
+nbank [-a user:pass] [-r registry-url] dtype add dtype-name content-type
 ```
 
 ## Retrieving resources
@@ -84,7 +86,7 @@ The `deposit` command moves resource files to the archive under the `resources` 
 
 `nbank` also acts as a command-line interface to the registry. You can perform the following operations:
 
- - `nbank locate [options] id-1 [id-2 [id-3] ...]`: look up the location(s) of the resources associated with each identifier. You can supply full URL-based identifiers, or short ids. If short ids are used, the `-b` or `-A` arguments, or the `NBANK_PATH` environment variable, are used to look up the base URL.
+ - `nbank locate [options] id-1 [id-2 [id-3] ...]`: look up the location(s) of the resources associated with each identifier. You can supply full URL-based identifiers, or short ids. If short ids are used, the default registry (specified with `-r` argument or `NBANK_REGISTRY` environment variable) is used to resolve the full URL.
 
  - `nbank properties [options] id`: queries the registry for all the properties associated with `id`
 
