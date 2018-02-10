@@ -57,7 +57,7 @@ class ResourceTestCase(ArchiveTestBase):
         archive.store_resource(self.cfg, src)
 
     def test_find_resource(self):
-        path = archive.find_resource(self.cfg, self.name)
+        path = archive.find_resource(self.root, self.name)
         self.assertTrue(os.path.exists(path))
         mode = os.stat(path).st_mode
         self.assertEqual(mode & self.cfg['policy']['access']['umask'], 0)
@@ -70,7 +70,7 @@ class ResourceTestCase(ArchiveTestBase):
         with open(src, 'wt') as fp:
             fp.write("this is dumb")
         archive.store_resource(self.cfg, src, name)
-        path = archive.find_resource(self.cfg, name)
+        path = archive.find_resource(self.root, name)
         self.assertTrue(os.path.exists(path))
 
     def test_can_store_resources_with_extensions(self):
@@ -79,7 +79,7 @@ class ResourceTestCase(ArchiveTestBase):
         with open(src, 'wt') as fp:
             fp.write("this is not a wave file")
         archive.store_resource(self.cfg, src, name)
-        path = archive.find_resource(self.cfg, name)
+        path = archive.find_resource(self.root, name)
         self.assertTrue(os.path.exists(path))
         self.assertEqual(os.path.splitext(src)[1], os.path.splitext(path)[1])
 
@@ -124,7 +124,7 @@ class DirectoryResourceTestCase(ArchiveTestBase):
         self.assertNotEqual(mode & self.cfg['policy']['access']['umask'], 0)
 
         archive.store_resource(self.cfg, dname, id)
-        path = archive.find_resource(self.cfg, id)
+        path = archive.find_resource(self.root, id)
         self.assertTrue(os.path.exists(path))
         self.assertTrue(os.path.isdir(path))
         mode = os.stat(path).st_mode
@@ -150,6 +150,6 @@ class StripExtensionTestCase(ArchiveTestBase):
         with open(src, 'wt') as fp:
             fp.write("this is not a wave file")
         archive.store_resource(self.cfg, src, name)
-        path = archive.find_resource(self.cfg, name)
+        path = archive.find_resource(self.root, name)
         self.assertTrue(os.path.exists(path))
         self.assertEqual(os.path.splitext(path)[1], "")

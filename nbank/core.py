@@ -11,17 +11,17 @@ from __future__ import division
 from __future__ import unicode_literals
 
 import os
-import sys
-import json
 import logging
 
 from nbank import util
 
 log = logging.getLogger('nbank')   # root logger
+env_registry = "NBANK_REGISTRY"
 
-def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=None, stdout=False,
-            **metadata ):
+def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=None, **metadata ):
     """Main entry point to deposit resources into an archive
+
+    Yields the short IDs for each deposited item in files
 
     Here's how a variety of error conditions are handled:
 
@@ -69,9 +69,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
         log.info("   registered as %s", id)
         tgt = store_resource(cfg, src, id=result["name"])
         log.info("   deposited in %s", tgt)
-        if stdout:
-            json.dump({"name": src, "id": id, "sha1": sha1}, fp=sys.stdout)
-            sys.stdout.write("\n")
+        yield result["name"]
 
 
 def locate(base_url, id):

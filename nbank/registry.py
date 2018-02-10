@@ -22,11 +22,16 @@ _neurobank_scheme = 'neurobank'
 
 log = logging.getLogger('registry')
 
+def strip_nulls(d):
+    """Removes all keys from a dict that are equal to None"""
+    return {k: v for k, v in d.items() if v is not None}
+
 def json(url, **params):
     """Retrieve json data from server and return as a dictionary, or None if no data"""
     r = rq.get(url, params=params, headers={'Accept': 'application/json'}, verify=False)
     log.debug("GET %s", r.url)
     r.raise_for_status()
+    log.debug("  %s", r.json())
     return r.json()
 
 
@@ -97,7 +102,7 @@ def get_locations(base_url, id):
 def add_datatype(base_url, name, content_type, auth=None):
     """ Add a datatype to the registry """
     url = path.join(base_url, "datatypes/")
-    r = rq.post(url, auth=auth, data = {"name": name, "content_type": content_type})
+    r = rq.post(url, auth=auth, json={"name": name, "content_type": content_type})
     log.debug("POST %s", r.url)
     r.raise_for_status()
     return r.json()
@@ -107,7 +112,7 @@ def add_domain(base_url, name, scheme, root, auth=None):
     """ Add a domain to the registry """
     url = path.join(base_url, "domains/")
     log.debug("POST %s", url)
-    r = rq.post(url, auth=auth, data={"name": name, "scheme": scheme, "root": root})
+    r = rq.post(url, auth=auth, json={"name": name, "scheme": scheme, "root": root})
     r.raise_for_status()
     return r.json()
 
@@ -116,9 +121,11 @@ def add_resource(base_url, id, dtype, domain, sha1=None, auth=None, **metadata):
     """Add a resource to the registry"""
     # add the resource
     url = path.join(base_url, "resources/")
-    data = {"name": id, "dtype": dtype, "sha1": sha1, "locations": [domain]}
-    data.update(metadata)
-    r = rq.post(url, auth=auth, data=data)
+    data = {"name": id, "dtype": dtype, "sha1": sha1, "locations": [domain],
+            "metadata": metadata}
+    log.debug("POST %s: %s", url, data)
+    r = rq.post(url, auth=auth, json=strip_nulls(data))
+    log.debug("  response: %s", r.text)
     r.raise_for_status()
     return r.json()
 

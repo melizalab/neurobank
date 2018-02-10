@@ -12,6 +12,7 @@ from __future__ import unicode_literals
 
 import os
 import sys
+import json
 import datetime
 import logging
 import pprint
@@ -178,8 +179,13 @@ def store_resources(args):
     if args.read_stdin:
         args.file.extend(l.strip() for l in sys.stdin)
     try:
-        deposit(args.directory, args.file, dtype=args.dtype, hash=args.hash, auto_id=args.auto_id,
-                auth=args.auth, stdout=args.json_out, **args.metadata)
+        g = deposit(args.directory, args.file, dtype=args.dtype, hash=args.hash,
+                    auto_id=args.auto_id, auth=args.auth, **args.metadata)
+        for id in g:
+            if args.json_out:
+                json.dump({"name": src, "id": id, "sha1": sha1}, fp=sys.stdout)
+                sys.stdout.write("\n")
+
     except rq.exceptions.HTTPError as e:
         # bad request means the domain name is taken or badly formed
         if e.response.status_code == 400:

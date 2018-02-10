@@ -185,6 +185,9 @@ def store_resource(cfg, src, id=None):
     if id is None:
         id = os.path.basename(src)
 
+    if not cfg['policy']['allow_directories'] and os.path.isdir(src):
+        raise TypeError("policy forbids depositing directories")
+
     # check for existing resource
     if find_resource(cfg["path"], id) is not None:
         raise KeyError("a file already exists for id %s", id)
