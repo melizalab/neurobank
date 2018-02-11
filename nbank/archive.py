@@ -62,6 +62,7 @@ _nbank_json = """{
     "auto_identifiers": false,
     "keep_extensions": true,
     "allow_directories": false,
+    "require_hash": true,
     "access": {
       "user": "%(user)s",
       "group": "%(group)s",
@@ -70,7 +71,6 @@ _nbank_json = """{
   }
 }
 """
-
 
 def get_config(path):
     """Returns the configuration for the archive specified by path, or None
@@ -81,17 +81,20 @@ def get_config(path):
     if os.path.exists(fname):
         with open(fname, 'rt') as fp:
             ret = json.load(fp)
-            ret['policy']['access']['umask'] = int(ret['policy']['access']['umask'], 8)
+            umask = ret['policy']['access']['umask']
+            if not isinstance(umask, int):
+                ret['policy']['access']['umask'] = int(ret['policy']['access']['umask'], 8)
             ret["path"] = path
             return ret
 
 
-def create(archive_path, registry_url, umask=_default_umask):
+def create(archive_path, registry_url, umask=_default_umask, **policies):
     """Initializes a new data archive in archive_path.
 
     archive_path: the absolute or relative path of the archive
     registry_url: the URL of the registry service
     umask: the default umask (as an integer)
+    **policies: override auto_identifiers, keep_extensions, allow_directories, or require_hash
 
     Creates archive_path and all parents as needed. Does not overwrite existing
     files or directories. Raises OSError for failed operations.

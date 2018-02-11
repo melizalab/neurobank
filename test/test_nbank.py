@@ -6,6 +6,7 @@ from __future__ import unicode_literals
 import os
 import tempfile
 import shutil
+import json
 from unittest import TestCase
 
 import requests as rq
@@ -40,6 +41,11 @@ class NeurobankTestCase(TestCase):
                 pass
         # create archive
         archive.create(self.root, self.url, self.umask)
+        # edit the project policy so we don't hash everything by default
+        cfg = archive.get_config(self.root)
+        cfg["policy"]["require_hash"] = False
+        with open(os.path.join(self.root, archive._config_fname), 'wt') as fp:
+            json.dump(cfg, fp)
 
     def tearDown(self):
         super(NeurobankTestCase, self).tearDown()

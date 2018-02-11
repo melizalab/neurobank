@@ -18,7 +18,7 @@ from nbank import util
 log = logging.getLogger('nbank')   # root logger
 env_registry = "NBANK_REGISTRY"
 
-def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=None, **metadata ):
+def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=None, **metadata):
     """Main entry point to deposit resources into an archive
 
     Yields the short IDs for each deposited item in files
@@ -63,7 +63,10 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
             log.info("   is a directory; skipping")
             continue
         id = None if auto_id else util.id_from_fname(src)
-        sha1 = None if not hash else util.hash(src)
+        if hash or cfg['policy']['require_hash']:
+            sha1 = util.hash(src)
+        else:
+            sha1 = None
         result = add_resource(registry_url, id, dtype, domain, sha1, auth, **metadata)
         id = full_url(registry_url, result["name"])
         log.info("   registered as %s", id)

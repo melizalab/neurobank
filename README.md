@@ -38,6 +38,8 @@ Edit the `README.md` and `nbank.json` files created in the archive directory to 
 
   - `auto_identifiers`: If set to false (the default), when files are deposited, their names are used as identifiers unless the user asks for an automatically generated id. If set to true, every resource is given an automatic id, which is usually a short string.
 
+- `require_hash`: If set to true (the default), every resource will have a hash value calculated and stored in the registry. The registry will then be able to prevent duplicate files from being deposited under multiple identifiers.
+
   - `keep_extensions`: If set to true (the default), files keep their extensions when deposited. Only one file with a given base identifier can be deposited, so you can't have a `st32_1_2_1.wav`, the identifier is `st32_1_2_1`, and therefore you can't also have an `st32_1_2_1.json` file. If set to false, the extension is stripped, so `st32_1_2_1.wav` would be deposited as `st32_1_2_1`. Usually you want this to be true, unless your archive only contains one kind of file.
 
   - `allow_directories`: If set to true, directories and their contents can be deposited as resources. The identifier is given to the directory, and the user is responsible for knowing how to interpret the contents. If set to false (the default), only regular files can be deposited.
