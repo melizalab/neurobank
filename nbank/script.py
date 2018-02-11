@@ -61,6 +61,7 @@ def main(argv=None):
     p.add_argument('-a', dest='auth', help="username:password to authenticate with registry. "
                    "If not supplied, will attempt to use .netrc file",
                    type=userpwd, default=None)
+    p.add_argument('--debug', help="show verbose log messages", action="store_true")
 
     sub = p.add_subparsers(title='subcommands')
 
@@ -121,7 +122,7 @@ def main(argv=None):
 
     ch = logging.StreamHandler()
     formatter = logging.Formatter("[%(name)s] %(message)s")
-    loglevel = logging.INFO
+    loglevel = logging.DEBUG if args.debug else logging.INFO
     log.setLevel(loglevel)
     ch.setLevel(loglevel)  # change
     ch.setFormatter(formatter)
@@ -179,11 +180,10 @@ def store_resources(args):
     if args.read_stdin:
         args.file.extend(l.strip() for l in sys.stdin)
     try:
-        g = deposit(args.directory, args.file, dtype=args.dtype, hash=args.hash,
-                    auto_id=args.auto_id, auth=args.auth, **args.metadata)
-        for id in g:
+        for res in deposit(args.directory, args.file, dtype=args.dtype, hash=args.hash,
+                           auto_id=args.auto_id, auth=args.auth, **args.metadata):
             if args.json_out:
-                json.dump({"name": src, "id": id, "sha1": sha1}, fp=sys.stdout)
+                json.dump(res, fp=sys.stdout)
                 sys.stdout.write("\n")
 
     except rq.exceptions.HTTPError as e:

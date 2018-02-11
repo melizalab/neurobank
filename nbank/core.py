@@ -65,6 +65,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
         id = None if auto_id else util.id_from_fname(src)
         if hash or cfg['policy']['require_hash']:
             sha1 = util.hash(src)
+            log.info("   sha1: %s", sha1)
         else:
             sha1 = None
         result = add_resource(registry_url, id, dtype, domain, sha1, auth, **metadata)
@@ -72,7 +73,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
         log.info("   registered as %s", id)
         tgt = store_resource(cfg, src, id=result["name"])
         log.info("   deposited in %s", tgt)
-        yield result["name"]
+        yield {"source": src, "id": result["name"]}
 
 
 def locate(base_url, id):

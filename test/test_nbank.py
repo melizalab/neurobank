@@ -59,7 +59,7 @@ class NeurobankTestCase(TestCase):
             fp.write("this is not a wave file")
         ids = tuple(nbank.deposit(self.root, [src], dtype=self.dtype, auto_id=True))
         self.assertEqual(len(ids), 1)
-        locations = tuple(nbank.locate(self.url, ids[0]))
+        locations = tuple(nbank.locate(self.url, ids[0]["id"]))
         self.assertEqual(len(locations), 1)
 
     def test_can_deposit_multiple_resources(self):
@@ -86,7 +86,7 @@ class NeurobankTestCase(TestCase):
         metadata = {"blah": "1", "bleh": "abcd"}
         ids = tuple(nbank.deposit(self.root, [src], dtype=self.dtype, auto_id=True, **metadata))
         self.assertEqual(len(ids), 1)
-        info = registry.get_resource(self.url, ids[0])
+        info = registry.get_resource(self.url, ids[0]["id"])
         self.assertDictEqual(info["metadata"], metadata)
 
     def test_invalid_registry_url_exception(self):
@@ -104,7 +104,7 @@ class NeurobankTestCase(TestCase):
         src = os.path.join(self.tmpd, "dupl.txt")
         with open(src, 'wt') as fp:
             fp.write("this is a text file")
-        ids = tuple(nbank.deposit(self.root, [src], self.dtype, auto_id=True))
+        ids = tuple(x["id"] for x in nbank.deposit(self.root, [src], self.dtype, auto_id=True))
         dids = tuple(nbank.deposit(self.root, ids, dtype=self.dtype))
         self.assertEqual(len(dids), 0)
 
@@ -113,3 +113,11 @@ class NeurobankTestCase(TestCase):
         os.mkdir(dname)
         ids = tuple(nbank.deposit(self.root, [dname], self.dtype, auto_id=True))
         self.assertEqual(len(ids), 0)
+
+    def test_locate_nonexistent_resource(self):
+        result = tuple(nbank.locate(self.url, "blahblah"))
+        self.assertEqual(len(result), 0)
+
+    def test_locate_invalid_resource(self):
+        result = tuple(nbank.locate(self.url, "blahblah.2.2"))
+        self.assertEqual(len(result), 0)

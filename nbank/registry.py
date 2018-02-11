@@ -31,7 +31,7 @@ def json(url, **params):
     r = rq.get(url, params=params, headers={'Accept': 'application/json'}, verify=False)
     log.debug("GET %s", r.url)
     r.raise_for_status()
-    log.debug("  %s", r.json())
+    log.debug("  %s", r.text)
     return r.json()
 
 
@@ -95,8 +95,15 @@ def get_resource(base_url, id):
 
 
 def get_locations(base_url, id):
+    """Look up the locations of a resource. Returns an empty list if the resource doesn't exist"""
     url = path.join(base_url, "resources", id, "locations") + "/"
-    return json(url)
+    try:
+        return json(url)
+    except rq.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return []
+        else:
+            raise e
 
 
 def add_datatype(base_url, name, content_type, auth=None):
