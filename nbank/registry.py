@@ -7,7 +7,6 @@ be able to register domains and datatypes, but we're not going to support
 deleting them.
 
 """
-
 # python 3 compatibility
 from __future__ import absolute_import
 from __future__ import print_function
@@ -28,7 +27,7 @@ def strip_nulls(d):
 
 def json(url, **params):
     """Retrieve json data from server and return as a dictionary, or None if no data"""
-    r = rq.get(url, params=params, headers={'Accept': 'application/json'}, verify=False)
+    r = rq.get(url, params=params, headers={'Accept': 'application/json'}, verify=True)
     log.debug("GET %s", r.url)
     r.raise_for_status()
     log.debug("  %s", r.text)

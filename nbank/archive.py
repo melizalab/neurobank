@@ -150,18 +150,26 @@ def id_stub(id):
     return id[:2]
 
 
-def find_resource(archive_path, id):
-    """Returns path of the resource specified by id
+def resource_path(archive_path, id):
+    """ Returns path of the resource specified by id"""
+    return os.path.join(archive_path, _resource_subdir, id_stub(id), id)
 
-    The returned filename has the same extension as the resource. If the no such
-    resource exists, returns None.
+
+def find_resource(path, id=None):
+    """Finds the resource specified by path (or by id within an archive)
+
+    This function is needed if the 'keep_extension' policy is True, in which
+    case resource 'xyzzy' could refer to a file called 'xyzzy.wav' or
+    'xyzzy.json', etc. If no resource associated with the supplied path exists,
+    returns None.
 
     """
     import glob
-    base = os.path.join(archive_path, _resource_subdir, id_stub(id), id)
-    if os.path.exists(base):
-        return base
-    for fn in glob.iglob(base + ".*"):
+    if id is not None:
+        path = resource_path(path, id)
+    if os.path.exists(path):
+        return path
+    for fn in glob.iglob(path + ".*"):
         return fn
 
 
@@ -192,7 +200,7 @@ def store_resource(cfg, src, id=None):
         raise TypeError("policy forbids depositing directories")
 
     # check for existing resource
-    if find_resource(cfg["path"], id) is not None:
+    if find_resource(resource_path(cfg["path"], id)) is not None:
         raise KeyError("a file already exists for id %s", id)
 
     if cfg['policy']['keep_extensions']:

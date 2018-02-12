@@ -96,6 +96,8 @@ def main(argv=None):
 
     pp = sub.add_parser('locate', help="locate resource(s)")
     pp.set_defaults(func=locate_resources)
+    pp.add_argument("-l", "--local-only", help="only show local resources that exist",
+                    action="store_true")
     pp.add_argument("id", help="the identifier of the resource", nargs='+')
 
     pp = sub.add_parser('search', help="search for resource(s)")
@@ -105,7 +107,6 @@ def main(argv=None):
     pp = sub.add_parser('info', help="get info from registry about resource")
     pp.set_defaults(func=get_resource_info)
     pp.add_argument("id", help="the identifier of the resource")
-
 
     pp = sub.add_parser('dtype', help='list and add data types')
     ppsub = pp.add_subparsers(title='subcommands')
@@ -121,7 +122,7 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     ch = logging.StreamHandler()
-    formatter = logging.Formatter("[%(name)s] %(message)s")
+    formatter = logging.Formatter("%(message)s")
     loglevel = logging.DEBUG if args.debug else logging.INFO
     log.setLevel(loglevel)
     ch.setLevel(loglevel)  # change
@@ -139,7 +140,8 @@ def main(argv=None):
         log.error("registry error: unable to contact server")
     except rq.exceptions.HTTPError as e:
         if e.response.status_code == 403:
-            log.error("registry error: authenticate required with '-a username:password' or .netrc file")
+            log.error("authentication error: Authenticate with '-a username:password' or .netrc file.")
+            log.error("                      Or, you may not have permission for this operation.")
         else:
             log.error("internal registry error:")
             raise e
@@ -204,8 +206,12 @@ def locate_resources(args):
         if base is None:
             print("%-25s [no registry to resolve short identifier]" % id)
             continue
-        for loc in locate(base, sid):
-            print("%-25s\t%s" % (sid, loc))
+        for loc in registry.get_locations(base, sid):
+            path = locate(loc)
+            if args.local_only:
+                path = archive.find_resource(path)
+            if path is not None:
+                print("%-20s\t%s" % (sid, path))
 
 
 def search_resources(args):

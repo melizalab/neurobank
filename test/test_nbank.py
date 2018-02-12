@@ -59,7 +59,7 @@ class NeurobankTestCase(TestCase):
             fp.write("this is not a wave file")
         ids = tuple(nbank.deposit(self.root, [src], dtype=self.dtype, auto_id=True))
         self.assertEqual(len(ids), 1)
-        locations = tuple(nbank.locate(self.url, ids[0]["id"]))
+        locations = tuple(registry.get_locations(self.url, ids[0]["id"]))
         self.assertEqual(len(locations), 1)
 
     def test_can_deposit_multiple_resources(self):
@@ -91,7 +91,7 @@ class NeurobankTestCase(TestCase):
 
     def test_invalid_registry_url_exception(self):
         with self.assertRaises(rq.exceptions.ConnectionError):
-            tuple(nbank.locate("http://nosuchurl/nosuchendpoint", "blahblah"))
+            tuple(registry.get_locations("http://nosuchurl/nosuchendpoint", "blahblah"))
 
     def test_cannot_deposit_invalid_datatype(self):
         src = os.path.join(self.tmpd, "tempy.wav")
@@ -115,9 +115,9 @@ class NeurobankTestCase(TestCase):
         self.assertEqual(len(ids), 0)
 
     def test_locate_nonexistent_resource(self):
-        result = tuple(nbank.locate(self.url, "blahblah"))
+        result = tuple(registry.get_locations(self.url, "blahblah"))
         self.assertEqual(len(result), 0)
 
     def test_locate_invalid_resource(self):
-        result = tuple(nbank.locate(self.url, "blahblah.2.2"))
+        result = tuple(registry.get_locations(self.url, "blahblah.2.2"))
         self.assertEqual(len(result), 0)

@@ -76,19 +76,24 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
         yield {"source": src, "id": result["name"]}
 
 
-def locate(base_url, id):
-    """ Yields the absolute paths and URLs where id can be found """
-    from nbank.registry import get_locations
-    from nbank.archive import find_resource
+def locate(location):
+    """Return the path or URL associated with location
+
+    location is a dict with 'scheme', 'path', and 'resource_name' (like what's
+    yielded by registry.get_locations). Note that for local (neurobank)
+    locations, the resource may have an extension; this is not included.
+
+    """
+    from nbank.archive import resource_path
     try:
         from urllib.parse import urlunparse
     except ImportError:
         from urlparse import urlunparse
-    for loc in get_locations(base_url, id):
-        if loc["scheme"] == "neurobank":
-            yield find_resource(loc["root"], loc["resource_name"])
-        else:
-            yield urlunparse((loc["scheme"], loc["root"], loc["resource_name"], '', '', ''))
+    if location["scheme"] == "neurobank":
+        return resource_path(location["root"], location["resource_name"])
+    else:
+        return urlunparse((location["scheme"], location["root"],
+                           location["resource_name"], '', '', ''))
 
 
 

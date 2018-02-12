@@ -4,12 +4,12 @@
 import sys
 from setuptools import setup, find_packages
 
-if sys.hexversion < 0x02060000:
-    raise RuntimeError("Python 2.6 or higher required")
+if sys.hexversion < 0x02070000:
+    raise RuntimeError("Python 2.7 or higher required")
 
 # --- Distutils setup and metadata --------------------------------------------
 
-VERSION = '0.7.0'
+VERSION = '0.7.1'
 
 cls_txt = """
 Development Status :: 4 - Beta
@@ -36,8 +36,6 @@ analysis workflows.
 """
 
 requirements = []
-if sys.hexversion < 0x02070000:
-    requirements.append("argparse==1.2.1")
 
 setup(
     name='neurobank',
@@ -55,7 +53,7 @@ setup(
 
     entry_points={'console_scripts': ['nbank = nbank.script:main'] },
 
-    install_requires=requirements,
+    install_requires=["requests>2.18"],
     test_suite='nose.collector'
 )
 
