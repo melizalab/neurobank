@@ -9,7 +9,7 @@ if sys.hexversion < 0x02070000:
 
 # --- Distutils setup and metadata --------------------------------------------
 
-VERSION = '0.7.1'
+from nbank import __version__
 
 cls_txt = """
 Development Status :: 4 - Beta
@@ -39,7 +39,7 @@ requirements = []
 
 setup(
     name='neurobank',
-    version=VERSION,
+    version=__version__,
     description=short_desc,
     long_description=long_desc,
     classifiers=[x for x in cls_txt.split("\n") if x],

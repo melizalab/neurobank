@@ -15,7 +15,6 @@ import sys
 import json
 import datetime
 import logging
-import pprint
 import argparse
 import requests as rq
 
@@ -225,7 +224,7 @@ def search_resources(args):
 def get_resource_info(args):
     base, sid = registry.parse_resource_id(args.registry_url, args.id)
     data = registry.get_resource(base, sid)
-    pprint.pprint(data, indent=2)
+    json.dump(data, fp=sys.stdout, indent=2)
 
 
 def list_datatypes(args):
