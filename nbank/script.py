@@ -84,7 +84,7 @@ def main(argv=None):
                     help="calculate a SHA1 hash of each file and store in the registry")
     pp.add_argument('-A','--auto-id', action="store_true",
                     help="ask the registry to generate an id for each resource")
-    pp.add_argument('-k', help="specify metadata field (use multiple -k for multiple values",
+    pp.add_argument('-k', help="specify metadata field (use multiple -k for multiple values)",
                     action=ParseKeyVal, default=dict(), metavar="KEY=VALUE", dest='metadata')
     pp.add_argument('-j', "--json-out", action="store_true",
                     help="output each deposited file to stdout as line-deliminated JSON")
