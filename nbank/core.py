@@ -18,6 +18,12 @@ from nbank import util
 log = logging.getLogger('nbank')   # root logger
 env_registry = "NBANK_REGISTRY"
 
+
+def default_registry():
+    """Return the registry URL associated with the default registry environment variable """
+    return os.environ.get(env_registry, None)
+
+
 def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=None, **metadata):
     """Main entry point to deposit resources into an archive
 
@@ -76,7 +82,39 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
         yield {"source": src, "id": result["name"]}
 
 
-def locate(location):
+def find(id, registry_url=None, local_only=False):
+    """Generates a sequence of paths or URLs where id can be located
+
+    If local_only is True, only files that can be found on the local filesystem
+    are yielded.
+
+    """
+    from nbank.registry import parse_resource_id, get_locations
+    from nbank.archive import find_resource
+    if registry_url is None:
+        registry_url = default_registry()
+    base, sid = parse_resource_id(registry_url, id)
+    if base is None:
+        raise ValueError("short identifier supplied without a registry to resolve it")
+    for loc in get_locations(base, sid):
+        path = get_path_or_url(loc)
+        if local_only:
+            yield find_resource(path)
+        else:
+            yield path
+
+
+def describe(id, registry_url=None):
+    """Returns the database record for id, or None if no match can be found """
+    from nbank.registry import get_resource, parse_resource_id
+    if registry_url is None:
+        registry_url = default_registry()
+    base, sid = parse_resource_id(registry_url, id)
+    return get_resource(base, sid)
+
+
+def get_path_or_url(location):
+
     """Return the path or URL associated with location
 
     location is a dict with 'scheme', 'path', and 'resource_name' (like what's

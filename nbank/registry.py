@@ -89,8 +89,15 @@ def full_url(base_url, id):
 
 
 def get_resource(base_url, id):
-    """Look up a resource in the registry"""
-    return json(full_url(base_url, id))
+    """Return registry record for id, or None if it doesn't exist"""
+    try:
+        return json(full_url(base_url, id))
+    except rq.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return None
+        else:
+            raise e
+
 
 
 def get_locations(base_url, id):

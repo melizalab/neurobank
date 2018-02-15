@@ -18,8 +18,8 @@ import logging
 import argparse
 import requests as rq
 
-import nbank
-from nbank import archive, registry
+from nbank import __version__
+from nbank import core, archive, registry
 
 log = logging.getLogger('nbank')   # root logger
 
@@ -53,10 +53,10 @@ def main(argv=None):
 
     p = argparse.ArgumentParser(description='manage source files and collected data')
     p.add_argument('-v','--version', action="version",
-                   version="%(prog)s " + nbank.__version__)
+                   version="%(prog)s " + __version__)
     p.add_argument('-r', dest='registry_url', help="URL of the registry service. "
-                    "Default is to use the environment variable '%s'" % nbank.env_registry,
-                    default=os.environ.get(nbank.env_registry, None))
+                    "Default is to use the environment variable '%s'" % core.env_registry,
+                    default=core.default_registry())
     p.add_argument('-a', dest='auth', help="username:password to authenticate with registry. "
                    "If not supplied, will attempt to use .netrc file",
                    type=userpwd, default=None)
@@ -103,9 +103,9 @@ def main(argv=None):
     pp.set_defaults(func=search_resources)
     pp.add_argument("query", help="resource name or fragment to search by")
 
-    pp = sub.add_parser('info', help="get info from registry about resource")
+    pp = sub.add_parser('info', help="get info from registry about resource(s)")
     pp.set_defaults(func=get_resource_info)
-    pp.add_argument("id", help="the identifier of the resource")
+    pp.add_argument("id", nargs='+', help="the identifier of the resource")
 
     pp = sub.add_parser('dtype', help='list and add data types')
     ppsub = pp.add_subparsers(title='subcommands')
@@ -150,13 +150,13 @@ def main(argv=None):
 
 
 def init_archive(args):
-    log.debug("version: %s", nbank.__version__)
+    log.debug("version: %s", __version__)
     log.debug("run time: %s", datetime.datetime.now())
     args.directory = os.path.abspath(args.directory)
     if args.name is None:
         args.name = os.path.basename(args.directory)
     if args.registry_url is None:
-        log.error("error: supply a registry url with '-r' or %s environment variable", nbank.env_registry)
+        log.error("error: supply a registry url with '-r' or %s environment variable", core.env_registry)
         return
 
     try:
@@ -175,13 +175,12 @@ def init_archive(args):
 
 
 def store_resources(args):
-    from nbank.core import deposit
     log.debug("version: %s", nbank.__version__)
     log.debug("run time: %s", datetime.datetime.now())
     if args.read_stdin:
         args.file.extend(l.strip() for l in sys.stdin)
     try:
-        for res in deposit(args.directory, args.file, dtype=args.dtype, hash=args.hash,
+        for res in core.deposit(args.directory, args.file, dtype=args.dtype, hash=args.hash,
                            auto_id=args.auto_id, auth=args.auth, **args.metadata):
             if args.json_out:
                 json.dump(res, fp=sys.stdout)
@@ -199,14 +198,13 @@ def store_resources(args):
 
 
 def locate_resources(args):
-    from nbank.core import locate
     for id in args.id:
         base, sid = registry.parse_resource_id(args.registry_url, id)
         if base is None:
             print("%-25s [no registry to resolve short identifier]" % id)
             continue
         for loc in registry.get_locations(base, sid):
-            path = locate(loc)
+            path = core.get_path_or_url(loc)
             if args.local_only:
                 path = archive.find_resource(path)
             if path is not None:
@@ -215,21 +213,23 @@ def locate_resources(args):
 
 def search_resources(args):
     if args.registry_url is None:
-        log.error("error: supply a registry url with '-r' or %s environment variable", nbank.env_registry)
+        log.error("error: supply a registry url with '-r' or %s environment variable", core.env_registry)
         return
     for d in registry.find_resource_by_name(args.registry_url, args.query):
         print(d["name"])
 
 
 def get_resource_info(args):
-    base, sid = registry.parse_resource_id(args.registry_url, args.id)
-    data = registry.get_resource(base, sid)
-    json.dump(data, fp=sys.stdout, indent=2)
+    for id in args.id:
+        data = core.describe(id, args.registry_url)
+        if data is None:
+            data = {"id": id, "error": "not found"}
+        json.dump(data, fp=sys.stdout, indent=2)
 
 
 def list_datatypes(args):
     if args.registry_url is None:
-        log.error("error: supply a registry url with '-r' or %s environment variable", nbank.env_registry)
+        log.error("error: supply a registry url with '-r' or %s environment variable", core.env_registry)
         return
     for dtype in registry.get_datatypes(args.registry_url):
         print("%(name)-25s\t(%(content_type)s)" % dtype)
@@ -237,7 +237,7 @@ def list_datatypes(args):
 
 def add_datatype(args):
     if args.registry_url is None:
-        log.error("error: supply a registry url with '-r' or %s environment variable", nbank.env_registry)
+        log.error("error: supply a registry url with '-r' or %s environment variable", core.env_registry)
         return
     data = registry.add_datatype(args.registry_url, args.dtype_name, args.content_type, auth=args.auth)
     print("added datatype %(name)s (content-type: %(content_type)s)" % data)

@@ -7,9 +7,9 @@ Created Mon Nov 25 08:43:19 2013
 """
 from __future__ import absolute_import
 
-__version__ = '0.7.2'
+__version__ = '0.7.3'
 
-from nbank.core import env_registry, deposit, locate
+from nbank.core import default_registry, deposit, find, describe, get_path_or_url
 
 # Variables:
 # End:
