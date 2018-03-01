@@ -103,6 +103,18 @@ def find(id, registry_url=None, local_only=False):
         else:
             yield path
 
+def get(id, registry_url=None, local_only=False):
+    """Returns the first path or URL where id can be found, or None if no match.
+
+    If local_only is True, only files that can be found on the local filesystem
+    are considered.
+
+    """
+    try:
+        return next(find(id, registry_url, local_only))
+    except StopIteration:
+        pass
+
 
 def describe(id, registry_url=None):
     """Returns the database record for id, or None if no match can be found """
@@ -114,7 +126,6 @@ def describe(id, registry_url=None):
 
 
 def get_path_or_url(location):
-
     """Return the path or URL associated with location
 
     location is a dict with 'scheme', 'path', and 'resource_name' (like what's
