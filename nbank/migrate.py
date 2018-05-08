@@ -40,7 +40,7 @@ def register_resources(catalog, archive_path, dtype=None, hash=False, auth=None,
     import requests as rq
     from nbank import util
     from nbank.archive import get_config, find_resource
-    from nbank.registry import add_resource, find_domain_by_path, full_url
+    from nbank.registry import add_resource, get_resource, find_domain_by_path, full_url
     archive_path = os.path.abspath(archive_path)
     cfg = get_config(archive_path)
     log.info("archive: %s", archive_path)
@@ -58,6 +58,12 @@ def register_resources(catalog, archive_path, dtype=None, hash=False, auth=None,
         if id is None:
             continue
         log.info("processing resource '%s':", id)
+        # it's worth it to hit the API here to check whether the resource has
+        # already been added
+        chk = get_resource(registry_url, id)
+        if chk is not None:
+            log.info("    skipping: already in registry")
+            continue
         resource_path = find_resource(archive_path, id)
         if resource_path is None:
             log.info("   does not exist; skipping")

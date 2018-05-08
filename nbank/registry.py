@@ -99,7 +99,6 @@ def get_resource(base_url, id):
             raise e
 
 
-
 def get_locations(base_url, id):
     """Look up the locations of a resource. Returns an empty list if the resource doesn't exist"""
     url = path.join(base_url, "resources", id, "locations") + "/"
