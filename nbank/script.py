@@ -13,9 +13,9 @@ from __future__ import unicode_literals
 import os
 import sys
 import json
+import argparse
 import datetime
 import logging
-import argparse
 import requests as rq
 
 from nbank import __version__
@@ -175,7 +175,7 @@ def init_archive(args):
 
 
 def store_resources(args):
-    log.debug("version: %s", nbank.__version__)
+    log.debug("version: %s", __version__)
     log.debug("run time: %s", datetime.datetime.now())
     if args.read_stdin:
         args.file.extend(l.strip() for l in sys.stdin)

@@ -22,10 +22,29 @@ def id_from_fname(fname):
 def hash(fname, method='sha1'):
     """Returns a hash of the contents of fname using method.
 
+    fname can be the path to a regular file or a directory.
+
     Any secure hash method supported by python's hashlib library is supported.
     Raises errors for invalid files or methods.
 
     """
     import hashlib
+    if os.path.isdir(fname):
+        return hash_directory(fname, method)
     with open(fname, 'rb') as fp:
         return hashlib.new(method, fp.read()).hexdigest()
+
+
+def hash_directory(path, method='sha1'):
+    """Return hash of the contents of the directory at path using method.
+
+    Any secure hash method supported by python's hashlib library is supported.
+    Raises errors for invalid files or methods.
+
+    """
+    import hashlib
+    hashes = []
+    for fn in sorted(os.path.join(pn, fn) for pn, _ , fns in os.walk(path) for fn in fns):
+        with open(fn, 'rb') as fp:
+            hashes.append('{}={}'.format(os.path.relpath(fn, path), hashlib.new(method, fp.read()).hexdigest()))
+    return hashlib.new(method, '\n'.join(hashes).encode('utf-8')).hexdigest()

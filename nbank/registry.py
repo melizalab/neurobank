@@ -19,7 +19,7 @@ import requests as rq
 
 _neurobank_scheme = 'neurobank'
 
-log = logging.getLogger('registry')
+log = logging.getLogger('nbank')
 
 def strip_nulls(d):
     """Removes all keys from a dict that are equal to None"""

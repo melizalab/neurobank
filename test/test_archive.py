@@ -131,7 +131,7 @@ class DirectoryResourceTestCase(ArchiveTestBase):
         self.assertEqual(mode & self.cfg['policy']['access']['umask'], 0)
 
         fpath = os.path.join(path, "tempfile")
-        self.assertTrue(os.path.exists(path))
+        self.assertTrue(os.path.exists(fpath))
         mode = os.stat(path).st_mode
         self.assertEqual(mode & self.cfg['policy']['access']['umask'], 0)
 

@@ -150,3 +150,51 @@ class UUIDAutoIdNeurobankTestCase(NeurobankTestCase):
         uuid.UUID(id)
         locations = tuple(registry.get_locations(self.url, id))
         self.assertEqual(len(locations), 1)
+
+
+class DirectoryNeurobankTestCase(NeurobankTestCase):
+    """ Test handling of directory resources """
+
+    dtype = "d_dtype"
+
+    def setUp(self):
+        super(DirectoryNeurobankTestCase, self).setUp()
+        # add a different dtype
+        try:
+            registry.add_datatype(self.url, self.dtype, "content-type")
+        except registry.rq.exceptions.HTTPError as e:
+            if e.response.status_code == 400:
+                pass
+        # edit the project policy
+        cfg = archive.get_config(self.root)
+        cfg["policy"]["allow_directories"] = True
+        with open(os.path.join(self.root, archive._config_fname), 'wt') as fp:
+            json.dump(cfg, fp)
+
+    def test_can_deposit_and_locate_directories(self):
+        dname = os.path.join(self.tmpd, "tempdir")
+        os.mkdir(dname)
+        ids = tuple(nbank.deposit(self.root, [dname], self.dtype, auto_id=True))
+        self.assertEqual(len(ids), 1)
+        locations = tuple(registry.get_locations(self.url, ids[0]["id"]))
+        self.assertEqual(len(locations), 1)
+
+    def test_can_hash_directories(self):
+        import uuid
+        dname = os.path.join(self.tmpd, "tempdir")
+        os.mkdir(dname)
+        with open(os.path.join(dname, "file"), 'wt') as fp:
+            fp.write(str(uuid.uuid4()))
+        ids = tuple(nbank.deposit(self.root, [dname], hash=True, dtype=self.dtype, auto_id=True))
+        self.assertEqual(len(ids), 1)
+
+    def test_cannot_deposit_with_duplicate_hash(self):
+        import uuid
+        uu = str(uuid.uuid4())
+        dnames = [os.path.join(self.tmpd, d) for d in ("tempdir1", "tempdir2")]
+        for d in dnames:
+            os.mkdir(d)
+            with open(os.path.join(d, "file"), 'wt') as fp:
+                fp.write(uu)
+        with self.assertRaises(rq.exceptions.HTTPError):
+            tuple(nbank.deposit(self.root, dnames, hash=True, dtype=self.dtype, auto_id=True))
