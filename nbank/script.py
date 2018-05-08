@@ -18,11 +18,15 @@ import datetime
 import logging
 import requests as rq
 
+try:
+    from urllib.parse import urlunparse
+except ImportError:
+    from urlparse import urlunparse
+
 from nbank import __version__
 from nbank import core, archive, registry
 
 log = logging.getLogger('nbank')   # root logger
-
 
 def userpwd(arg):
     """ If arg is of the form username:password, returns them as a tuple. Otherwise None. """
@@ -117,6 +121,9 @@ def main(argv=None):
     pp.add_argument("dtype_name", help="a unique name for the data type")
     pp.add_argument("content_type", help="the MIME content-type for the data type")
     pp.set_defaults(func=add_datatype)
+
+    pp = sub.add_parser('domains', help='list available domains (archives)')
+    pp.set_defaults(func=list_domains)
 
     args = p.parse_args(argv)
 
@@ -241,6 +248,18 @@ def add_datatype(args):
         return
     data = registry.add_datatype(args.registry_url, args.dtype_name, args.content_type, auth=args.auth)
     print("added datatype %(name)s (content-type: %(content_type)s)" % data)
+
+
+def list_domains(args):
+    if args.registry_url is None:
+        log.error("error: supply a registry url with '-r' or %s environment variable", core.env_registry)
+        return
+    for domain in registry.get_domains(args.registry_url):
+        if domain["scheme"] == "neurobank":
+            print("%(name)-25s\t%(root)s" % domain)
+        else:
+            url = urlunparse(domain["scheme"], domain["root"], '', '', '', '')
+            print("%-25s\t%s" % (domain["name"], url))
 
 
 # Variables:
