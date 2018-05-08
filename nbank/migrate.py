@@ -37,6 +37,7 @@ def check_catalog(catalog):
 def register_resources(catalog, archive_path, dtype=None, hash=False, auth=None, **metadata):
     """ Add resources from catalog (if found in archive_path) to neurobank archive """
     import os
+    import requests as rq
     from nbank import util
     from nbank.archive import get_config, find_resource
     from nbank.registry import add_resource, find_domain_by_path, full_url
@@ -70,7 +71,18 @@ def register_resources(catalog, archive_path, dtype=None, hash=False, auth=None,
             sha1 = None
         # merge metadata from catalog and arguments:
         res.update(**metadata)
-        result = add_resource(registry_url, id, dtype, domain, sha1, auth, **res)
+        try:
+            result = add_resource(registry_url, id, dtype, domain, sha1, auth, **res)
+        except rq.exceptions.HTTPError as e:
+            # bad request means the domain name is taken or badly formed
+            if e.response.status_code == 400:
+                data = e.response.json()
+                for k, v in data.items():
+                    for vv in v:
+                        log.warn("   skipping: %s", vv)
+                continue
+            else:
+                raise e
         registry_id = full_url(registry_url, result["name"])
         log.info("   registered as %s", registry_id)
         yield {"source": resource_path, "id": result["name"]}
@@ -81,7 +93,6 @@ def main(argv=None):
     import argparse
     import sys
     import json
-    import requests as rq
     from nbank.script import userpwd, ParseKeyVal
 
     p = argparse.ArgumentParser(description="import catalog from old nbank (<0.7.0) into registry")
@@ -128,14 +139,5 @@ def main(argv=None):
             if args.json_out:
                 json.dump(res, fp=sys.stdout)
                 sys.stdout.write("\n")
-    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
-        log.error("    error: %s", e)
-    except rq.exceptions.HTTPError as e:
-        # bad request means the domain name is taken or badly formed
-        if e.response.status_code == 400:
-            data = e.response.json()
-            for k, v in data.items():
-                for vv in v:
-                    log.error("   error: %s - %s", k, vv)
-        else:
-            raise e
+    except Exception as e:
+        log.error("    fatal error: %s", e)

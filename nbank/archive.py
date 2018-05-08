@@ -98,12 +98,17 @@ def create(archive_path, registry_url, umask=_default_umask, **policies):
     **policies: override auto_identifiers, keep_extensions, allow_directories, or require_hash
 
     Creates archive_path and all parents as needed. Does not overwrite existing
-    files or directories. Raises OSError for failed operations.
+    files or directories. If a config file already exists, uses the umask stored
+    there rather than the supplied one. Raises OSError for failed operations.
 
     """
     import pwd
     import grp
     import subprocess
+
+    cfg = get_config(archive_path)
+    if cfg is not None:
+        umask = cfg["policy"]["access"]["umask"]
 
     umask &= 0o777  # mask out the umask
 
@@ -117,7 +122,7 @@ def create(archive_path, registry_url, umask=_default_umask, **policies):
     os.chmod(resdir, 0o2777 & ~umask)
 
     # try to set default facl; fail silently if setfacl doesn't exist
-    # FIXME this is not correct if umask is not 022
+    # FIXME this is not correct if umask is not 007
     faclcmd = "setfacl -d -m u::rwx,g::rwx,o::- resources".split()
     try:
         ret = subprocess.call(faclcmd)
