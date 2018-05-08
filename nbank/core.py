@@ -44,6 +44,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
     to have to fix them herself for now.
 
     """
+    import uuid
     from nbank.archive import get_config, store_resource
     from nbank.registry import add_resource, find_domain_by_path, full_url
     archive_path = os.path.abspath(archive_path)
@@ -52,6 +53,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
     registry_url = cfg["registry"]
     log.info("   registry: %s", registry_url)
     auto_id = cfg['policy']['auto_identifiers'] or auto_id
+    auto_id_type = cfg['policy'].get('auto_id_type', None)
     allow_dirs = cfg['policy']['allow_directories']
 
     # check that domain exists for this path
@@ -68,7 +70,13 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
         if not allow_dirs and os.path.isdir(src):
             log.info("   is a directory; skipping")
             continue
-        id = None if auto_id else util.id_from_fname(src)
+        if auto_id:
+            if auto_id_type == "uuid":
+                id = str(uuid.uuid4())
+            else:
+                id = None
+        else:
+            id = util.id_from_fname(src)
         if hash or cfg['policy']['require_hash']:
             sha1 = util.hash(src)
             log.info("   sha1: %s", sha1)

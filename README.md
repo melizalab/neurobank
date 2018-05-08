@@ -36,7 +36,9 @@ The script will attempt to contact the registry service through the supplied URL
 
 Edit the `README.md` and `nbank.json` files created in the archive directory to describe your project. The `nbank.json` file is also where you'll need to set some key variables and policies. These are the settings you may want to modify:
 
-  - `auto_identifiers`: If set to false (the default), when files are deposited, their names are used as identifiers unless the user asks for an automatically generated id. If set to true, every resource is given an automatic id, which is usually a short string.
+- `auto_identifiers`: If set to false (the default), when files are deposited, their names are used as identifiers unless the user asks for an automatically generated id. If set to true, every resource is given an automatic id.
+
+- `auto_id_type`: If set to `null` (or not set at all), automatic ids are assigned by the registry. This is usually a short, random base-36 string. If set to `"uuid"`, the `nbank` script will generate 128-bit UUIDs as identifiers.
 
 - `require_hash`: If set to true (the default), every resource will have a hash value calculated and stored in the registry. The registry will then be able to prevent duplicate files from being deposited under multiple identifiers.
 

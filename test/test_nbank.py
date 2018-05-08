@@ -21,7 +21,7 @@ class NeurobankTestCase(TestCase):
     a .netrc with username and password created
     """
 
-    url = os.environ[nbank.env_registry]
+    url = nbank.default_registry()
     umask = 0o027
     dtype = "a_dtype"
 
@@ -51,6 +51,9 @@ class NeurobankTestCase(TestCase):
         super(NeurobankTestCase, self).tearDown()
         # destroy temporary directory
         shutil.rmtree(self.tmpd)
+
+
+class DefaultAutoIdNeurobankTestCase(NeurobankTestCase):
 
     def test_can_deposit_and_locate_resource(self):
         # create a dummy file
@@ -121,3 +124,29 @@ class NeurobankTestCase(TestCase):
     def test_locate_invalid_resource(self):
         result = tuple(registry.get_locations(self.url, "blahblah.2.2"))
         self.assertEqual(len(result), 0)
+
+
+class UUIDAutoIdNeurobankTestCase(NeurobankTestCase):
+    """ Test locally assigned auto identifiers """
+
+    def setUp(self):
+        super(UUIDAutoIdNeurobankTestCase, self).setUp()
+        # edit the project policy for UUID auto identifiers
+        cfg = archive.get_config(self.root)
+        cfg["policy"]["auto_id_type"] = "uuid"
+        with open(os.path.join(self.root, archive._config_fname), 'wt') as fp:
+            json.dump(cfg, fp)
+
+    def test_can_deposit_and_locate_resource(self):
+        import uuid
+        # create a dummy file
+        src = os.path.join(self.tmpd, "temp.wav")
+        with open(src, 'wt') as fp:
+            fp.write("this is not a wave file")
+        ids = tuple(nbank.deposit(self.root, [src], dtype=self.dtype, auto_id=True))
+        self.assertEqual(len(ids), 1)
+        id = ids[0]["id"]
+        # this will raise an error if the identifier is not a valid UUID:
+        uuid.UUID(id)
+        locations = tuple(registry.get_locations(self.url, id))
+        self.assertEqual(len(locations), 1)
