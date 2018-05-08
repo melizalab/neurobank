@@ -51,7 +51,8 @@ setup(
 
     packages=find_packages(exclude=["*test*"]),
 
-    entry_points={'console_scripts': ['nbank = nbank.script:main'] },
+    entry_points={'console_scripts': ['nbank = nbank.script:main',
+                                      'nbank-migrate = nbank.migrate:main'] },
 
     install_requires=["requests>2.18"],
     test_suite='nose.collector'

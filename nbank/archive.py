@@ -60,6 +60,7 @@ _nbank_json = """{
   "registry": "%(registry_url)s",
   "policy": {
     "auto_identifiers": false,
+    "auto_id_type": null,
     "keep_extensions": true,
     "allow_directories": false,
     "require_hash": true,
