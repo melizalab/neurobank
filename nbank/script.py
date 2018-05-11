@@ -122,8 +122,8 @@ def main(argv=None):
     pp.add_argument("content_type", help="the MIME content-type for the data type")
     pp.set_defaults(func=add_datatype)
 
-    pp = sub.add_parser('domains', help='list available domains (archives)')
-    pp.set_defaults(func=list_domains)
+    pp = sub.add_parser('archives', help='list available archives (archives)')
+    pp.set_defaults(func=list_archives)
 
     args = p.parse_args(argv)
 
@@ -167,16 +167,16 @@ def init_archive(args):
         return
 
     try:
-        registry.add_domain(args.registry_url, args.name, registry._neurobank_scheme,
+        registry.add_archive(args.registry_url, args.name, registry._neurobank_scheme,
                             args.directory, args.auth)
     except rq.exceptions.HTTPError as e:
-        # bad request means the domain name is taken or badly formed
+        # bad request means the archive name is taken or badly formed
         if e.response.status_code == 400:
-            log.error("unable to create domain. Name must match [0-9a-zA-Z_-]+, and name and path must be unique")
+            log.error("unable to add archive to registry. Name must match [0-9a-zA-Z_-]+, and name and path must be unique")
         else:
             raise e
     else:
-        log.info("registered '%s' as domain '%s'", args.directory, args.name)
+        log.info("registered '%s' as archive '%s'", args.directory, args.name)
         archive.create(args.directory, args.registry_url, args.umask)
         log.info("initialized neurobank archive in %s", args.directory)
 
@@ -194,7 +194,7 @@ def store_resources(args):
                 sys.stdout.write("\n")
 
     except rq.exceptions.HTTPError as e:
-        # bad request means the domain name is taken or badly formed
+        # bad request means the archive name is taken or badly formed
         if e.response.status_code == 400:
             data = e.response.json()
             for k, v in data.items():
@@ -250,16 +250,16 @@ def add_datatype(args):
     print("added datatype %(name)s (content-type: %(content_type)s)" % data)
 
 
-def list_domains(args):
+def list_archives(args):
     if args.registry_url is None:
         log.error("error: supply a registry url with '-r' or %s environment variable", core.env_registry)
         return
-    for domain in registry.get_domains(args.registry_url):
-        if domain["scheme"] == "neurobank":
-            print("%(name)-25s\t%(root)s" % domain)
+    for archive in registry.get_archives(args.registry_url):
+        if archive["scheme"] == "neurobank":
+            print("%(name)-25s\t%(root)s" % archive)
         else:
-            url = urlunparse(domain["scheme"], domain["root"], '', '', '', '')
-            print("%-25s\t%s" % (domain["name"], url))
+            url = urlunparse(archive["scheme"], archive["root"], '', '', '', '')
+            print("%-25s\t%s" % (archive["name"], url))
 
 
 # Variables:

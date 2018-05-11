@@ -34,11 +34,11 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
     - unable to contact registry: ConnectionError
     - attempt to add unallowed directory: skip the directory
     - failed to register resource for any reason: HTTPError, usually 400 error code
-    - unable to match archive path to domain in registry: RuntimeError
+    - unable to match archive path to archive in registry: RuntimeError
     - failed to add the file (usually b/c the identifier is taken): RuntimeError
 
     The last two errors indicate a major problem where the archive has perhaps
-    been moved, or the domain int he registry is not pointing to the right
+    been moved, or the archive int he registry is not pointing to the right
     location, or data has been stored in the archive without contacting the
     registry. These are currently hairy enough problems that the user is going
     to have to fix them herself for now.
@@ -46,7 +46,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
     """
     import uuid
     from nbank.archive import get_config, store_resource
-    from nbank.registry import add_resource, find_domain_by_path, full_url
+    from nbank.registry import add_resource, find_archive_by_path, full_url
     archive_path = os.path.abspath(archive_path)
     cfg = get_config(archive_path)
     log.info("archive: %s", archive_path)
@@ -56,10 +56,10 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
     auto_id_type = cfg['policy'].get('auto_id_type', None)
     allow_dirs = cfg['policy']['allow_directories']
 
-    # check that domain exists for this path
-    domain = find_domain_by_path(registry_url, archive_path)
-    log.info("   domain name: %s", domain)
-    if domain is None:
+    # check that archive exists for this path
+    archive = find_archive_by_path(registry_url, archive_path)
+    log.info("   archive name: %s", archive)
+    if archive is None:
         raise RuntimeError("archive '%s' not in registry. did it move?" % archive_path)
 
     for src in files:
@@ -82,7 +82,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
             log.info("   sha1: %s", sha1)
         else:
             sha1 = None
-        result = add_resource(registry_url, id, dtype, domain, sha1, auth, **metadata)
+        result = add_resource(registry_url, id, dtype, archive, sha1, auth, **metadata)
         id = full_url(registry_url, result["name"])
         log.info("   registered as %s", id)
         tgt = store_resource(cfg, src, id=result["name"])

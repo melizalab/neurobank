@@ -40,20 +40,20 @@ def get_datatypes(base_url):
     return json(url)
 
 
-def get_domains(base_url):
-    """ Return a list of known domain names """
-    url = path.join(base_url, "domains/")
+def get_archives(base_url):
+    """ Return a list of known archive names """
+    url = path.join(base_url, "archives/")
     return json(url)
 
 
-def find_domain_by_path(base_url, root):
-    """Return the domain name associated with path, or None if no such domain is defined
+def find_archive_by_path(base_url, root):
+    """Return the archive name associated with path, or None if no such archive is defined
 
-    Users are required to look up the domain name associated with an archive to
+    Users are required to look up the archive name associated with an archive to
     avoid putting data somewhere it can't be found.
 
     """
-    url = path.join(base_url, "domains/")
+    url = path.join(base_url, "archives/")
     try:
         return json(url, scheme=_neurobank_scheme, root=root)[0]["name"]
     except IndexError:
@@ -120,20 +120,20 @@ def add_datatype(base_url, name, content_type, auth=None):
     return r.json()
 
 
-def add_domain(base_url, name, scheme, root, auth=None):
-    """ Add a domain to the registry """
-    url = path.join(base_url, "domains/")
+def add_archive(base_url, name, scheme, root, auth=None):
+    """ Add a archive to the registry """
+    url = path.join(base_url, "archives/")
     log.debug("POST %s", url)
     r = rq.post(url, auth=auth, json={"name": name, "scheme": scheme, "root": root})
     r.raise_for_status()
     return r.json()
 
 
-def add_resource(base_url, id, dtype, domain, sha1=None, auth=None, **metadata):
+def add_resource(base_url, id, dtype, archive, sha1=None, auth=None, **metadata):
     """Add a resource to the registry"""
     # add the resource
     url = path.join(base_url, "resources/")
-    data = {"name": id, "dtype": dtype, "sha1": sha1, "locations": [domain],
+    data = {"name": id, "dtype": dtype, "sha1": sha1, "locations": [archive],
             "metadata": metadata}
     log.debug("POST %s: %s", url, data)
     r = rq.post(url, auth=auth, json=strip_nulls(data))
@@ -148,7 +148,7 @@ def add_resource(base_url, id, dtype, domain, sha1=None, auth=None, **metadata):
 #     return json(url)
 
 
-# def get_domain(base_url, domain):
-#     """ Get info about domain, or raise an error if it does not exist """
-#     url = path.join(base_url, "domains", domain) + "/"
+# def get_archive(base_url, archive):
+#     """ Get info about archive, or raise an error if it does not exist """
+#     url = path.join(base_url, "archives", archive) + "/"
 #     return json(url)

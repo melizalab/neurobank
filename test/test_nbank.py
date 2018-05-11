@@ -29,10 +29,10 @@ class NeurobankTestCase(TestCase):
         super(NeurobankTestCase, self).setUp()
         # make a scratch directory
         self.tmpd = tempfile.mkdtemp()
-        self.domain = os.path.basename(self.tmpd)
+        self.archive = os.path.basename(self.tmpd)
         self.root = os.path.join(self.tmpd, "archive")
-        # add domain - this will fail if netrc is not set up.
-        registry.add_domain(self.url, self.domain, registry._neurobank_scheme, self.root)
+        # add archive - this will fail if netrc is not set up.
+        registry.add_archive(self.url, self.archive, registry._neurobank_scheme, self.root)
         # try adding a dtype
         try:
             registry.add_datatype(self.url, self.dtype, "content-type")

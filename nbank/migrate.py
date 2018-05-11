@@ -40,17 +40,17 @@ def register_resources(catalog, archive_path, dtype=None, hash=False, auth=None,
     import requests as rq
     from nbank import util
     from nbank.archive import get_config, find_resource
-    from nbank.registry import add_resource, get_resource, find_domain_by_path, full_url
+    from nbank.registry import add_resource, get_resource, find_archive_by_path, full_url
     archive_path = os.path.abspath(archive_path)
     cfg = get_config(archive_path)
     log.info("archive: %s", archive_path)
     registry_url = cfg["registry"]
     log.info("   registry: %s", registry_url)
 
-    # check that domain exists for this path
-    domain = find_domain_by_path(registry_url, archive_path)
-    log.info("   domain name: %s", domain)
-    if domain is None:
+    # check that archive exists for this path
+    archive = find_archive_by_path(registry_url, archive_path)
+    log.info("   archive name: %s", archive)
+    if archive is None:
         raise RuntimeError("archive '%s' not in registry. make sure to run nbank init before migrating" % archive_path)
 
     for res in catalog["resources"]:
@@ -78,9 +78,9 @@ def register_resources(catalog, archive_path, dtype=None, hash=False, auth=None,
         # merge metadata from catalog and arguments:
         res.update(**metadata)
         try:
-            result = add_resource(registry_url, id, dtype, domain, sha1, auth, **res)
+            result = add_resource(registry_url, id, dtype, archive, sha1, auth, **res)
         except rq.exceptions.HTTPError as e:
-            # bad request means the domain name is taken or badly formed
+            # bad request means the archive name is taken or badly formed
             if e.response.status_code == 400:
                 data = e.response.json()
                 for k, v in data.items():
@@ -120,7 +120,7 @@ def main(argv=None):
     p.add_argument('-j', "--json-out", action="store_true",
                     help="output each deposited file to stdout as line-deliminated JSON")
     p.add_argument('directory', help="path of the archive where the files are stored. "
-                   "This location needs to have been added as a domain to the registry (with nbank init) "
+                   "This location needs to have been added as a archive to the registry (with nbank init) "
                    "before running this script.")
     p.add_argument('catalog', help='the JSON catalog to import')
 

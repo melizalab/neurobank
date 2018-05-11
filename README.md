@@ -30,7 +30,7 @@ nbank [-a username:password] [-r registry-url] init [-n name] my-archive-path
 
 If your registry requires authentication, this must be supplied with the `-a` flag, or in your [netrc](https://www.gnu.org/software/inetutils/manual/html_node/The-_002enetrc-file.html) file.
 
-The script will attempt to contact the registry service through the supplied URL and add the archive to the list of domains. By default, the archive is named after the basename of the archive path. For example, `/home/data/intracellular` would have the name `intracellular`. You can can override this behavior with the `-n` flag; however, the registry may only allow you to have one domain name for each path to avoid confusion. Then the script will create and initialize the archive under `my-archive-path`. You'll get an error if the target directory already exists, or if the registry already has a domain with the same name.
+The script will attempt to contact the registry service through the supplied URL and add the archive. By default, the archive is named after the basename of the archive path. For example, `/home/data/intracellular` would have the name `intracellular`. You can can override this behavior with the `-n` flag; however, the registry may only allow you to have one archive name for each path to avoid confusion. Then the script will create and initialize the archive under `my-archive-path`. You'll get an error if the target directory already exists, or if the registry already has an archive with the same name.
 
 ### Archive policies
 
