@@ -25,6 +25,7 @@ def strip_nulls(d):
     """Removes all keys from a dict that are equal to None"""
     return {k: v for k, v in d.items() if v is not None}
 
+
 def json(url, **params):
     """Retrieve json data from server and return as a dictionary, or None if no data"""
     r = rq.get(url, params=params, headers={'Accept': 'application/json'}, verify=True)
@@ -140,6 +141,20 @@ def add_resource(base_url, id, dtype, archive, sha1=None, auth=None, **metadata)
     log.debug("  response: %s", r.text)
     r.raise_for_status()
     return r.json()
+
+
+def log_error(err):
+    """Writes error message from server to log
+
+    Reraises the error if its status code is not Bad Request (400)
+    """
+    if err.response.status_code == 400:
+        data = err.response.json()
+        for k, v in data.items():
+            for vv in v:
+                log.error("   error: %s: %s", k, vv)
+    else:
+        raise err
 
 
 # def get_datatype(base_url, dtype):

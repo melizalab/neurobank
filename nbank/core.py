@@ -49,6 +49,8 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
     from nbank.registry import add_resource, find_archive_by_path, full_url
     archive_path = os.path.abspath(archive_path)
     cfg = get_config(archive_path)
+    if cfg is None:
+        raise ValueError("%s is not a valid archive" % archive_path)
     log.info("archive: %s", archive_path)
     registry_url = cfg["registry"]
     log.info("   registry: %s", registry_url)

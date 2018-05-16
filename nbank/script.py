@@ -170,11 +170,7 @@ def init_archive(args):
         registry.add_archive(args.registry_url, args.name, registry._neurobank_scheme,
                             args.directory, args.auth)
     except rq.exceptions.HTTPError as e:
-        # bad request means the archive name is taken or badly formed
-        if e.response.status_code == 400:
-            log.error("unable to add archive to registry. Name must match [0-9a-zA-Z_-]+, and name and path must be unique")
-        else:
-            raise e
+        registry.log_error(e)
     else:
         log.info("registered '%s' as archive '%s'", args.directory, args.name)
         archive.create(args.directory, args.registry_url, args.umask)
@@ -188,20 +184,14 @@ def store_resources(args):
         args.file.extend(l.strip() for l in sys.stdin)
     try:
         for res in core.deposit(args.directory, args.file, dtype=args.dtype, hash=args.hash,
-                           auto_id=args.auto_id, auth=args.auth, **args.metadata):
+                                auto_id=args.auto_id, auth=args.auth, **args.metadata):
             if args.json_out:
                 json.dump(res, fp=sys.stdout)
                 sys.stdout.write("\n")
-
+    except ValueError as e:
+        log.error("error: %s", e)
     except rq.exceptions.HTTPError as e:
-        # bad request means the archive name is taken or badly formed
-        if e.response.status_code == 400:
-            data = e.response.json()
-            for k, v in data.items():
-                for vv in v:
-                    log.error("   error: %s", vv)
-        else:
-            raise e
+        registry.log_error(e)
 
 
 def locate_resources(args):
@@ -246,20 +236,23 @@ def add_datatype(args):
     if args.registry_url is None:
         log.error("error: supply a registry url with '-r' or %s environment variable", core.env_registry)
         return
-    data = registry.add_datatype(args.registry_url, args.dtype_name, args.content_type, auth=args.auth)
-    print("added datatype %(name)s (content-type: %(content_type)s)" % data)
+    try:
+        data = registry.add_datatype(args.registry_url, args.dtype_name, args.content_type, auth=args.auth)
+        print("added datatype %(name)s (content-type: %(content_type)s)" % data)
+    except rq.exceptions.HTTPError as e:
+        registry.log_error(e)
 
 
 def list_archives(args):
     if args.registry_url is None:
         log.error("error: supply a registry url with '-r' or %s environment variable", core.env_registry)
         return
-    for archive in registry.get_archives(args.registry_url):
-        if archive["scheme"] == "neurobank":
-            print("%(name)-25s\t%(root)s" % archive)
+    for arch in registry.get_archives(args.registry_url):
+        if arch["scheme"] == "neurobank":
+            print("%(name)-25s\t%(root)s" % arch)
         else:
-            url = urlunparse(archive["scheme"], archive["root"], '', '', '', '')
-            print("%-25s\t%s" % (archive["name"], url))
+            url = urlunparse(arch["scheme"], arch["root"], '', '', '', '')
+            print("%-25s\t%s" % (arch["name"], url))
 
 
 # Variables:
