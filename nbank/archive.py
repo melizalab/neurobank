@@ -238,12 +238,19 @@ def fix_permissions(cfg, tgt, walk=True):
     import pwd
     import grp
 
-    uid = pwd.getpwnam(cfg['policy']['access']['user']).pw_uid
+    myuid = os.getuid()
+    if myuid == 0:
+        uid = pwd.getpwnam(cfg['policy']['access']['user']).pw_uid
+    else:
+        uid = -1
     gid = grp.getgrnam(cfg['policy']['access']['group']).gr_gid
     umask = cfg['policy']['access']['umask']
 
     def fix(fname):
-        os.chown(fname, uid, gid)
+        try:
+            os.chown(fname, uid, gid)
+        except PermissionError:
+            log.warn("unable to change uid/gid of '%s'", fname)
         os.chmod(fname, os.stat(fname).st_mode & ~umask)
 
     fix(tgt)
