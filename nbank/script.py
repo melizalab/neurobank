@@ -105,7 +105,12 @@ def main(argv=None):
 
     pp = sub.add_parser('search', help="search for resource(s)")
     pp.set_defaults(func=search_resources)
-    pp.add_argument("query", help="resource name or fragment to search by")
+    pp.add_argument("-d", "--dtype", help="filter results by dtype")
+    pp.add_argument("-H", "--hash", help="filter results by hash")
+    pp.add_argument("-n", "--archive", help="filter results by archive location")
+    pp.add_argument('-k', help="filter by metadata field (use multiple -k for multiple values)",
+                    action=ParseKeyVal, default=dict(), metavar="KEY=VALUE", dest='metadata')
+    pp.add_argument("name", help="resource name or fragment to search by", nargs='?')
 
     pp = sub.add_parser('info', help="get info from registry about resource(s)")
     pp.set_defaults(func=get_resource_info)
@@ -212,7 +217,17 @@ def search_resources(args):
     if args.registry_url is None:
         log.error("error: supply a registry url with '-r' or %s environment variable", core.env_registry)
         return
-    for d in registry.find_resource_by_name(args.registry_url, args.query):
+    # parse commandline args to query dict
+    argmap = [("name", "name"), ("dtype", "dtype"), ("sha1", "hash"), ("location", "archive")]
+    params = {paramname: getattr(args, argname) for (paramname, argname) in argmap
+              if getattr(args, argname) is not None}
+    for k, v in args.metadata.items():
+        kk = "metadata__%s" % k
+        params[kk] = v
+    if len(params) == 0:
+        log.error("nbank search: error: at least one filter parameter is required")
+        return
+    for d in registry.find_resource(args.registry_url, **params):
         print(d["name"])
 
 

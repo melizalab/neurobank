@@ -60,9 +60,10 @@ def find_archive_by_path(base_url, root):
     except IndexError:
         return None
 
-def find_resource_by_name(base_url, query):
+
+def find_resource(base_url, **params):
     url = path.join(base_url, "resources/")
-    return json(url, name=query)
+    return json(url, **params)
 
 
 def parse_resource_id(base_url, id):
