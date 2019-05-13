@@ -144,6 +144,16 @@ def add_resource(base_url, id, dtype, archive, sha1=None, auth=None, **metadata)
     return r.json()
 
 
+def update_resource_metadata(base_url, id, auth=None, **metadata):
+    url = path.join(base_url, "resources", id) + "/"
+    data = {"metadata": metadata}
+    log.debug("PATCH %s: %s", url, data)
+    r = rq.patch(url, auth=auth, json=strip_nulls(data))
+    log.debug("  response: %s", r.text)
+    r.raise_for_status()
+    return r.json()
+
+
 def log_error(err):
     """Writes error message from server to log
 

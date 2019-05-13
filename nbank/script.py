@@ -116,6 +116,12 @@ def main(argv=None):
     pp.set_defaults(func=get_resource_info)
     pp.add_argument("id", nargs='+', help="the identifier of the resource")
 
+    pp = sub.add_parser('modify', help="update metadata of resource(s)")
+    pp.set_defaults(func=set_resource_metadata)
+    pp.add_argument("-k", help="specify metadata key=value (use multiple -k for multiple values)",
+                    action=ParseKeyVal, default=dict(), metavar="KEY=VALUE", dest="metadata")
+    pp.add_argument("id", nargs="+", help="identifier(s) of the resource(s)")
+
     pp = sub.add_parser('dtype', help='list and add data types')
     ppsub = pp.add_subparsers(title='subcommands')
 
@@ -236,6 +242,12 @@ def get_resource_info(args):
         data = core.describe(id, args.registry_url)
         if data is None:
             data = {"id": id, "error": "not found"}
+        json.dump(data, fp=sys.stdout, indent=2)
+
+
+def set_resource_metadata(args):
+    for id in args.id:
+        data = registry.update_resource_metadata(args.registry_url, id, auth=args.auth, **args.metadata)
         json.dump(data, fp=sys.stdout, indent=2)
 
 
