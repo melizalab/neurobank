@@ -123,7 +123,7 @@ def create(archive_path, registry_url, umask=_default_umask, **policies):
 
     # try to set default facl; fail silently if setfacl doesn't exist
     # FIXME this is not correct if umask is not 007
-    faclcmd = "setfacl -d -m u::rwx,g::rwx,o::- resources".split()
+    faclcmd = "setfacl -d -m u::rwx,g::rwx,o::- {}".format(resdir).split()
     try:
         ret = subprocess.call(faclcmd)
     except FileNotFoundError:
