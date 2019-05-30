@@ -62,8 +62,22 @@ def find_archive_by_path(base_url, root):
 
 
 def find_resource(base_url, **params):
+    """Find all resources that match params
+
+    Because this list may be long and paginated by the server results are yielded one by one
+    """
     url = path.join(base_url, "resources/")
-    return json(url, **params)
+    r = rq.get(url, params=params, headers={'Accept': 'application/json'}, verify=True)
+    r.raise_for_status()
+    for d in r.json():
+        yield d
+    while "next" in r.links:
+        url = r.links["next"]["url"]
+        # we may need to throttle request rate
+        r = rq.get(url, params=params, headers={'Accept': 'application/json'}, verify=True)
+        r.raise_for_status()
+        for d in r.json():
+            yield d
 
 
 def parse_resource_id(base_url, id):
@@ -99,6 +113,12 @@ def get_resource(base_url, id):
             return None
         else:
             raise e
+
+def get_resources(base_url, **query):
+    """Yield all registry records that match the query
+
+    This is usually used to retrieve the full catalog for an archive
+    """
 
 
 def get_locations(base_url, id):

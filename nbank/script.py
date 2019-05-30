@@ -28,6 +28,7 @@ from nbank import core, archive, registry
 
 log = logging.getLogger('nbank')   # root logger
 
+
 def userpwd(arg):
     """ If arg is of the form username:password, returns them as a tuple. Otherwise None. """
     ret = arg.split(':')
@@ -56,11 +57,11 @@ class ParseKeyVal(argparse.Action):
 def main(argv=None):
 
     p = argparse.ArgumentParser(description='manage source files and collected data')
-    p.add_argument('-v','--version', action="version",
+    p.add_argument('-v', '--version', action="version",
                    version="%(prog)s " + __version__)
     p.add_argument('-r', dest='registry_url', help="URL of the registry service. "
-                    "Default is to use the environment variable '%s'" % core.env_registry,
-                    default=core.default_registry())
+                   "Default is to use the environment variable '%s'" % core.env_registry,
+                   default=core.default_registry())
     p.add_argument('-a', dest='auth', help="username:password to authenticate with registry. "
                    "If not supplied, will attempt to use .netrc file",
                    type=userpwd, default=None)
@@ -71,31 +72,31 @@ def main(argv=None):
     pp = sub.add_parser('init', help='initialize a data archive')
     pp.set_defaults(func=init_archive)
     pp.add_argument('directory',
-                        help="path of the directory for the archive. "
-                        "The directory should be empty or not exist. ")
+                    help="path of the directory for the archive. "
+                    "The directory should be empty or not exist. ")
     pp.add_argument('-n', dest='name', help="name to give the archive in the registry. "
-                        "The default is to use the directory name of the archive.",
-                        default=None)
+                    "The default is to use the directory name of the archive.",
+                    default=None)
     pp.add_argument('-u', dest='umask', help="umask for newly created files in archive, "
-                        "as an octal. The default is %(default)03o.",
-                        type=octalint, default=archive._default_umask)
+                    "as an octal. The default is %(default)03o.",
+                    type=octalint, default=archive._default_umask)
 
     pp = sub.add_parser('deposit', help='deposit resource(s)')
     pp.set_defaults(func=store_resources)
     pp.add_argument('directory', help="path of the archive ")
-    pp.add_argument('-d','--dtype', help="specify the datatype for the deposited resources")
-    pp.add_argument('-H','--hash', action="store_true",
+    pp.add_argument('-d', '--dtype', help="specify the datatype for the deposited resources")
+    pp.add_argument('-H', '--hash', action="store_true",
                     help="calculate a SHA1 hash of each file and store in the registry")
-    pp.add_argument('-A','--auto-id', action="store_true",
+    pp.add_argument('-A', '--auto-id', action="store_true",
                     help="ask the registry to generate an id for each resource")
     pp.add_argument('-k', help="specify metadata field (use multiple -k for multiple values)",
                     action=ParseKeyVal, default=dict(), metavar="KEY=VALUE", dest='metadata')
     pp.add_argument('-j', "--json-out", action="store_true",
                     help="output each deposited file to stdout as line-deliminated JSON")
     pp.add_argument('-@', dest="read_stdin", action='store_true',
-                       help="read additional file names from stdin")
+                    help="read additional file names from stdin")
     pp.add_argument('file', nargs='+',
-                       help='path of file(s) to add to the repository')
+                    help='path of file(s) to add to the repository')
 
     pp = sub.add_parser('locate', help="locate resource(s)")
     pp.set_defaults(func=locate_resources)
@@ -105,6 +106,8 @@ def main(argv=None):
 
     pp = sub.add_parser('search', help="search for resource(s)")
     pp.set_defaults(func=search_resources)
+    pp.add_argument("-j", "--json-out", help="output full record as json (otherwise just name)",
+                    action="store_true")
     pp.add_argument("-d", "--dtype", help="filter results by dtype")
     pp.add_argument("-H", "--hash", help="filter results by hash")
     pp.add_argument("-n", "--archive", help="filter results by archive location")
@@ -234,7 +237,12 @@ def search_resources(args):
         log.error("nbank search: error: at least one filter parameter is required")
         return
     for d in registry.find_resource(args.registry_url, **params):
-        print(d["name"])
+        if args.json_out:
+            json.dump(d, fp=sys.stdout, indent=2)
+            sys.stdout.write("\n")
+        else:
+            print(d["name"])
+
 
 
 def get_resource_info(args):

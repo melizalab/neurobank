@@ -94,7 +94,11 @@ The `deposit` command moves resource files to the archive under the `resources` 
 
  - `nbank properties [options] id`: queries the registry for all the properties associated with `id`
 
- - `nbank search query`: searches the database for resources that match `query`. Not yet implemented.
+ - `nbank info id`: returns the registry information on the resource in json format.
+
+ - `nbank search [options] query`: searches the database for resources that match `query`. The default is to search by identifier, but you can also search by hash, dtype, archive, or any metadata fields. The default is to return only the identifiers of the resources, but you can use the `-j` flag to output json instead, which is useful if you want to distribute the metadata with the archive.
+
+ - `nbank modify [-k key=value] id`: update the metadata for `id`. Multiple `-k` flags can be used.
 
 ## Python interface
 
