@@ -65,7 +65,7 @@ class DefaultAutoIdNeurobankTestCase(NeurobankTestCase):
         # create a dummy file
         src = os.path.join(self.tmpd, "temp.wav")
         with open(src, 'wt') as fp:
-            fp.write("this is not a wave file")
+            fp.write(random_string(64))
         ids = tuple(nbank.deposit(self.root, [src], dtype=self.dtype, auto_id=True))
         self.assertEqual(len(ids), 1)
         locations = tuple(registry.get_locations(self.url, ids[0]["id"]))
@@ -75,7 +75,7 @@ class DefaultAutoIdNeurobankTestCase(NeurobankTestCase):
         src = [os.path.join(self.tmpd, f) for f in ("test1.txt", "test2.txt")]
         for s in src:
             with open(s, 'wt') as fp:
-                fp.write("this is not a wave file")
+                fp.write(random_string(64))
         ids = tuple(nbank.deposit(self.root, src, dtype=self.dtype, auto_id=True))
         self.assertEqual(len(ids), len(src))
 
@@ -91,7 +91,7 @@ class DefaultAutoIdNeurobankTestCase(NeurobankTestCase):
         # create a dummy file
         src = os.path.join(self.tmpd, "tempz.wav")
         with open(src, 'wt') as fp:
-            fp.write("this is not a wave file")
+            fp.write(random_string(64))
         metadata = {"blah": "1", "bleh": "abcd"}
         ids = tuple(nbank.deposit(self.root, [src], dtype=self.dtype, auto_id=True, **metadata))
         self.assertEqual(len(ids), 1)
@@ -146,7 +146,6 @@ class DefaultAutoIdNeurobankTestCase(NeurobankTestCase):
         resources = tuple(nbank.verify(path, self.url))
         self.assertEqual(len(resources), 1)
         self.assertEqual(resources[0]["name"], ids[0]["id"])
-
 
 
 class UUIDAutoIdNeurobankTestCase(NeurobankTestCase):
