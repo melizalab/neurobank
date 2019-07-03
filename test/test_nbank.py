@@ -98,6 +98,18 @@ class DefaultAutoIdNeurobankTestCase(NeurobankTestCase):
         info = registry.get_resource(self.url, ids[0]["id"])
         self.assertDictEqual(info["metadata"], metadata)
 
+    def test_can_update_metadata(self):
+        src = os.path.join(self.tmpd, "temp-edit-medata.wav")
+        with open(src, 'wt') as fp:
+            fp.write(random_string(64))
+        metadata = {"blah": "1", "bleh": "abcd"}
+        ids = tuple(nbank.deposit(self.root, [src], dtype=self.dtype, auto_id=True))
+        self.assertEqual(len(ids), 1)
+        rep = registry.update_resource_metadata(self.url, ids[0]["id"], **metadata)
+        self.assertDictEqual(rep["metadata"], metadata)
+        info = registry.get_resource(self.url, ids[0]["id"])
+        self.assertDictEqual(info["metadata"], metadata)
+
     def test_invalid_registry_url_exception(self):
         with self.assertRaises(rq.exceptions.ConnectionError):
             tuple(registry.get_locations("http://nosuchurl/nosuchendpoint", "blahblah"))
