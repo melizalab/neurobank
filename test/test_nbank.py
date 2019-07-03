@@ -14,6 +14,12 @@ import requests as rq
 import nbank
 from nbank import registry, archive
 
+
+def random_string(N):
+    import random
+    import string
+    return ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(N))
+
 class NeurobankTestCase(TestCase):
     """ Base test case for all integration tests
 
@@ -124,6 +130,23 @@ class DefaultAutoIdNeurobankTestCase(NeurobankTestCase):
     def test_locate_invalid_resource(self):
         result = tuple(registry.get_locations(self.url, "blahblah.2.2"))
         self.assertEqual(len(result), 0)
+
+    def test_can_verify_hash(self):
+        src = os.path.join(self.tmpd, "hashable.txt")
+        with open(src, "wt") as fp:
+            fp.write(random_string(128))
+        ids = tuple(nbank.deposit(self.root, [src], hash=True, dtype=self.dtype, auto_id=True))
+        self.assertEqual(len(ids), 1)
+        locations = tuple(registry.get_locations(self.url, ids[0]["id"]))
+        self.assertEqual(len(locations), 1)
+        path = archive.find_resource(nbank.get_path_or_url(locations[0]))
+        # search by id
+        self.assertTrue(nbank.verify(path, self.url, id=ids[0]["id"]))
+        # search by hash
+        resources = tuple(nbank.verify(path, self.url))
+        self.assertEqual(len(resources), 1)
+        self.assertEqual(resources[0]["name"], ids[0]["id"])
+
 
 
 class UUIDAutoIdNeurobankTestCase(NeurobankTestCase):

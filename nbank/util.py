@@ -14,6 +14,7 @@ from __future__ import unicode_literals
 
 import os.path
 
+
 def id_from_fname(fname):
     """Generates an ID from the basename of fname, stripped of any extensions """
     return os.path.splitext(os.path.basename(fname))[0]

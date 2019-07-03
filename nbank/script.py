@@ -119,6 +119,10 @@ def main(argv=None):
     pp.set_defaults(func=get_resource_info)
     pp.add_argument("id", nargs='+', help="the identifier of the resource")
 
+    pp = sub.add_parser('verify', help="compute sha1 hash and check that it matches a record in the database")
+    pp.set_defaults(func=verify_file_hash)
+    pp.add_argument("files", nargs='+', help="the files or directories to verify")
+
     pp = sub.add_parser('modify', help="update metadata of resource(s)")
     pp.set_defaults(func=set_resource_metadata)
     pp.add_argument("-k", help="specify metadata key=value (use multiple -k for multiple values)",
@@ -244,7 +248,6 @@ def search_resources(args):
             print(d["name"])
 
 
-
 def get_resource_info(args):
     for id in args.id:
         data = core.describe(id, args.registry_url)
@@ -288,6 +291,30 @@ def list_archives(args):
         else:
             url = urlunparse(arch["scheme"], arch["root"], '', '', '', '')
             print("%-25s\t%s" % (arch["name"], url))
+
+
+def verify_file_hash(args):
+    from nbank.util import id_from_fname
+    if args.registry_url is None:
+        log.error("error: supply a registry url with '-r' or %s environment variable", core.env_registry)
+        return
+    for path in args.files:
+        if not os.path.exists(path):
+            print("%s: no such file or directory" % path)
+            continue
+        test_id = id_from_fname(path)
+        try:
+            if core.verify(path, args.registry_url, id=test_id):
+                print("%s: OK" % path)
+            else:
+                print("%s: FAILED to match record for %s" % (path, test_id))
+        except ValueError:
+            i = 0
+            for resource in core.verify(path, args.registry_url):
+                print("%s: matches %s" % (path, resource["name"]))
+                i += 1
+            if i == 0:
+                print("%s: no matches in registry" % path)
 
 
 # Variables:

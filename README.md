@@ -6,7 +6,7 @@ The data management strategy behind **neurobank** is simple: every resource gets
 
 There are two components to the **neurobank** system. One part is the **registry**, a service that stores identifiers, ensures they're unique, and resolves identifiers to the location where the resource is stored.  [django-neurobank](https://github.com/melizalab/django-neurobank) is an implementation of this service that uses a postgres backend and the django REST framework.
 
-The second component is an **archive**: a storage and retrieval mechanism. This package provides a basic filesystem-based archive for your resources. You can also use an external cloud-based service or a distributed filesystem like [IPFS](https://ipfs.io/), but for i/o-intensive pipelines you'll want to have your data on a local disk. This package also provides a simple python and commandline interface for querying the registry.
+The second component is an **archive**: a storage and retrieval mechanism. That's this package, which provides a basic filesystem-based archive for your resources. You can also use an external cloud-based service or a distributed filesystem like [IPFS](https://ipfs.io/), but for i/o-intensive pipelines you'll want to have your data on a local disk. This package also provides a simple python and commandline interface for querying the registry.
 
 ## Installation
 
@@ -32,7 +32,7 @@ If your registry requires authentication, this must be supplied with the `-a` fl
 
 The script will attempt to contact the registry service through the supplied URL and add the archive. By default, the archive is named after the basename of the archive path. For example, `/home/data/intracellular` would have the name `intracellular`. You can can override this behavior with the `-n` flag; however, the registry may only allow you to have one archive name for each path to avoid confusion. Then the script will create and initialize the archive under `my-archive-path`. You'll get an error if the target directory already exists, or if the registry already has an archive with the same name.
 
-### Archive policies
+### Set archive policies
 
 Edit the `README.md` and `nbank.json` files created in the archive directory to describe your project. The `nbank.json` file is also where you'll need to set some key variables and policies. These are the settings you may want to modify:
 
@@ -98,6 +98,8 @@ The `deposit` command moves resource files to the archive under the `resources` 
 
  - `nbank search [options] query`: searches the database for resources that match `query`. The default is to search by identifier, but you can also search by hash, dtype, archive, or any metadata fields. The default is to return only the identifiers of the resources, but you can use the `-j` flag to output json instead, which is useful if you want to distribute the metadata with the archive.
 
+ - `nbank verify [options] files`: computes a SHA1 hash for each file and searches the registry for a match. Running this is a good idea before starting an experiment, as you'll be able to tell if any of your stimulus files have changed. It's also useful if the same identifier is used in more than one domain or if you have a data file that was inadvertently renamed.
+
  - `nbank modify [-k key=value] id`: update the metadata for `id`. Multiple `-k` flags can be used.
 
 ## Python interface
@@ -112,6 +114,9 @@ One of the primary uses for neurobank is to allow multiple users to share a comm
 3. Set the setgid (or setuid) bit on the subdirectories of the archive, so that files added to the archive become owned by the group. (`chmod 2770 resources metadata`). You may also consider setting the sticky bit so that files and directories can't be accidentally deleted.
 4. If your filesystem supports it, set the default ACL on subdirectories so that added files are accessible only to the group. (`setfacl -d -m u::rwx,g::rwx,o::- resources metadata`).
 
+## Unit testing
+
+Unit tests are included, but you'll need a running registry. Set the `NBANK_REGISTRY` environment variable to the registry's URL, and if needed make an entry in `.netrc` with the required credentials.
 
 ## License
 

@@ -21,6 +21,7 @@ _neurobank_scheme = 'neurobank'
 
 log = logging.getLogger('nbank')
 
+
 def strip_nulls(d):
     """Removes all keys from a dict that are equal to None"""
     return {k: v for k, v in d.items() if v is not None}
@@ -113,12 +114,6 @@ def get_resource(base_url, id):
             return None
         else:
             raise e
-
-def get_resources(base_url, **query):
-    """Yield all registry records that match the query
-
-    This is usually used to retrieve the full catalog for an archive
-    """
 
 
 def get_locations(base_url, id):

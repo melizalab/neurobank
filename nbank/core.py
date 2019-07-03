@@ -38,7 +38,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
     - failed to add the file (usually b/c the identifier is taken): RuntimeError
 
     The last two errors indicate a major problem where the archive has perhaps
-    been moved, or the archive int he registry is not pointing to the right
+    been moved, or the archive in the registry is not pointing to the right
     location, or data has been stored in the archive without contacting the
     registry. These are currently hairy enough problems that the user is going
     to have to fix them herself for now.
@@ -113,6 +113,7 @@ def find(id, registry_url=None, local_only=False):
         else:
             yield path
 
+
 def get(id, registry_url=None, local_only=False):
     """Returns the first path or URL where id can be found, or None if no match.
 
@@ -133,6 +134,33 @@ def describe(id, registry_url=None):
         registry_url = default_registry()
     base, sid = parse_resource_id(registry_url, id)
     return get_resource(base, sid)
+
+
+def verify(file, registry_url=None, id=None):
+    """Compute the hash for file and search the registry for any resource(s) associated with it.
+
+    Returns a sequence of matching records. If id is not None, search instead by id
+    and return True if the hash matches.
+
+    """
+    from nbank.registry import find_resource, get_resource
+    if registry_url is None:
+        registry_url = default_registry()
+    if registry_url is None:
+        raise ValueError("hash verification requires a registry")
+
+    log.debug("verifying %s", file)
+    file_hash = util.hash(file)
+    if id is None:
+        log.debug("  searching by hash (%s)", file_hash)
+        return find_resource(registry_url, sha1=file_hash)
+    else:
+        log.debug("  searching by id (%s)", id)
+        resource = get_resource(registry_url, id=id)
+        try:
+            return resource["sha1"] == file_hash
+        except TypeError:
+            raise ValueError("%s does not exist" % id)
 
 
 def get_path_or_url(location):
