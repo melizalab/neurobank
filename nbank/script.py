@@ -55,7 +55,7 @@ class ParseKeyVal(argparse.Action):
         import ast
         try:
             return ast.literal_eval(value)
-        except ValueError:
+        except (ValueError, SyntaxError):
             return value
 
     def __call__(self, parser, namespace, arg, option_string=None):
@@ -130,6 +130,8 @@ def main(argv=None):
     pp.add_argument("-n", "--archive", help="filter results by archive location")
     pp.add_argument('-k', help="filter by metadata field (use multiple -k for multiple values)",
                     action=ParseKeyVal, default=dict(), metavar="KEY=VALUE", dest='metadata')
+    pp.add_argument('-K', help="exclude by metadata field (use multiple -K for multiple values)",
+                    action=ParseKeyVal, default=dict(), metavar="KEY=VALUE", dest='metadata_neq')
     pp.add_argument("name", help="resource name or fragment to search by", nargs='?')
 
     pp = sub.add_parser('info', help="get info from registry about resource(s)")
@@ -247,6 +249,9 @@ def search_resources(args):
               if getattr(args, argname) is not None}
     for k, v in args.metadata.items():
         kk = "metadata__%s" % k
+        params[kk] = v
+    for k, v in args.metadata_neq.items():
+        kk = "metadata__%s__neq" % k
         params[kk] = v
     if len(params) == 0:
         log.error("nbank search: error: at least one filter parameter is required")
