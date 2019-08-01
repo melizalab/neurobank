@@ -29,6 +29,16 @@ from nbank import core, archive, registry
 log = logging.getLogger('nbank')   # root logger
 
 
+def setup_log(log, debug=False):
+    ch = logging.StreamHandler()
+    formatter = logging.Formatter("%(message)s")
+    loglevel = logging.DEBUG if debug else logging.INFO
+    log.setLevel(loglevel)
+    ch.setLevel(loglevel)
+    ch.setFormatter(formatter)
+    log.addHandler(ch)
+
+
 def userpwd(arg):
     """ If arg is of the form username:password, returns them as a tuple. Otherwise None. """
     ret = arg.split(':')
@@ -41,6 +51,13 @@ def octalint(arg):
 
 class ParseKeyVal(argparse.Action):
 
+    def parse_value(self, value):
+        import ast
+        try:
+            return ast.literal_eval(value)
+        except ValueError:
+            return value
+
     def __call__(self, parser, namespace, arg, option_string=None):
         kv = getattr(namespace, self.dest)
         if kv is None:
@@ -50,7 +67,7 @@ class ParseKeyVal(argparse.Action):
                 "-k %s argument badly formed; needs key=value" % arg)
         else:
             key, val = arg.split('=')
-            kv[key] = val
+            kv[key] = self.parse_value(val)
         setattr(namespace, self.dest, kv)
 
 
@@ -123,7 +140,7 @@ def main(argv=None):
     pp.set_defaults(func=verify_file_hash)
     pp.add_argument("files", nargs='+', help="the files or directories to verify")
 
-    pp = sub.add_parser('modify', help="update metadata of resource(s)")
+    pp = sub.add_parser('modify', help="update metadata of resource(s). Overwrites existing values.")
     pp.set_defaults(func=set_resource_metadata)
     pp.add_argument("-k", help="specify metadata key=value (use multiple -k for multiple values)",
                     action=ParseKeyVal, default=dict(), metavar="KEY=VALUE", dest="metadata")
@@ -145,13 +162,7 @@ def main(argv=None):
 
     args = p.parse_args(argv)
 
-    ch = logging.StreamHandler()
-    formatter = logging.Formatter("%(message)s")
-    loglevel = logging.DEBUG if args.debug else logging.INFO
-    log.setLevel(loglevel)
-    ch.setLevel(loglevel)  # change
-    ch.setFormatter(formatter)
-    log.addHandler(ch)
+    setup_log(log, args.debug)
 
     if not hasattr(args, 'func'):
         p.print_usage()

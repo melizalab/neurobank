@@ -160,7 +160,11 @@ def add_resource(base_url, id, dtype, archive, sha1=None, auth=None, **metadata)
 
 
 def update_resource_metadata(base_url, id, auth=None, **metadata):
-    """Update metadata for a resource. Requires authorization to PATCH in the registry"""
+    """Update metadata for a resource.
+
+    Requires authorization to PATCH in the registry. Set a key to None to delete.
+
+    """
     url = path.join(base_url, "resources", id) + "/"
     data = {"metadata": metadata}
     log.debug("PATCH %s: %s", url, data)
