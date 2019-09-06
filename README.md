@@ -104,8 +104,13 @@ The `deposit` command moves resource files to the archive under the `resources` 
 
 ## Python interface
 
+To be written
 
-## Best Practices : Controlling access
+## Best Practices
+
+See [docs/examples](docs/examples.md) for some additional notes on how the Meliza Lab uses neurobank.
+
+###  Controlling access
 
 One of the primary uses for neurobank is to allow multiple users to share a common set of data, thereby reducing the need for temporary copies and ensuring that a canonical, centralized backup of critical data can be maintained. In this case, the following practices are suggested for POSIX operating systems:
 
