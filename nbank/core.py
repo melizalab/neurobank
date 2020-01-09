@@ -67,8 +67,8 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
     for src in files:
         log.info("processing '%s':", src)
         if not os.path.exists(src):
-           log.info("   does not exist; skipping")
-           continue
+            log.info("   does not exist; skipping")
+            continue
         if not allow_dirs and os.path.isdir(src):
             log.info("   is a directory; skipping")
             continue
@@ -90,6 +90,14 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
         tgt = store_resource(cfg, src, id=result["name"])
         log.info("   deposited in %s", tgt)
         yield {"source": src, "id": result["name"]}
+
+
+def search(registry_url=None, **params):
+    """Searches the registry for resources that match query params, yielding a sequence of hits"""
+    from nbank.registry import find_resource
+    if registry_url is None:
+        registry_url = default_registry()
+    return find_resource(registry_url, **params)
 
 
 def find(id, registry_url=None, local_only=False):
