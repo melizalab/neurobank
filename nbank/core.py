@@ -100,11 +100,14 @@ def search(registry_url=None, **params):
     return find_resource(registry_url, **params)
 
 
-def find(id, registry_url=None, local_only=False):
+def find(id, registry_url=None, local_only=False, alt_base=None):
     """Generates a sequence of paths or URLs where id can be located
 
     If local_only is True, only files that can be found on the local filesystem
     are yielded.
+
+    Set alt_base to replace the dirname of any local resources. This is intended
+    to be used with temporary copies of archives on other hosts.
 
     """
     from nbank.registry import parse_resource_id, get_locations
@@ -115,22 +118,25 @@ def find(id, registry_url=None, local_only=False):
     if base is None:
         raise ValueError("short identifier supplied without a registry to resolve it")
     for loc in get_locations(base, sid):
-        path = get_path_or_url(loc)
+        path = get_path_or_url(loc, alt_base)
         if local_only:
             yield find_resource(path)
         else:
             yield path
 
 
-def get(id, registry_url=None, local_only=False):
+def get(id, registry_url=None, local_only=False, alt_base=None):
     """Returns the first path or URL where id can be found, or None if no match.
 
     If local_only is True, only files that can be found on the local filesystem
     are considered.
 
+    Set alt_base to replace the dirname of any local resources. This is intended
+    to be used with temporary copies of archives on other hosts.
+
     """
     try:
-        return next(find(id, registry_url, local_only))
+        return next(find(id, registry_url, local_only, alt_base))
     except StopIteration:
         pass
 
@@ -171,23 +177,32 @@ def verify(file, registry_url=None, id=None):
             raise ValueError("%s does not exist" % id)
 
 
-def get_path_or_url(location):
+def get_path_or_url(location, alt_base=None):
     """Return the path or URL associated with location
 
     location is a dict with 'scheme', 'path', and 'resource_name' (like what's
     yielded by registry.get_locations). Note that for local (neurobank)
     locations, the resource may have an extension; this is not included.
 
+    If alt_base is set, the dirname of the root will
+    be replaced with this value; e.g. alt_base='/scratch' will change
+    '/home/data/starlings' to '/scratch/starlings'. This is intended to be used
+    with temporary copies of archives on other hosts.
+
     """
+    import posixpath as pp
     from nbank.archive import resource_path
     try:
         from urllib.parse import urlunparse
     except ImportError:
         from urlparse import urlunparse
+    root = location["root"]
     if location["scheme"] == "neurobank":
-        return resource_path(location["root"], location["resource_name"])
+        if alt_base is not None:
+            root = pp.join(alt_base, pp.basename(root))
+        return resource_path(root, location["resource_name"])
     else:
-        return urlunparse((location["scheme"], location["root"],
+        return urlunparse((location["scheme"], root,
                            location["resource_name"], '', '', ''))
 
 
