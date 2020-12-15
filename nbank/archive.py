@@ -38,7 +38,7 @@ Add notes about the contents of the data archive here. You should also edit
 
 # Quick reference
 
-Deposit resources: `nbank -A archive_path deposit file-1 [file-2 [file-3]]`
+Deposit resources: `nbank deposit archive_path file-1 [file-2 [file-3]]`
 
 Registered or deposited files are given the permissions specified in `project.json`.
 However, when entire directories are deposited, ownership and access may not be set correctly.

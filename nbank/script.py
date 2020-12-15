@@ -142,9 +142,11 @@ def main(argv=None):
     pp.set_defaults(func=verify_file_hash)
     pp.add_argument("files", nargs='+', help="the files or directories to verify")
 
-    pp = sub.add_parser('modify', help="update metadata of resource(s). Overwrites existing values.")
+    pp = sub.add_parser('modify', help="update values in resource metadata of resource(s)")
     pp.set_defaults(func=set_resource_metadata)
-    pp.add_argument("-k", help="specify metadata key=value (use multiple -k for multiple values)",
+    pp.add_argument("-k",
+                    help="set metadata key=value, replacing any previous "
+                    "value for this key (use multiple -k for multiple fields)",
                     action=ParseKeyVal, default=dict(), metavar="KEY=VALUE", dest="metadata")
     pp.add_argument("id", nargs="+", help="identifier(s) of the resource(s)")
 
