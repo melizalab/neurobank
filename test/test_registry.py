@@ -14,10 +14,10 @@ full = "https://example.org/neurobank/resources/adfkj/"
 class ResourceNameTestCase(TestCase):
 
     def test_short_to_full(self):
-        self.assertEqual(registry.full_url(base, id), full)
+        self.assertEqual(core.full_url(id, base), full)
 
     def test_short_to_full_noslash(self):
-        self.assertEqual(registry.full_url(base.rstrip("/"), id), full)
+        self.assertEqual(core.full_url(id, base.rstrip("/")), full)
 
     def test_full_to_parts(self):
         B, I = core.parse_resource_id(full)

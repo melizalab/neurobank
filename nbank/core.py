@@ -48,6 +48,14 @@ def parse_resource_id(id, base_url=None):
     return base_url, id
 
 
+def full_url(id, base_url=None):
+    """Returns the full URL of the resource"""
+    base_url, id = parse_resource_id(id, base_url)
+    if base_url is None:
+        raise ValueError("short identifier supplied without a registry to resolve it")
+    return "{}/resources/{}/".format(base_url.rstrip("/"), id)
+
+
 def deposit(
     archive_path, files, dtype=None, hash=False, auto_id=False, auth=None, **metadata
 ):
@@ -72,7 +80,7 @@ def deposit(
     """
     import uuid
     from nbank.archive import get_config, store_resource
-    from nbank.registry import add_resource, find_archive_by_path, full_url
+    from nbank.registry import add_resource, find_archive_by_path
 
     archive_path = os.path.abspath(archive_path)
     cfg = get_config(archive_path)
@@ -112,7 +120,7 @@ def deposit(
         else:
             sha1 = None
         result = add_resource(registry_url, id, dtype, archive, sha1, auth, **metadata)
-        id = full_url(registry_url, result["name"])
+        id = full_url(result["name"], registry_url)
         log.info("   registered as %s", id)
         tgt = store_resource(cfg, src, id=result["name"])
         log.info("   deposited in %s", tgt)

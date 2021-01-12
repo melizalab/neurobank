@@ -18,6 +18,7 @@ from nbank.core import (
     describe,
     get_path_or_url,
     verify,
+    parse_resource_id
 )
 
 

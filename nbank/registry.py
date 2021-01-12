@@ -83,13 +83,9 @@ def find_resource(base_url, **params):
             yield d
 
 
-def full_url(base_url, id):
-    """ Return the full URL-based identifier for id """
-    return "{}/resources/{}/".format(base_url.rstrip("/"), id)
-
-
 def get_resource(base_url, id):
     """Return registry record for id, or None if it doesn't exist"""
+    from nbank.core import full_url
     try:
         return json(full_url(base_url, id))
     except rq.exceptions.HTTPError as e:

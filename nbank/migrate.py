@@ -43,12 +43,12 @@ def register_resources(
     import os
     import requests as rq
     from nbank import util
+    from nbank.core import full_url
     from nbank.archive import get_config, find_resource
     from nbank.registry import (
         add_resource,
         get_resource,
         find_archive_by_path,
-        full_url,
     )
 
     archive_path = os.path.abspath(archive_path)
@@ -102,7 +102,7 @@ def register_resources(
                 continue
             else:
                 raise e
-        registry_id = full_url(registry_url, result["name"])
+        registry_id = full_url(result["name"], registry_url)
         log.info("   registered as %s", registry_id)
         yield {"source": resource_path, "id": result["name"]}
 
