@@ -20,6 +20,7 @@ def random_string(N):
     import string
     return ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(N))
 
+
 class NeurobankTestCase(TestCase):
     """ Base test case for all integration tests
 

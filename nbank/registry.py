@@ -81,28 +81,9 @@ def find_resource(base_url, **params):
             yield d
 
 
-def parse_resource_id(base_url, id):
-    """ Parse a full or short resource identifier into base url and id
-
-    http://domain.name/app/resources/id/ -> (http://domain.name/app/, id)
-    id -> (base_url, id)
-    """
-    import posixpath as pp
-    try:
-        from urllib.parse import urlparse
-    except ImportError:
-        from urlparse import urlparse
-    pr = urlparse(id)
-    if pr.scheme and pr.netloc:
-        base, sid = pp.split(id)
-        return pp.dirname(base), id
-    else:
-        return base_url, id
-
-
 def full_url(base_url, id):
     """ Return the full URL-based identifier for id """
-    return path.join(base_url, "resources", id) + "/"
+    return "{}/resources/{}/".format(base_url.rstrip("/"), id)
 
 
 def get_resource(base_url, id):

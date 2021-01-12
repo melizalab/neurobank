@@ -229,7 +229,7 @@ def store_resources(args):
 
 def locate_resources(args):
     for id in args.id:
-        base, sid = registry.parse_resource_id(args.registry_url, id)
+        base, sid = core.parse_resource_id(id, args.registry_url)
         if base is None:
             print("%-25s [no registry to resolve short identifier]" % id)
             continue

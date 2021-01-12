@@ -7,9 +7,10 @@ Created Mon Nov 25 08:43:19 2013
 """
 from __future__ import absolute_import
 
-__version__ = '0.8.6'
+__version__ = '0.9.0'
 
 from nbank.core import default_registry, deposit, search, find, get, describe, get_path_or_url, verify
+
 
 # Variables:
 # End:

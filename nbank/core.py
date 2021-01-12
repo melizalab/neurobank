@@ -24,6 +24,29 @@ def default_registry():
     return os.environ.get(env_registry, None)
 
 
+def parse_resource_id(id, base_url=None):
+    """ Parse a full or short resource identifier into base url and id.
+
+    http://domain.name/app/resources/id/ -> (http://domain.name/app/, id)
+    (id, "http://domain.name/app") -> ("http://domain.name/app/", id)
+    (id, None) -> (default_registry(), id)
+    """
+    import re
+    try:
+        from urllib.parse import urlparse, urlunparse
+    except ImportError:
+        from urlparse import urlparse, urlunparse
+    pr = urlparse(id)
+    if pr.scheme and pr.netloc:
+        m = re.match(r"(\S+?/)resources/([-_~0-9a-zA-Z]+)", pr.path)
+        if m is None:
+            raise ValueError("invalid neurobank resource URL")
+        return (urlunparse(pr._replace(path=m.group(1))), m.group(2))
+    if base_url is None:
+        base_url = default_registry()
+    return base_url, id
+
+
 def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=None, **metadata):
     """Main entry point to deposit resources into an archive
 
@@ -110,11 +133,9 @@ def find(id, registry_url=None, local_only=False, alt_base=None):
     to be used with temporary copies of archives on other hosts.
 
     """
-    from nbank.registry import parse_resource_id, get_locations
+    from nbank.registry import get_locations
     from nbank.archive import find_resource
-    if registry_url is None:
-        registry_url = default_registry()
-    base, sid = parse_resource_id(registry_url, id)
+    base, sid = parse_resource_id(id, registry_url)
     if base is None:
         raise ValueError("short identifier supplied without a registry to resolve it")
     for loc in get_locations(base, sid):
@@ -143,10 +164,8 @@ def get(id, registry_url=None, local_only=False, alt_base=None):
 
 def describe(id, registry_url=None):
     """Returns the database record for id, or None if no match can be found """
-    from nbank.registry import get_resource, parse_resource_id
-    if registry_url is None:
-        registry_url = default_registry()
-    base, sid = parse_resource_id(registry_url, id)
+    from nbank.registry import get_resource
+    base, sid = parse_resource_id(id, registry_url)
     return get_resource(base, sid)
 
 

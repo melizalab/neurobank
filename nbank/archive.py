@@ -16,14 +16,13 @@ _config_fname = 'nbank.json'
 _config_schema = 'https://melizalab.github.io/neurobank/config.json#'
 _resource_subdir = "resources"
 _default_umask = 0o027
-
 _README = """
 This directory contains a [neurobank](https://github.com/melizalab/neurobank)
 data management archive. The following files and directories are part of the archive:
 
-+ README.md: this file
-+ nbank.json: information and configuration for the archive
-+ resources/:  registered source files and deposited data
+ + README.md: this file
+ + nbank.json: information and configuration for the archive
+ + resources/:  registered source files and deposited data
 
 Files in `resources` are organized into subdirectories based on the first two
 characters of the files' identifiers.
