@@ -153,7 +153,7 @@ def find(id, registry_url=None, local_only=False, alt_base=None):
     if base is None:
         raise ValueError("short identifier supplied without a registry to resolve it")
     for loc in get_locations(base, sid):
-        path = get_path_or_url(loc, alt_base)
+        path = get_archive(loc, alt_base)
         if local_only:
             yield find_resource(path)
         else:
@@ -212,7 +212,7 @@ def verify(file, registry_url=None, id=None):
             raise ValueError("%s does not exist" % id)
 
 
-def get_path_or_url(location, alt_base=None):
+def get_archive(location, alt_base=None):
     """Return the path or URL associated with location
 
     location is a dict with 'scheme', 'path', and 'resource_name' (like what's

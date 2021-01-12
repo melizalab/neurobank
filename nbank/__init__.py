@@ -16,9 +16,10 @@ from nbank.core import (
     find,
     get,
     describe,
-    get_path_or_url,
+    get_archive,
     verify,
-    parse_resource_id
+    parse_resource_id,
+    full_url
 )
 
 

@@ -326,7 +326,7 @@ def locate_resources(args):
             print("%-25s [no registry to resolve short identifier]" % id)
             continue
         for loc in registry.get_locations(base, sid):
-            path = core.get_path_or_url(loc)
+            path = core.get_archive(loc)
             if args.local_only:
                 path = archive.find_resource(path)
             if path is not None:
