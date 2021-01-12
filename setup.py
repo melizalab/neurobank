@@ -38,24 +38,25 @@ analysis workflows.
 requirements = []
 
 setup(
-    name='neurobank',
+    name="neurobank",
     version=__version__,
     description=short_desc,
     long_description=long_desc,
     classifiers=[x for x in cls_txt.split("\n") if x],
-    author='Dan Meliza',
+    author="Dan Meliza",
     author_email="dan@meliza.org",
-    maintainer='Dan Meliza',
+    maintainer="Dan Meliza",
     maintainer_email="dan@meliza.org",
     url="https://github.com/melizalab/neurobank",
-
     packages=find_packages(exclude=["*test*"]),
-
-    entry_points={'console_scripts': ['nbank = nbank.script:main',
-                                      'nbank-migrate = nbank.migrate:main'] },
-
+    entry_points={
+        "console_scripts": [
+            "nbank = nbank.script:main",
+            "nbank-migrate = nbank.migrate:main",
+        ]
+    },
     install_requires=["requests>2.18"],
-    test_suite='nose.collector'
+    test_suite="nose.collector",
 )
 
 # Variables:

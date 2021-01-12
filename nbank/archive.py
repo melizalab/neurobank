@@ -9,11 +9,11 @@ import os
 import json
 import logging
 
-log = logging.getLogger('nbank')   # root logger
+log = logging.getLogger("nbank")  # root logger
 
-_README_fname = 'README.md'
-_config_fname = 'nbank.json'
-_config_schema = 'https://melizalab.github.io/neurobank/config.json#'
+_README_fname = "README.md"
+_config_fname = "nbank.json"
+_config_schema = "https://melizalab.github.io/neurobank/config.json#"
 _resource_subdir = "resources"
 _default_umask = 0o027
 _README = """
@@ -72,6 +72,7 @@ _nbank_json = """{
 }
 """
 
+
 def get_config(path):
     """Returns the configuration for the archive specified by path, or None
     if the path does not refer to a valid neurobank archive.
@@ -79,11 +80,13 @@ def get_config(path):
     """
     fname = os.path.join(path, _config_fname)
     if os.path.exists(fname):
-        with open(fname, 'rt') as fp:
+        with open(fname, "rt") as fp:
             ret = json.load(fp)
-            umask = ret['policy']['access']['umask']
+            umask = ret["policy"]["access"]["umask"]
             if not isinstance(umask, int):
-                ret['policy']['access']['umask'] = int(ret['policy']['access']['umask'], 8)
+                ret["policy"]["access"]["umask"] = int(
+                    ret["policy"]["access"]["umask"], 8
+                )
             ret["path"] = path
             return ret
 
@@ -112,8 +115,8 @@ def create(archive_path, registry_url, umask=_default_umask, **policies):
     umask &= 0o777  # mask out the umask
 
     resdir = os.path.join(archive_path, _resource_subdir)
-    dircmd = ['mkdir', '-p', resdir]
-    ret = subprocess.call(dircmd) # don't expand shell variables/globs
+    dircmd = ["mkdir", "-p", resdir]
+    ret = subprocess.call(dircmd)  # don't expand shell variables/globs
     if ret != 0:
         raise OSError("unable to create archive directories")
     os.chmod(archive_path, 0o777 & ~umask)
@@ -130,24 +133,29 @@ def create(archive_path, registry_url, umask=_default_umask, **policies):
 
     fname = os.path.join(archive_path, _README_fname)
     if not os.path.exists(fname):
-        with open(fname, 'wt') as fp:
+        with open(fname, "wt") as fp:
             fp.write(_README)
     os.chmod(fname, 0o666 & ~umask)
 
     user = pwd.getpwuid(os.getuid())
     group = grp.getgrgid(os.getgid())
-    project_json = _nbank_json % dict(schema=_config_schema, registry_url=registry_url,
-                                      user=user.pw_name, group=group.gr_name, umask=umask)
+    project_json = _nbank_json % dict(
+        schema=_config_schema,
+        registry_url=registry_url,
+        user=user.pw_name,
+        group=group.gr_name,
+        umask=umask,
+    )
     fname = os.path.join(archive_path, _config_fname)
     if not os.path.exists(fname):
-        with open(fname, 'wt') as fp:
+        with open(fname, "wt") as fp:
             fp.write(project_json)
     os.chmod(fname, 0o666 & ~umask)
 
-    fname = os.path.join(archive_path, '.gitignore')
+    fname = os.path.join(archive_path, ".gitignore")
     if not os.path.exists(fname):
-        with open(fname, 'wt') as fp:
-            fp.writelines(('resources/',))
+        with open(fname, "wt") as fp:
+            fp.writelines(("resources/",))
     os.chmod(fname, 0o666 & ~umask)
 
 
@@ -171,6 +179,7 @@ def find_resource(path, id=None):
 
     """
     import glob
+
     if id is not None:
         path = resource_path(path, id)
     if os.path.exists(path):
@@ -202,14 +211,14 @@ def store_resource(cfg, src, id=None):
     if id is None:
         id = os.path.basename(src)
 
-    if not cfg['policy']['allow_directories'] and os.path.isdir(src):
+    if not cfg["policy"]["allow_directories"] and os.path.isdir(src):
         raise TypeError("policy forbids depositing directories")
 
     # check for existing resource
     if find_resource(resource_path(cfg["path"], id)) is not None:
         raise KeyError("a file already exists for id %s", id)
 
-    if cfg['policy']['keep_extensions']:
+    if cfg["policy"]["keep_extensions"]:
         id = os.path.splitext(id)[0] + os.path.splitext(src)[1]
 
     log.debug("%s -> %s", src, id)
@@ -239,11 +248,11 @@ def fix_permissions(cfg, tgt, walk=True):
 
     myuid = os.getuid()
     if myuid == 0:
-        uid = pwd.getpwnam(cfg['policy']['access']['user']).pw_uid
+        uid = pwd.getpwnam(cfg["policy"]["access"]["user"]).pw_uid
     else:
         uid = -1
-    gid = grp.getgrnam(cfg['policy']['access']['group']).gr_gid
-    umask = cfg['policy']['access']['umask']
+    gid = grp.getgrnam(cfg["policy"]["access"]["group"]).gr_gid
+    umask = cfg["policy"]["access"]["umask"]
 
     def fix(fname):
         try:

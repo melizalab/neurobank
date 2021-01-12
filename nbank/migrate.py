@@ -19,13 +19,15 @@ import logging
 from nbank import __version__
 from nbank import core
 
-log = logging.getLogger('nbank')   # root logger
+log = logging.getLogger("nbank")  # root logger
 
 
 def check_catalog(catalog):
     """ Checks catalog for conformance to the nbank namespace and version. Raises ValueError on failure """
     if not catalog.get("namespace", None) == "neurobank.catalog":
-        raise ValueError("document does not have 'namespace' field set to 'neurobank.catalog'")
+        raise ValueError(
+            "document does not have 'namespace' field set to 'neurobank.catalog'"
+        )
     if not catalog.get("version", None) == "1.0":
         raise ValueError("catalog version is not equal to '1.0'")
     if "resources" not in catalog:
@@ -34,13 +36,21 @@ def check_catalog(catalog):
         raise ValueError("'resources' field is not a list or tuple")
 
 
-def register_resources(catalog, archive_path, dtype=None, hash=False, auth=None, **metadata):
+def register_resources(
+    catalog, archive_path, dtype=None, hash=False, auth=None, **metadata
+):
     """ Add resources from catalog (if found in archive_path) to neurobank archive """
     import os
     import requests as rq
     from nbank import util
     from nbank.archive import get_config, find_resource
-    from nbank.registry import add_resource, get_resource, find_archive_by_path, full_url
+    from nbank.registry import (
+        add_resource,
+        get_resource,
+        find_archive_by_path,
+        full_url,
+    )
+
     archive_path = os.path.abspath(archive_path)
     cfg = get_config(archive_path)
     log.info("archive: %s", archive_path)
@@ -51,7 +61,10 @@ def register_resources(catalog, archive_path, dtype=None, hash=False, auth=None,
     archive = find_archive_by_path(registry_url, archive_path)
     log.info("   archive name: %s", archive)
     if archive is None:
-        raise RuntimeError("archive '%s' not in registry. make sure to run nbank init before migrating" % archive_path)
+        raise RuntimeError(
+            "archive '%s' not in registry. make sure to run nbank init before migrating"
+            % archive_path
+        )
 
     for res in catalog["resources"]:
         id = res.pop("id", None)
@@ -70,7 +83,7 @@ def register_resources(catalog, archive_path, dtype=None, hash=False, auth=None,
             continue
         else:
             log.info("   path: %s", resource_path)
-        if hash or cfg['policy']['require_hash']:
+        if hash or cfg["policy"]["require_hash"]:
             sha1 = util.hash(resource_path)
             log.info("   sha1: %s", sha1)
         else:
@@ -101,28 +114,59 @@ def main(argv=None):
     import json
     from nbank.script import userpwd, ParseKeyVal
 
-    p = argparse.ArgumentParser(description="import catalog from old nbank (<0.7.0) into registry")
-    p.add_argument('-v','--version', action="version",
-                   version="%(prog)s " + __version__)
-    p.add_argument('-r', dest='registry_url', help="URL of the registry service. "
-                    "Default is to use the environment variable '%s'" % core.env_registry,
-                    default=core.default_registry())
-    p.add_argument('-a', dest='auth', help="username:password to authenticate with registry. "
-                   "If not supplied, will attempt to use .netrc file",
-                   type=userpwd, default=None)
-    p.add_argument('--debug', help="show verbose log messages", action="store_true")
+    p = argparse.ArgumentParser(
+        description="import catalog from old nbank (<0.7.0) into registry"
+    )
+    p.add_argument(
+        "-v", "--version", action="version", version="%(prog)s " + __version__
+    )
+    p.add_argument(
+        "-r",
+        dest="registry_url",
+        help="URL of the registry service. "
+        "Default is to use the environment variable '%s'" % core.env_registry,
+        default=core.default_registry(),
+    )
+    p.add_argument(
+        "-a",
+        dest="auth",
+        help="username:password to authenticate with registry. "
+        "If not supplied, will attempt to use .netrc file",
+        type=userpwd,
+        default=None,
+    )
+    p.add_argument("--debug", help="show verbose log messages", action="store_true")
 
-    p.add_argument('-d','--dtype', help="specify the datatype for the deposited resources")
-    p.add_argument('-H','--hash', action="store_true",
-                    help="calculate a SHA1 hash of each file and store in the registry")
-    p.add_argument('-k', help="specify metadata field (use multiple -k for multiple values)",
-                    action=ParseKeyVal, default=dict(), metavar="KEY=VALUE", dest='metadata')
-    p.add_argument('-j', "--json-out", action="store_true",
-                    help="output each deposited file to stdout as line-deliminated JSON")
-    p.add_argument('directory', help="path of the archive where the files are stored. "
-                   "This location needs to have been added as a archive to the registry (with nbank init) "
-                   "before running this script.")
-    p.add_argument('catalog', help='the JSON catalog to import')
+    p.add_argument(
+        "-d", "--dtype", help="specify the datatype for the deposited resources"
+    )
+    p.add_argument(
+        "-H",
+        "--hash",
+        action="store_true",
+        help="calculate a SHA1 hash of each file and store in the registry",
+    )
+    p.add_argument(
+        "-k",
+        help="specify metadata field (use multiple -k for multiple values)",
+        action=ParseKeyVal,
+        default=dict(),
+        metavar="KEY=VALUE",
+        dest="metadata",
+    )
+    p.add_argument(
+        "-j",
+        "--json-out",
+        action="store_true",
+        help="output each deposited file to stdout as line-deliminated JSON",
+    )
+    p.add_argument(
+        "directory",
+        help="path of the archive where the files are stored. "
+        "This location needs to have been added as a archive to the registry (with nbank init) "
+        "before running this script.",
+    )
+    p.add_argument("catalog", help="the JSON catalog to import")
 
     args = p.parse_args(argv)
 
@@ -139,9 +183,11 @@ def main(argv=None):
 
     try:
         log.debug("checking catalog: %s", args.catalog)
-        catalog = json.load(open(args.catalog, 'rU'))
+        catalog = json.load(open(args.catalog, "rU"))
         check_catalog(catalog)
-        for res in register_resources(catalog, args.directory, args.dtype, args.hash, args.auth, **args.metadata):
+        for res in register_resources(
+            catalog, args.directory, args.dtype, args.hash, args.auth, **args.metadata
+        ):
             if args.json_out:
                 json.dump(res, fp=sys.stdout)
                 sys.stdout.write("\n")

@@ -17,9 +17,9 @@ import logging
 import posixpath as path
 import requests as rq
 
-_neurobank_scheme = 'neurobank'
+_neurobank_scheme = "neurobank"
 
-log = logging.getLogger('nbank')
+log = logging.getLogger("nbank")
 
 
 def strip_nulls(d):
@@ -29,7 +29,7 @@ def strip_nulls(d):
 
 def json(url, **params):
     """Retrieve json data from server and return as a dictionary, or None if no data"""
-    r = rq.get(url, params=params, headers={'Accept': 'application/json'}, verify=True)
+    r = rq.get(url, params=params, headers={"Accept": "application/json"}, verify=True)
     log.debug("GET %s", r.url)
     r.raise_for_status()
     log.debug("  %s", r.text)
@@ -68,14 +68,16 @@ def find_resource(base_url, **params):
     Because this list may be long and paginated by the server results are yielded one by one
     """
     url = path.join(base_url, "resources/")
-    r = rq.get(url, params=params, headers={'Accept': 'application/json'}, verify=True)
+    r = rq.get(url, params=params, headers={"Accept": "application/json"}, verify=True)
     r.raise_for_status()
     for d in r.json():
         yield d
     while "next" in r.links:
         url = r.links["next"]["url"]
         # we may need to throttle request rate
-        r = rq.get(url, params=params, headers={'Accept': 'application/json'}, verify=True)
+        r = rq.get(
+            url, params=params, headers={"Accept": "application/json"}, verify=True
+        )
         r.raise_for_status()
         for d in r.json():
             yield d
@@ -131,8 +133,13 @@ def add_resource(base_url, id, dtype, archive, sha1=None, auth=None, **metadata)
     """Add a resource to the registry"""
     # add the resource
     url = path.join(base_url, "resources/")
-    data = {"name": id, "dtype": dtype, "sha1": sha1, "locations": [archive],
-            "metadata": metadata}
+    data = {
+        "name": id,
+        "dtype": dtype,
+        "sha1": sha1,
+        "locations": [archive],
+        "metadata": metadata,
+    }
     log.debug("POST %s: %s", url, data)
     r = rq.post(url, auth=auth, json=strip_nulls(data))
     log.debug("  response: %s", r.text)

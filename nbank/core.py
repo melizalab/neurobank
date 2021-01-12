@@ -15,7 +15,7 @@ import logging
 
 from nbank import util
 
-log = logging.getLogger('nbank')   # root logger
+log = logging.getLogger("nbank")  # root logger
 env_registry = "NBANK_REGISTRY"
 
 
@@ -25,13 +25,14 @@ def default_registry():
 
 
 def parse_resource_id(id, base_url=None):
-    """ Parse a full or short resource identifier into base url and id.
+    """Parse a full or short resource identifier into base url and id.
 
     http://domain.name/app/resources/id/ -> (http://domain.name/app/, id)
     (id, "http://domain.name/app") -> ("http://domain.name/app/", id)
     (id, None) -> (default_registry(), id)
     """
     import re
+
     try:
         from urllib.parse import urlparse, urlunparse
     except ImportError:
@@ -47,7 +48,9 @@ def parse_resource_id(id, base_url=None):
     return base_url, id
 
 
-def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=None, **metadata):
+def deposit(
+    archive_path, files, dtype=None, hash=False, auto_id=False, auth=None, **metadata
+):
     """Main entry point to deposit resources into an archive
 
     Yields the short IDs for each deposited item in files
@@ -70,6 +73,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
     import uuid
     from nbank.archive import get_config, store_resource
     from nbank.registry import add_resource, find_archive_by_path, full_url
+
     archive_path = os.path.abspath(archive_path)
     cfg = get_config(archive_path)
     if cfg is None:
@@ -77,9 +81,9 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
     log.info("archive: %s", archive_path)
     registry_url = cfg["registry"]
     log.info("   registry: %s", registry_url)
-    auto_id = cfg['policy']['auto_identifiers'] or auto_id
-    auto_id_type = cfg['policy'].get('auto_id_type', None)
-    allow_dirs = cfg['policy']['allow_directories']
+    auto_id = cfg["policy"]["auto_identifiers"] or auto_id
+    auto_id_type = cfg["policy"].get("auto_id_type", None)
+    allow_dirs = cfg["policy"]["allow_directories"]
 
     # check that archive exists for this path
     archive = find_archive_by_path(registry_url, archive_path)
@@ -102,7 +106,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
                 id = None
         else:
             id = util.id_from_fname(src)
-        if hash or cfg['policy']['require_hash']:
+        if hash or cfg["policy"]["require_hash"]:
             sha1 = util.hash(src)
             log.info("   sha1: %s", sha1)
         else:
@@ -118,6 +122,7 @@ def deposit(archive_path, files, dtype=None, hash=False, auto_id=False, auth=Non
 def search(registry_url=None, **params):
     """Searches the registry for resources that match query params, yielding a sequence of hits"""
     from nbank.registry import find_resource
+
     if registry_url is None:
         registry_url = default_registry()
     return find_resource(registry_url, **params)
@@ -135,6 +140,7 @@ def find(id, registry_url=None, local_only=False, alt_base=None):
     """
     from nbank.registry import get_locations
     from nbank.archive import find_resource
+
     base, sid = parse_resource_id(id, registry_url)
     if base is None:
         raise ValueError("short identifier supplied without a registry to resolve it")
@@ -165,6 +171,7 @@ def get(id, registry_url=None, local_only=False, alt_base=None):
 def describe(id, registry_url=None):
     """Returns the database record for id, or None if no match can be found """
     from nbank.registry import get_resource
+
     base, sid = parse_resource_id(id, registry_url)
     return get_resource(base, sid)
 
@@ -177,6 +184,7 @@ def verify(file, registry_url=None, id=None):
 
     """
     from nbank.registry import find_resource, get_resource
+
     if registry_url is None:
         registry_url = default_registry()
     if registry_url is None:
@@ -211,6 +219,7 @@ def get_path_or_url(location, alt_base=None):
     """
     import posixpath as pp
     from nbank.archive import resource_path
+
     try:
         from urllib.parse import urlunparse
     except ImportError:
@@ -221,9 +230,9 @@ def get_path_or_url(location, alt_base=None):
             root = pp.join(alt_base, pp.basename(root))
         return resource_path(root, location["resource_name"])
     else:
-        return urlunparse((location["scheme"], root,
-                           location["resource_name"], '', '', ''))
-
+        return urlunparse(
+            (location["scheme"], root, location["resource_name"], "", "", "")
+        )
 
 
 # Variables:
