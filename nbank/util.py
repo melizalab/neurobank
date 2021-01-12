@@ -16,8 +16,16 @@ import os.path
 
 
 def id_from_fname(fname):
-    """Generates an ID from the basename of fname, stripped of any extensions """
-    return os.path.splitext(os.path.basename(fname))[0]
+    """Generates an ID from the basename of fname, stripped of any extensions.
+
+    Raises ValueError unless the resulting id only contains URL-unreserved characters
+    ([-_~0-9a-zA-Z])
+    """
+    import re
+    id = os.path.splitext(os.path.basename(fname))[0]
+    if re.match(r"^[-_~0-9a-zA-Z]+$", id) is None:
+        raise ValueError("resource name '%s' contains invalid characters", id)
+    return id
 
 
 def hash(fname, method='sha1'):
