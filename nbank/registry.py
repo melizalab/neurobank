@@ -85,9 +85,9 @@ def find_resource(base_url, **params):
 
 def get_resource(base_url, id):
     """Return registry record for id, or None if it doesn't exist"""
-    from nbank.core import full_url
+    url = path.join(base_url, "resources", id) + "/"
     try:
-        return json(full_url(base_url, id))
+        return json(url)
     except rq.exceptions.HTTPError as e:
         if e.response.status_code == 404:
             return None
