@@ -337,9 +337,12 @@ def locate_resources(args):
             if args.local_only or args.link:
                 path = archive.find_resource(path)
             if path is not None:
-                print("%-20s\t%s" % (sid, path))
                 if args.link is not None:
-                    os.symlink(path, os.path.join(args.link, os.path.basename(path)))
+                    linkpath = os.path.join(args.link, os.path.basename(path))
+                    print("%-20s\t-> %s" % (sid, linkpath))
+                    os.symlink(path, linkpath)
+                else:
+                    print("%-20s\t%s" % (sid, path))
 
 
 def search_resources(args):
