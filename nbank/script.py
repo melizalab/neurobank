@@ -166,6 +166,12 @@ def main(argv=None):
         help="only show local resources that exist",
         action="store_true",
     )
+    pp.add_argument(
+        "-L",
+        "--link",
+        help="generate symbolic link to the resource in DIR (implies --local-only)",
+        metavar="DIR",
+    )
     pp.add_argument("id", help="the identifier of the resource", nargs="+")
 
     pp = sub.add_parser("search", help="search for resource(s)")
@@ -320,6 +326,7 @@ def store_resources(args):
 
 
 def locate_resources(args):
+    import shutil
     for id in args.id:
         base, sid = core.parse_resource_id(id, args.registry_url)
         if base is None:
@@ -327,10 +334,12 @@ def locate_resources(args):
             continue
         for loc in registry.get_locations(base, sid):
             path = core.get_archive(loc)
-            if args.local_only:
+            if args.local_only or args.link:
                 path = archive.find_resource(path)
             if path is not None:
                 print("%-20s\t%s" % (sid, path))
+                if args.link is not None:
+                    os.symlink(path, os.path.join(args.link, os.path.basename(path)))
 
 
 def search_resources(args):
