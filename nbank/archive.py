@@ -15,7 +15,7 @@ _README_fname = "README.md"
 _config_fname = "nbank.json"
 _config_schema = "https://melizalab.github.io/neurobank/config.json#"
 _resource_subdir = "resources"
-_default_umask = 0o027
+_default_umask = 0o002
 _README = """
 This directory contains a [neurobank](https://github.com/melizalab/neurobank)
 data management archive. The following files and directories are part of the archive:
@@ -42,7 +42,7 @@ Deposit resources: `nbank deposit archive_path file-1 [file-2 [file-3]]`
 Registered or deposited files are given the permissions specified in `project.json`.
 However, when entire directories are deposited, ownership and access may not be set correctly.
 If you have issues accessing files, run the following commands (usually, as root):
-`find resources -type d -exec chmod 2770 {} \+` and `setfacl -R -d -m u::rwx,g::rwx,o::- resources`
+`find resources -type d -exec chmod 2775 {} \+` and `setfacl -R -d -m u::rwx,g::rwx,o::rx resources`
 
 """
 
@@ -124,8 +124,8 @@ def create(archive_path, registry_url, umask=_default_umask, **policies):
     os.chmod(resdir, 0o2777 & ~umask)
 
     # try to set default facl; fail silently if setfacl doesn't exist
-    # FIXME this is not correct if umask is not 007
-    faclcmd = "setfacl -d -m u::rwx,g::rwx,o::- {}".format(resdir).split()
+    # FIXME this is not correct if umask is not 005
+    faclcmd = "setfacl -d -m u::rwx,g::rwx,o::rx {}".format(resdir).split()
     try:
         ret = subprocess.call(faclcmd)
     except FileNotFoundError:
@@ -188,7 +188,26 @@ def find_resource(path, id=None):
         return fn
 
 
+def check_permissions(cfg, src, id=None):
+    """Attempts to check if the file can be deposited. The goal is to catch
+       permissions issues before registering the resource.
+
+    """
+    reqd_perms = os.R_OK | os.W_OK | os.X_OK
+    if id is None:
+        id = os.path.basename(src)
+    tgt_base = os.path.join(cfg["path"], _resource_subdir)
+    tgt_dir = os.path.join(tgt_base, id_stub(id))
+    if not os.access(tgt_base, os.F_OK) or not os.access(tgt_base, reqd_perms):
+        return False
+    if os.access(tgt_dir, os.F_OK) and not os.access(tgt_dir, reqd_perms):
+        return False
+    else:
+        return True
+
+
 def store_resource(cfg, src, id=None):
+
     """Stores resource (src) in the repository under a unique identifier.
 
     cfg - the configuration dict for the archive

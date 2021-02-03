@@ -67,6 +67,7 @@ def deposit(
 
     - unable to contact registry: ConnectionError
     - attempt to add unallowed directory: skip the directory
+    - unable to write to target directory: OSError
     - failed to register resource for any reason: HTTPError, usually 400 error code
     - unable to match archive path to archive in registry: RuntimeError
     - failed to add the file (usually b/c the identifier is taken): RuntimeError
@@ -79,7 +80,7 @@ def deposit(
 
     """
     import uuid
-    from nbank.archive import get_config, store_resource
+    from nbank.archive import get_config, store_resource, check_permissions
     from nbank.registry import add_resource, find_archive_by_path
 
     archive_path = os.path.abspath(archive_path)
@@ -114,6 +115,8 @@ def deposit(
                 id = None
         else:
             id = util.id_from_fname(src)
+        if not check_permissions(cfg, src, id):
+            raise OSError("unable to write to archive, aborting")
         if hash or cfg["policy"]["require_hash"]:
             sha1 = util.hash(src)
             log.info("   sha1: %s", sha1)

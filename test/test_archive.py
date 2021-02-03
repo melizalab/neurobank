@@ -153,3 +153,33 @@ class StripExtensionTestCase(ArchiveTestBase):
         path = archive.find_resource(self.root, name)
         self.assertTrue(os.path.exists(path))
         self.assertEqual(os.path.splitext(path)[1], "")
+
+
+class PermissionsTestCase(ArchiveTestBase):
+    def setUp(self):
+        super(PermissionsTestCase, self).setUp()
+        self.cfg = archive.get_config(self.root)
+
+    def test_check_permissions(self):
+        name = "dummy_100"
+        src = os.path.join(self.tmpd, "temp.wav")
+        with open(src, 'wt') as fp:
+            fp.write("this is not a wave file")
+            archive.store_resource(self.cfg, src, name)
+
+        tgt_base = os.path.join(self.root, archive._resource_subdir)
+        tgt_sub = os.path.join(tgt_base, archive.id_stub(name))
+        mode = os.stat(tgt_base).st_mode
+        os.chmod(tgt_base, 0o500)
+        self.assertFalse(archive.check_permissions(self.cfg, src))
+        os.chmod(tgt_base, 0o400)
+        self.assertFalse(archive.check_permissions(self.cfg, src))
+        os.chmod(tgt_base, mode)
+        self.assertTrue(archive.check_permissions(self.cfg, src))
+        mode = os.stat(tgt_sub).st_mode
+        os.chmod(tgt_sub, 0o500)
+        self.assertFalse(archive.check_permissions(self.cfg, src, name))
+        os.chmod(tgt_sub, 0o400)
+        self.assertFalse(archive.check_permissions(self.cfg, src, name))
+        os.chmod(tgt_sub, mode)
+        self.assertTrue(archive.check_permissions(self.cfg, src, name))

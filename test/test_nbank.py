@@ -152,7 +152,7 @@ class DefaultAutoIdNeurobankTestCase(NeurobankTestCase):
         self.assertEqual(len(ids), 1)
         locations = tuple(registry.get_locations(self.url, ids[0]["id"]))
         self.assertEqual(len(locations), 1)
-        path = archive.find_resource(nbank.get_path_or_url(locations[0]))
+        path = archive.find_resource(nbank.get_archive(locations[0]))
         # search by id
         self.assertTrue(nbank.verify(path, self.url, id=ids[0]["id"]))
         # search by hash
