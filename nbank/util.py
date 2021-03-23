@@ -39,11 +39,17 @@ def hash(fname, method="sha1"):
 
     """
     import hashlib
-
+    block_size = 65536
     if os.path.isdir(fname):
         return hash_directory(fname, method)
+    hash = hashlib.new(method)
     with open(fname, "rb") as fp:
-        return hashlib.new(method, fp.read()).hexdigest()
+        while True:
+            data = fp.read(block_size)
+            if not data:
+                break
+            hash.update(data)
+    return hash.hexdigest()
 
 
 def hash_directory(path, method="sha1"):
