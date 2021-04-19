@@ -35,7 +35,9 @@ class ResourceNameTestCase(TestCase):
         self.assertEqual(I, id)
 
     def test_id_with_slashes_ok(self):
-        # get_locations should return an empty list if the user supplies a
-        # garbage id
+        locations = registry.get_locations(base, "a/relative/path/a/user/might/look/up")
+        self.assertEqual(locations, [])
+
+    def test_id_with_initial_slash_ok(self):
         locations = registry.get_locations(base, "/an/absolute/path/a/user/might/look/up")
         self.assertEqual(locations, [])

@@ -24,6 +24,8 @@ log = logging.getLogger("nbank")
 def url_join(base, *path):
     import posixpath as pp
     from urllib.parse import urlparse, urlunparse
+    if any(p.startswith("/") for p in path):
+        raise ValueError("components of the path must not start with a slash")
     parts = urlparse(base)
     return urlunparse(parts._replace(path = pp.join(parts.path, *path)))
 
@@ -103,9 +105,12 @@ def get_resource(base_url, id):
 
 def get_locations(base_url, id):
     """Look up the locations of a resource. Returns an empty list if the resource doesn't exist"""
-    url = url_join(base_url, "resources", id, "locations") + "/"
     try:
+        url = url_join(base_url, "resources", id, "locations") + "/"
         return json(url)
+    except ValueError:
+        # caused by requests for absolute paths; just return empty
+        return []
     except rq.exceptions.HTTPError as e:
         if e.response.status_code == 404:
             return []
