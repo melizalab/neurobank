@@ -7,7 +7,7 @@ Created Mon Nov 25 08:43:19 2013
 """
 from __future__ import absolute_import
 
-__version__ = "0.9.4"
+__version__ = "0.9.5"
 
 from nbank.core import (
     default_registry,

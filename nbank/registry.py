@@ -14,12 +14,18 @@ from __future__ import division
 from __future__ import unicode_literals
 
 import logging
-import posixpath as path
 import requests as rq
 
 _neurobank_scheme = "neurobank"
 
 log = logging.getLogger("nbank")
+
+
+def url_join(base, *path):
+    import posixpath as pp
+    from urllib.parse import urlparse, urlunparse
+    parts = urlparse(base)
+    return urlunparse(parts._replace(path = pp.join(parts.path, *path)))
 
 
 def strip_nulls(d):
@@ -38,13 +44,13 @@ def json(url, **params):
 
 def get_datatypes(base_url):
     """ Return a list of known content type names """
-    url = path.join(base_url, "datatypes/")
+    url = url_join(base_url, "datatypes/")
     return json(url)
 
 
 def get_archives(base_url):
     """ Return a list of known archive names """
-    url = path.join(base_url, "archives/")
+    url = url_join(base_url, "archives/")
     return json(url)
 
 
@@ -55,7 +61,7 @@ def find_archive_by_path(base_url, root):
     avoid putting data somewhere it can't be found.
 
     """
-    url = path.join(base_url, "archives/")
+    url = url_join(base_url, "archives/")
     try:
         return json(url, scheme=_neurobank_scheme, root=root)[0]["name"]
     except IndexError:
@@ -67,7 +73,7 @@ def find_resource(base_url, **params):
 
     Because this list may be long and paginated by the server results are yielded one by one
     """
-    url = path.join(base_url, "resources/")
+    url = url_join(base_url, "resources/")
     r = rq.get(url, params=params, headers={"Accept": "application/json"}, verify=True)
     r.raise_for_status()
     for d in r.json():
@@ -85,7 +91,7 @@ def find_resource(base_url, **params):
 
 def get_resource(base_url, id):
     """Return registry record for id, or None if it doesn't exist"""
-    url = path.join(base_url, "resources", id) + "/"
+    url = url_join(base_url, "resources", id) + "/"
     try:
         return json(url)
     except rq.exceptions.HTTPError as e:
@@ -97,7 +103,7 @@ def get_resource(base_url, id):
 
 def get_locations(base_url, id):
     """Look up the locations of a resource. Returns an empty list if the resource doesn't exist"""
-    url = path.join(base_url, "resources", id, "locations") + "/"
+    url = url_join(base_url, "resources", id, "locations") + "/"
     try:
         return json(url)
     except rq.exceptions.HTTPError as e:
@@ -109,7 +115,7 @@ def get_locations(base_url, id):
 
 def add_datatype(base_url, name, content_type, auth=None):
     """ Add a datatype to the registry """
-    url = path.join(base_url, "datatypes/")
+    url = url_join(base_url, "datatypes/")
     r = rq.post(url, auth=auth, json={"name": name, "content_type": content_type})
     log.debug("POST %s", r.url)
     r.raise_for_status()
@@ -118,7 +124,7 @@ def add_datatype(base_url, name, content_type, auth=None):
 
 def add_archive(base_url, name, scheme, root, auth=None):
     """ Add a archive to the registry """
-    url = path.join(base_url, "archives/")
+    url = url_join(base_url, "archives/")
     log.debug("POST %s", url)
     r = rq.post(url, auth=auth, json={"name": name, "scheme": scheme, "root": root})
     r.raise_for_status()
@@ -128,7 +134,7 @@ def add_archive(base_url, name, scheme, root, auth=None):
 def add_resource(base_url, id, dtype, archive, sha1=None, auth=None, **metadata):
     """Add a resource to the registry"""
     # add the resource
-    url = path.join(base_url, "resources/")
+    url = url_join(base_url, "resources/")
     data = {
         "name": id,
         "dtype": dtype,
@@ -149,7 +155,7 @@ def update_resource_metadata(base_url, id, auth=None, **metadata):
     Requires authorization to PATCH in the registry. Set a key to None to delete.
 
     """
-    url = path.join(base_url, "resources", id) + "/"
+    url = url_join(base_url, "resources", id) + "/"
     data = {"metadata": metadata}
     log.debug("PATCH %s: %s", url, data)
     r = rq.patch(url, auth=auth, json=strip_nulls(data))
@@ -174,11 +180,11 @@ def log_error(err):
 
 # def get_datatype(base_url, dtype):
 #     """ Return info about dtype """
-#     url = path.join(base_url, "datatypes/", dtype) + "/"
+#     url = url_join(base_url, "datatypes/", dtype) + "/"
 #     return json(url)
 
 
 # def get_archive(base_url, archive):
 #     """ Get info about archive, or raise an error if it does not exist """
-#     url = path.join(base_url, "archives", archive) + "/"
+#     url = url_join(base_url, "archives", archive) + "/"
 #     return json(url)

@@ -33,3 +33,9 @@ class ResourceNameTestCase(TestCase):
         B, I = core.parse_resource_id(id, base)
         self.assertEqual(B, base)
         self.assertEqual(I, id)
+
+    def test_id_with_slashes_ok(self):
+        # get_locations should return an empty list if the user supplies a
+        # garbage id
+        locations = registry.get_locations(base, "/an/absolute/path/a/user/might/look/up")
+        self.assertEqual(locations, [])
