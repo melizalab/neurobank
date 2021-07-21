@@ -172,6 +172,12 @@ def main(argv=None):
         help="generate symbolic link to the resource in DIR (implies --local-only)",
         metavar="DIR",
     )
+    pp.add_argument(
+        "-0",
+        "--print0",
+        help="print paths to stdout separated by null, for piping to xargs -0 (implies --local-only)",
+        action="store_true",
+    )
     pp.add_argument("id", help="the identifier of the resource", nargs="+")
 
     pp = sub.add_parser("search", help="search for resource(s)")
@@ -334,13 +340,15 @@ def locate_resources(args):
             continue
         for loc in registry.get_locations(base, sid):
             path = core.get_archive(loc)
-            if args.local_only or args.link:
+            if args.local_only or args.link or args.print0:
                 path = archive.find_resource(path)
             if path is not None:
                 if args.link is not None:
                     linkpath = os.path.join(args.link, os.path.basename(path))
                     print("%-20s\t-> %s" % (sid, linkpath))
                     os.symlink(path, linkpath)
+                elif args.print0:
+                    print(path, end='\0')
                 else:
                     print("%-20s\t%s" % (sid, path))
 
