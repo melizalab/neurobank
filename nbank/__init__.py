@@ -22,6 +22,9 @@ from nbank.core import (
     full_url
 )
 
+from nbank.registry import (
+    fetch_resource,
+)
 
 # Variables:
 # End:

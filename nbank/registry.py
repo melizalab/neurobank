@@ -24,10 +24,11 @@ log = logging.getLogger("nbank")
 def url_join(base, *path):
     import posixpath as pp
     from urllib.parse import urlparse, urlunparse
+
     if any(p.startswith("/") for p in path):
         raise ValueError("components of the path must not start with a slash")
     parts = urlparse(base)
-    return urlunparse(parts._replace(path = pp.join(parts.path, *path)))
+    return urlunparse(parts._replace(path=pp.join(parts.path, *path)))
 
 
 def strip_nulls(d):
@@ -45,13 +46,13 @@ def json(url, **params):
 
 
 def get_datatypes(base_url):
-    """ Return a list of known content type names """
+    """Return a list of known content type names"""
     url = url_join(base_url, "datatypes/")
     return json(url)
 
 
 def get_archives(base_url):
-    """ Return a list of known archive names """
+    """Return a list of known archive names"""
     url = url_join(base_url, "archives/")
     return json(url)
 
@@ -103,6 +104,24 @@ def get_resource(base_url, id):
             raise e
 
 
+def fetch_resource(base_url, id, target):
+    """Download the resource from the server and save as `target`.
+
+    Raises ValueError if the resource does not exist or is not downloadable.
+    Raises HTTPError on an error in the actual download.
+    Raises FileExistsError if `target` already exists.
+
+    """
+    url = url_join(base_url, "resources", id, "download")
+    with rq.get(url, stream=True) as r:
+        if r.status_code == 404:
+            raise ValueError(f"The resource {id} does not exist or is not downloadable")
+        r.raise_for_status()
+        with open(target, "wb") as fp:
+            for chunk in r.iter_content(chunk_size=1024):
+                fp.write(chunk)
+
+
 def get_locations(base_url, id):
     """Look up the locations of a resource. Returns an empty list if the resource doesn't exist"""
     try:
@@ -119,7 +138,7 @@ def get_locations(base_url, id):
 
 
 def add_datatype(base_url, name, content_type, auth=None):
-    """ Add a datatype to the registry """
+    """Add a datatype to the registry"""
     url = url_join(base_url, "datatypes/")
     r = rq.post(url, auth=auth, json={"name": name, "content_type": content_type})
     log.debug("POST %s", r.url)
@@ -128,7 +147,7 @@ def add_datatype(base_url, name, content_type, auth=None):
 
 
 def add_archive(base_url, name, scheme, root, auth=None):
-    """ Add a archive to the registry """
+    """Add a archive to the registry"""
     url = url_join(base_url, "archives/")
     log.debug("POST %s", url)
     r = rq.post(url, auth=auth, json={"name": name, "scheme": scheme, "root": root})

@@ -40,7 +40,7 @@ def setup_log(log, debug=False):
 
 
 def userpwd(arg):
-    """ If arg is of the form username:password, returns them as a tuple. Otherwise None. """
+    """If arg is of the form username:password, returns them as a tuple. Otherwise None."""
     ret = arg.split(":")
     return tuple(ret) if len(ret) == 2 else None
 
@@ -235,6 +235,18 @@ def main(argv=None):
     )
     pp.add_argument("id", nargs="+", help="identifier(s) of the resource(s)")
 
+    pp = sub.add_parser(
+        "fetch", help="fetch downloadable resources from the registry server"
+    )
+    pp.set_defaults(func=fetch_resource)
+    pp.add_argument("-f", "--force", help="overwrite target file", action="store_true")
+    pp.add_argument("id", help="identifier of the resource")
+    pp.add_argument(
+        "target",
+        help="path where the downloaded resource should be stored. If this is a directory, "
+        "the target file is named after the resource (without any extension)",
+    )
+
     pp = sub.add_parser("dtype", help="list and add data types")
     ppsub = pp.add_subparsers(title="subcommands")
 
@@ -333,6 +345,7 @@ def store_resources(args):
 
 def locate_resources(args):
     import shutil
+
     for id in args.id:
         base, sid = core.parse_resource_id(id, args.registry_url)
         if base is None:
@@ -403,6 +416,25 @@ def set_resource_metadata(args):
             args.registry_url, id, auth=args.auth, **args.metadata
         )
         json.dump(data, fp=sys.stdout, indent=2)
+
+
+def fetch_resource(args):
+    if os.path.isdir(args.target):
+        target = os.path.join(args.target, args.id)
+    else:
+        target = args.target
+    if os.path.exists(target):
+        if args.force:
+            log.debug("removing target file %s", target)
+            os.remove(target)
+        else:
+            log.error("nbank fetch: error: the target file %s exists already", target)
+    try:
+        registry.fetch_resource(args.registry_url, args.id, target)
+        log.info("downloaded %s to %s", args.id, target)
+    except (rq.exceptions.HTTPError, ValueError) as e:
+        log.error(e)
+        return
 
 
 def list_datatypes(args):
