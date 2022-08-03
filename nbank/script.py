@@ -429,6 +429,7 @@ def fetch_resource(args):
             os.remove(target)
         else:
             log.error("nbank fetch: error: the target file %s exists already", target)
+            return
     try:
         registry.fetch_resource(args.registry_url, args.id, target)
         log.info("downloaded %s to %s", args.id, target)
