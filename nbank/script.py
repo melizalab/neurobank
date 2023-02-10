@@ -272,7 +272,7 @@ def main(argv=None):
     # some of the error handling is common; sub-funcs should only catch specific errors
     try:
         args.func(args)
-    except rq.exceptions.ConnectionError as e:
+    except rq.exceptions.ConnectionError:
         log.error("registry error: unable to contact server")
     except rq.exceptions.HTTPError as e:
         if e.response.status_code == 403:
