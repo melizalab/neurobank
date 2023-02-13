@@ -5,12 +5,14 @@
 Copyright (C) 2013 Dan Meliza <dan@meliza.org>
 Created Mon Nov 25 08:52:28 2013
 """
-import os
 import json
 import logging
+from typing import Union, Dict, Optional, NewType, Any
+from pathlib import Path
 
 log = logging.getLogger("nbank")  # root logger
 
+ArchiveConfig = NewType("ArchiveConfig", Dict)
 _README_fname = "README.md"
 _config_fname = "nbank.json"
 _config_schema = "https://melizalab.github.io/neurobank/config.json#"
@@ -73,13 +75,14 @@ _nbank_json = """{
 """
 
 
-def get_config(path):
+def get_config(path: Union[Path, str]) -> Optional[ArchiveConfig]:
     """Returns the configuration for the archive specified by path, or None
     if the path does not refer to a valid neurobank archive.
 
     """
-    fname = os.path.join(path, _config_fname)
-    if os.path.exists(fname):
+    path = Path(path)
+    fname = path / _config_fname
+    if fname.is_file():
         with open(fname, "rt") as fp:
             ret = json.load(fp)
             umask = ret["policy"]["access"]["umask"]
@@ -91,7 +94,12 @@ def get_config(path):
             return ret
 
 
-def create(archive_path, registry_url, umask=_default_umask, **policies):
+def create(
+    archive_path: Union[Path, str],
+    registry_url: str,
+    umask: int = _default_umask,
+    **policies: Any,
+) -> None:
     """Initializes a new data archive in archive_path.
 
     archive_path: the absolute or relative path of the archive
@@ -103,74 +111,79 @@ def create(archive_path, registry_url, umask=_default_umask, **policies):
     files or directories. If a config file already exists, uses the umask stored
     there rather than the supplied one. Raises OSError for failed operations.
 
+    Returns the config dict for the archive
+
     """
+    from os import getuid, getgid
     import pwd
     import grp
     import subprocess
 
+    archive_path = Path(archive_path).resolve(strict=False)
     cfg = get_config(archive_path)
     if cfg is not None:
         umask = cfg["policy"]["access"]["umask"]
 
     umask &= 0o777  # mask out the umask
 
-    resdir = os.path.join(archive_path, _resource_subdir)
-    dircmd = ["mkdir", "-p", resdir]
-    ret = subprocess.call(dircmd)  # don't expand shell variables/globs
-    if ret != 0:
-        raise OSError("unable to create archive directories")
-    os.chmod(archive_path, 0o777 & ~umask)
+    resdir = archive_path / _resource_subdir
+    resdir.mkdir(umask, parents=True, exist_ok=True)
     # try to set setgid bit on directory; this fails in some cases
-    os.chmod(resdir, 0o2777 & ~umask)
+    resdir.chmod(0o2777 & ~umask)
 
     # try to set default facl; fail silently if setfacl doesn't exist
     # FIXME this is not correct if umask is not 005
     faclcmd = "setfacl -d -m u::rwx,g::rwx,o::rx {}".format(resdir).split()
     try:
-        ret = subprocess.call(faclcmd)
+        _ = subprocess.call(faclcmd)
     except FileNotFoundError:
         log.debug("setfacl does not exist on this platform")
 
-    fname = os.path.join(archive_path, _README_fname)
-    if not os.path.exists(fname):
-        with open(fname, "wt") as fp:
-            fp.write(_README)
-    os.chmod(fname, 0o666 & ~umask)
+    fname = archive_path / _README_fname
+    fname.write_text(_README)
+    fname.chmod(0o666 & ~umask)
 
-    user = pwd.getpwuid(os.getuid())
-    group = grp.getgrgid(os.getgid())
-    project_json = _nbank_json % dict(
-        schema=_config_schema,
-        registry_url=registry_url,
-        user=user.pw_name,
-        group=group.gr_name,
-        umask=umask,
-    )
-    fname = os.path.join(archive_path, _config_fname)
-    if not os.path.exists(fname):
-        with open(fname, "wt") as fp:
-            fp.write(project_json)
-    os.chmod(fname, 0o666 & ~umask)
+    user = pwd.getpwuid(getuid())
+    group = grp.getgrgid(getgid())
+    config = {
+        "$schema": _config_schema,
+        "project": {"name": None, "description": None},
+        "owner": {"name": None, "email": None},
+        "registry": registry_url,
+        "policy": {
+            "auto_identifiers": False,
+            "auto_id_type": None,
+            "keep_extensions": True,
+            "allow_directories": False,
+            "require_hash": True,
+            "access": {"user": user.pw_name, "group": group.gr_name, "umask": umask},
+        },
+    }
+    for k, v in policies.items():
+        config["policy"][k] = v
+    fname = archive_path / _config_fname
+    fname.write_text(json.dumps(config, indent=4))
+    fname.chmod(0o666 & ~umask)
 
-    fname = os.path.join(archive_path, ".gitignore")
-    if not os.path.exists(fname):
-        with open(fname, "wt") as fp:
-            fp.writelines(("resources/",))
-    os.chmod(fname, 0o666 & ~umask)
+    fname = archive_path / ".gitignore"
+    fname.write_text("resources/\n")
+    fname.chmod(0o666 & ~umask)
+
+    return get_config(archive_path)
 
 
-def id_stub(id):
-    """Returns a short version of id, used for sorting objects into subdirectories. """
+def id_stub(id: str) -> str:
+    """Returns a short version of id, used for sorting objects into subdirectories."""
     return id[:2]
 
 
-def resource_path(archive_path, id):
-    """ Returns path of the resource specified by id"""
-    return os.path.join(archive_path, _resource_subdir, id_stub(id), id)
+def resource_path(cfg: ArchiveConfig, id: str) -> Path:
+    """Returns path of the resource specified by id"""
+    return cfg["path"] / _resource_subdir / id_stub(id) / id
 
 
-def find_resource(path, id=None):
-    """Finds the resource specified by path (or by id within an archive)
+def find_resource(cfg: ArchiveConfig, id: str) -> Optional[Path]:
+    """Finds the resource specified  by id within an archive.
 
     This function is needed if the 'keep_extension' policy is True, in which
     case resource 'xyzzy' could refer to a file called 'xyzzy.wav' or
@@ -178,26 +191,25 @@ def find_resource(path, id=None):
     returns None.
 
     """
-    import glob
-
-    if id is not None:
-        path = resource_path(path, id)
-    if os.path.exists(path):
+    path = resource_path(cfg, id)
+    if path.exists():
         return path
-    for fn in glob.iglob(path + ".*"):
+    for fn in path.parent.glob(f"{id}.*"):
         return fn
 
 
-def check_permissions(cfg, src, id=None):
-    """Attempts to check if the file can be deposited. The goal is to catch
-       permissions issues before registering the resource.
+def check_permissions(
+    cfg: ArchiveConfig, src: Union[Path, str], id: Optional[str] = None
+) -> bool:
+    """Check if src file can be deposited in an archive."""
+    import os
 
-    """
+    src = Path(src)
     reqd_perms = os.R_OK | os.W_OK | os.X_OK
     if id is None:
-        id = os.path.basename(src)
-    tgt_base = os.path.join(cfg["path"], _resource_subdir)
-    tgt_dir = os.path.join(tgt_base, id_stub(id))
+        id = src.name
+    tgt_base = cfg["path"] / _resource_subdir
+    tgt_dir = tgt_base / id_stub(id)
     if not os.access(tgt_base, os.F_OK) or not os.access(tgt_base, reqd_perms):
         return False
     if os.access(tgt_dir, os.F_OK) and not os.access(tgt_dir, reqd_perms):
@@ -206,7 +218,9 @@ def check_permissions(cfg, src, id=None):
         return True
 
 
-def store_resource(cfg, src, id=None):
+def store_resource(
+    cfg: ArchiveConfig, src: Union[Path, str], id: Optional[str] = None
+) -> Path:
 
     """Stores resource (src) in the repository under a unique identifier.
 
@@ -227,45 +241,46 @@ def store_resource(cfg, src, id=None):
     """
     import shutil
 
-    if id is None:
-        id = os.path.basename(src)
-
-    if not cfg["policy"]["allow_directories"] and os.path.isdir(src):
+    src = Path(src)
+    if not cfg["policy"]["allow_directories"] and src.is_dir():
         raise TypeError("policy forbids depositing directories")
 
-    # check for existing resource
-    if find_resource(resource_path(cfg["path"], id)) is not None:
-        raise KeyError("a file already exists for id %s", id)
+    if id is None:
+        id = src.name
 
     if cfg["policy"]["keep_extensions"]:
-        id = os.path.splitext(id)[0] + os.path.splitext(src)[1]
+        id = Path(id).stem + src.suffix
+
+    # check for existing resource
+    if find_resource(cfg, id) is not None:
+        raise KeyError("a file already exists for id %s", id)
 
     log.debug("%s -> %s", src, id)
 
-    tgt_dir = os.path.join(cfg["path"], _resource_subdir, id_stub(id))
-    tgt_file = os.path.join(tgt_dir, id)
-
     # execute commands in this order to prevent data loss; source file is not
     # renamed unless it's copied
-    if not os.path.exists(tgt_dir):
-        os.mkdir(tgt_dir)
-        fix_permissions(cfg, tgt_dir, walk=False)
+    tgt_dir = cfg["path"] / _resource_subdir / id_stub(id)
+    tgt_dir.mkdir(parents=True, exist_ok=True)
+    fix_permissions(cfg, tgt_dir)
+
+    tgt_file = tgt_dir / id
     shutil.move(src, tgt_file)
     fix_permissions(cfg, tgt_file)
     return tgt_file
 
 
-def fix_permissions(cfg, tgt, walk=True):
-    """Fixes permission bits on resource and its contents, if the resource is a dir
+def fix_permissions(cfg: ArchiveConfig, tgt: Path) -> None:
+    """Fixes permission bits on resource (or containing directory).
 
     This is needed because we try to move files whenever possible, so the uid,
     gid, and permission bits often need to be updated.
 
     """
+    from os import getuid, chown
     import pwd
     import grp
 
-    myuid = os.getuid()
+    myuid = getuid()
     if myuid == 0:
         uid = pwd.getpwnam(cfg["policy"]["access"]["user"]).pw_uid
     else:
@@ -273,16 +288,13 @@ def fix_permissions(cfg, tgt, walk=True):
     gid = grp.getgrnam(cfg["policy"]["access"]["group"]).gr_gid
     umask = cfg["policy"]["access"]["umask"]
 
-    def fix(fname):
+    def fix(p):
         try:
-            os.chown(fname, uid, gid)
+            chown(p, uid, gid)
         except PermissionError:
-            log.warn("unable to change uid/gid of '%s'", fname)
-        os.chmod(fname, os.stat(fname).st_mode & ~umask)
+            log.warn("unable to change uid/gid of '%s'", tgt)
+        p.chmod(tgt.stat().st_mode & ~umask)
 
     fix(tgt)
-    for root, dirs, files in os.walk(tgt):
-        for dir in dirs:
-            fix(os.path.join(root, dir))
-        for file in files:
-            fix(os.path.join(root, file))
+    for f in tgt.rglob("*"):
+        fix(f)
