@@ -42,7 +42,7 @@ Deposit resources: `nbank deposit archive_path file-1 [file-2 [file-3]]`
 Registered or deposited files are given the permissions specified in `project.json`.
 However, when entire directories are deposited, ownership and access may not be set correctly.
 If you have issues accessing files, run the following commands (usually, as root):
-`find resources -type d -exec chmod 2775 {} \+` and `setfacl -R -d -m u::rwx,g::rwx,o::rx resources`
+`find resources -type d -exec chmod 2775 {} \\+` and `setfacl -R -d -m u::rwx,g::rwx,o::rx resources`
 
 """
 
