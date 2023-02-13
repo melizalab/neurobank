@@ -1,43 +1,156 @@
 # -*- coding: utf-8 -*-
 # -*- mode: python -*-
-from __future__ import division
-from __future__ import unicode_literals
 
 from unittest import TestCase
 
-from nbank import registry, core
+from nbank import registry
 
 base = "https://example.org/neurobank/"
-id   = "adfkj"
+id = "adfkj"
 full = "https://example.org/neurobank/resources/adfkj/"
 
+resource_url = "https://example.org/neurobank/resources/"
+info_url = "https://example.org/neurobank/info/"
+datatypes_url = "https://example.org/neurobank/datatypes/"
+archives_url = "https://example.org/neurobank/archives/"
+
+
 class ResourceNameTestCase(TestCase):
+    def test_join_url(self):
+        self.assertEqual(registry.url_join(base, "resources/"), resource_url)
 
     def test_short_to_full(self):
-        self.assertEqual(core.full_url(id, base), full)
+        self.assertEqual(registry.full_url(base, id), full)
 
     def test_short_to_full_noslash(self):
-        self.assertEqual(core.full_url(id, base.rstrip("/")), full)
+        self.assertEqual(registry.full_url(base.rstrip("/"), id), full)
 
     def test_full_to_parts(self):
-        B, I = core.parse_resource_id(full)
+        B, I = registry.parse_resource_url(full)
         self.assertEqual(B, base)
         self.assertEqual(I, id)
 
     def test_full_to_parts_noslash(self):
-        B, I = core.parse_resource_id(full.rstrip("/"))
+        B, I = registry.parse_resource_url(full.rstrip("/"))
         self.assertEqual(B, base)
         self.assertEqual(I, id)
 
     def test_parts_to_parts(self):
-        B, I = core.parse_resource_id(id, base)
+        url = registry.full_url(base, id)
+        B, I = registry.parse_resource_url(url)
         self.assertEqual(B, base)
         self.assertEqual(I, id)
 
-    def test_id_with_slashes_ok(self):
-        locations = registry.get_locations(base, "a/relative/path/a/user/might/look/up")
-        self.assertEqual(locations, [])
+    def test_incomplete_resource_url(self):
+        with self.assertRaises(ValueError):
+            registry.parse_resource_url(id)
 
-    def test_id_with_initial_slash_ok(self):
-        locations = registry.get_locations(base, "/an/absolute/path/a/user/might/look/up")
-        self.assertEqual(locations, [])
+    def test_bad_resource_url_characters(self):
+        url = registry.full_url(base, "j@*")
+        with self.assertRaises(ValueError):
+            registry.parse_resource_url(url)
+
+    def test_get_info(self):
+        url, params = registry.get_info(base)
+        self.assertEqual(url, registry.url_join(base, "info/"))
+        self.assertIsNone(params)
+
+    def test_get_datatypes(self):
+        url, params = registry.get_datatypes(base)
+        self.assertEqual(url, registry.url_join(base, "datatypes/"))
+        self.assertIsNone(params)
+
+    def test_get_archives(self):
+        url, params = registry.get_archives(base)
+        self.assertEqual(url, registry.url_join(base, "archives/"))
+        self.assertIsNone(params)
+
+    def test_find_archive(self):
+        test_path = "/test/path"
+        url, params = registry.find_archive_by_path(base, test_path)
+        self.assertEqual(url, registry.url_join(base, "archives/"))
+        self.assertDictEqual(
+            {"scheme": registry._neurobank_scheme, "root": test_path}, params
+        )
+
+    def test_find_resource(self):
+        test_params = {"experimenter": "dmeliza", "sha1": "1234"}
+        url, params = registry.find_resource(base, **test_params)
+        self.assertEqual(url, resource_url)
+        self.assertDictEqual(params, test_params)
+
+    def test_get_resource(self):
+        url, params = registry.get_resource(base, id)
+        self.assertEqual(url, full)
+        self.assertIsNone(params)
+
+    def test_fetch_resource(self):
+        url, params = registry.fetch_resource(base, id)
+        self.assertEqual(url, registry.url_join(full, "download"))
+        self.assertIsNone(params)
+
+    def test_get_locations(self):
+        url, params = registry.get_locations(base, id)
+        self.assertEqual(url, registry.url_join(full, "locations/"))
+        self.assertIsNone(params)
+
+    def test_add_datatype(self):
+        test_name = "my-dtype"
+        test_content_type = "audio/wav"
+        url, params = registry.add_datatype(base, test_name, test_content_type)
+        self.assertEqual(url, datatypes_url)
+        self.assertDictEqual(
+            params, {"name": test_name, "content_type": test_content_type}
+        )
+
+    def test_add_archive(self):
+        test_name = "my-archive"
+        test_scheme = "dummy"
+        test_root = "/a/dummy/path"
+        url, params = registry.add_archive(base, test_name, test_scheme, test_root)
+        self.assertEqual(url, archives_url)
+        self.assertDictEqual(
+            params, {"name": test_name, "scheme": test_scheme, "root": test_root}
+        )
+
+    def test_add_resource(self):
+        test_id = "my-resource"
+        test_dtype = "my-dtype"
+        test_archive = "my-archive"
+        experimenter = "dmeliza"
+        url, params = registry.add_resource(
+            base, test_id, test_dtype, test_archive, experimenter=experimenter
+        )
+        self.assertEqual(url, resource_url)
+        self.assertDictEqual(
+            params,
+            {
+                "name": test_id,
+                "dtype": test_dtype,
+                "locations": [test_archive],
+                "metadata": {"experimenter": experimenter},
+            },
+        )
+
+    def test_update_metadata(self):
+        experimenter = "dmeliza"
+        url, params = registry.update_resource_metadata(
+            base, id, experimenter=experimenter
+        )
+        self.assertEqual(url, full)
+        self.assertDictEqual(
+            params,
+            {
+                "metadata": {"experimenter": experimenter},
+            },
+        )
+
+    # def test_id_with_slashes_ok(self):
+    #     locations = registry.get_locations(base, "a/relative/path/a/user/might/look/up")
+    #     self.assertEqual(locations, [])
+
+    # def test_id_with_initial_slash_ok(self):
+    #     locations = registry.get_locations(
+    #         base, "/an/absolute/path/a/user/might/look/up"
+    #     )
+    #     self.assertEqual(locations, [])
