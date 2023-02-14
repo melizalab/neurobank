@@ -6,7 +6,7 @@ Copyright (C) 2014 Dan Meliza <dan@meliza.org>
 Created Tue Jul  8 14:23:35 2014
 """
 from pathlib import Path
-from typing import Union, Dict, Any, Iterator
+from typing import Union, Dict, Any, Iterator, Optional
 
 
 def id_from_fname(fname: Union[Path, str]) -> str:
@@ -109,14 +109,18 @@ def parse_location(
 
 
 def query_registry(
-    session: Any, url: str, params: Union[Dict, None] = None
-) -> Union[Dict, None]:
-    """Perform a GET request to url with params."""
+    session: Any, url: str, params: Optional[Dict] = None, auth: Optional[str] = None
+) -> Optional[Dict]:
+    """Perform a GET request to url with params. Returns None for 404 HTTP errors"""
     r = session.get(
-        url, params=params, headers={"Accept": "application/json"}, verify=True
+        url,
+        params=params,
+        headers={"Accept": "application/json"},
+        auth=auth,
+        verify=True,
     )
     if r.status_code == 404:
-        raise ValueError(f"{url} not found")
+        return None
     r.raise_for_status()
     return r.json()
 
@@ -143,8 +147,8 @@ def query_registry_paginated(session: Any, url: str, params: Dict) -> Iterator[D
 def download_to_file(session: Any, url: str, target: Union[Path, str]) -> None:
     """Download contents of url to target"""
     with session.get(url, stream=True) as r:
-        if r.status_code == 404:
-            raise ValueError(f"The resource {id} does not exist or is not downloadable")
+        # if r.status_code == 404:
+        #     raise ValueError(f"The resource {id} does not exist or is not downloadable")
         r.raise_for_status()
         with open(target, "wb") as fp:
             for chunk in r.iter_content(chunk_size=1024):

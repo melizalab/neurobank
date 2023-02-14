@@ -91,7 +91,7 @@ def get_config(path: Union[Path, str]) -> Optional[ArchiveConfig]:
                 ret["policy"]["access"]["umask"] = int(
                     ret["policy"]["access"]["umask"], 8
                 )
-            ret["path"] = path
+            ret["path"] = path.resolve(strict=True)
             return ret
 
 

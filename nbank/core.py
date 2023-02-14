@@ -50,6 +50,7 @@ def deposit(
     archive_cfg = get_config(archive_path)
     if archive_cfg is None:
         raise ValueError("%s is not a valid archive" % archive_path)
+    archive_path = archive_cfg["path"]  # this will resolve the path
     log.info("archive: %s", archive_path)
     registry_url = archive_cfg["registry"]
     log.info("   registry: %s", registry_url)
@@ -60,13 +61,15 @@ def deposit(
     with rq.Session() as session:
         session.auth = auth
         # check that archive exists for this path
+        url, params = find_archive_by_path(registry_url, archive_path)
         try:
-            url, params = find_archive_by_path(registry_url, archive_path)
             archive = util.query_registry(session, url, params)[0]["name"]
         except IndexError:
             raise RuntimeError(
-                "archive '%s' not in registry. did it move?" % archive_path
+                f"archive '{archive_path}' not in registry. did it move?"
             )
+        except TypeError:
+            raise ValueError(f"no archive list at {url}")
         log.info("   archive name: %s", archive)
 
         for src in files:
@@ -121,10 +124,7 @@ def describe(registry_url: str, id: str) -> Dict:
     from nbank.registry import get_resource
 
     url, params = get_resource(registry_url, id)
-    try:
-        return query_registry(rq, url, params)
-    except ValueError:
-        pass
+    return query_registry(rq, url, params)
 
 
 def find(
@@ -136,15 +136,13 @@ def find(
     to be used with temporary copies of archives on other hosts.
 
     """
-    from nbank.util import query_registry, parse_location
+    from nbank.util import query_registry_paginated, parse_location
     from nbank.registry import get_locations
 
     url, params = get_locations(registry_url, id)
-    try:
-        for loc in query_registry(rq, url, params):
+    with rq.Session() as session:
+        for loc in query_registry_paginated(session, url, params):
             yield parse_location(loc, alt_base)
-    except ValueError:
-        pass
 
 
 def get(registry_url: str, id: str, alt_base: Optional[Path] = None) -> Optional[Path]:
@@ -205,23 +203,25 @@ def fetch(base_url: str, id: str, target: Path) -> None:
 
 
 def update(
-    base_url: str, id: str, auth: Union[Tuple[str], None] = None, **metadata: Any
+    base_url: str, *ids: str, auth: Union[Tuple[str], None] = None, **metadata: Any
 ) -> Dict:
-    """Update metadata for the resource specified by id"""
+    """Update metadata for one or more resources. Set a key to None to delete."""
     from nbank.registry import update_resource_metadata
 
-    url, params = update_resource_metadata(base_url, id, **metadata)
-    r = rq.patch(
-        url,
-        json=params,
-        auth=auth,
-        headers={"Accept": "application/json"},
-        verify=True,
-    )
-    if r.status_code == 404:
-        raise ValueError(f"{url} not found")
-    r.raise_for_status()
-    return r.json()
+    with rq.Session() as session:
+        for id in ids:
+            url, params = update_resource_metadata(base_url, id, **metadata)
+            r = session.patch(
+                url,
+                json=params,
+                auth=auth,
+                headers={"Accept": "application/json"},
+                verify=True,
+            )
+            if r.status_code == 404:
+                yield {"name": id, "error": "not found"}
+            r.raise_for_status()
+            yield r.json()
 
 
 # Variables:

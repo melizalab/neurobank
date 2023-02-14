@@ -81,7 +81,7 @@ def test_query_registry():
 def test_query_registry_invalid():
     url = "https://meliza.org/neurobank/bad/"
     responses.get(url, json={"detail": "not found"}, status=404)
-    with pytest.raises(ValueError):
+    with pytest.raises(requests.exceptions.HTTPError):
         _ = util.query_registry(requests, url)
 
 

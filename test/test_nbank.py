@@ -279,5 +279,5 @@ def test_update_metadata(mocked_resps):
         json={"name": name, "metadata": metadata},
         match=[matchers.json_params_matcher({"metadata": metadata})],
     )
-    updated = core.update(base_url, name, **metadata)
-    assert updated["metadata"] == metadata
+    updated = list(core.update(base_url, name, **metadata))
+    assert updated == [{"metadata": metadata, "name": name}]

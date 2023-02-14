@@ -5,26 +5,18 @@
 Copyright (C) 2013 Dan Meliza <dan@meliza.org>
 Created Tue Nov 26 22:48:58 2013
 """
-from __future__ import absolute_import
-from __future__ import print_function
-from __future__ import division
-from __future__ import unicode_literals
-
-import os
 import sys
 import json
 import argparse
 import datetime
 import logging
+from pathlib import Path
+from urllib.parse import urlunparse
+
 import requests as rq
 
-try:
-    from urllib.parse import urlunparse
-except ImportError:
-    from urlparse import urlunparse
-
 from nbank import __version__
-from nbank import core, archive, registry
+from nbank import core, archive, registry, util
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -45,7 +37,9 @@ def log_error(err):
         data = err.response.json()
         for k, v in data.items():
             for vv in v:
-                log.error("   error: %s: %s", k, vv)
+                log.error("   registry error: %s: %s", k, vv)
+    elif err.response.status_code == 415:
+        log.error("    registry error: %s", err.response.reason)
     else:
         raise err
 
@@ -57,6 +51,7 @@ def userpwd(arg):
 
 
 def octalint(arg):
+    """Parse arg as an octal literal"""
     return int(arg, base=8)
 
 
@@ -91,8 +86,8 @@ def main(argv=None):
         "-r",
         dest="registry_url",
         help="URL of the registry service. "
-        "Default is to use the environment variable '%s'" % core.env_registry,
-        default=core.default_registry(),
+        "Default is to use the environment variable '%s'" % registry._env_registry,
+        default=registry.default_registry(),
     )
     p.add_argument(
         "-a",
@@ -106,10 +101,14 @@ def main(argv=None):
 
     sub = p.add_subparsers(title="subcommands")
 
+    pp = sub.add_parser("registry-info", help="get information about the registry")
+    pp.set_defaults(func=registry_info)
+
     pp = sub.add_parser("init", help="initialize a data archive")
     pp.set_defaults(func=init_archive)
     pp.add_argument(
         "directory",
+        type=Path,
         help="path of the directory for the archive. "
         "The directory should be empty or not exist. ",
     )
@@ -131,7 +130,7 @@ def main(argv=None):
 
     pp = sub.add_parser("deposit", help="deposit resource(s)")
     pp.set_defaults(func=store_resources)
-    pp.add_argument("directory", help="path of the archive ")
+    pp.add_argument("directory", type=Path, help="path of the archive ")
     pp.add_argument(
         "-d", "--dtype", help="specify the datatype for the deposited resources"
     )
@@ -167,7 +166,9 @@ def main(argv=None):
         action="store_true",
         help="read additional file names from stdin",
     )
-    pp.add_argument("file", nargs="+", help="path of file(s) to add to the repository")
+    pp.add_argument(
+        "file", nargs="+", type=Path, help="path of file(s) to add to the repository"
+    )
 
     pp = sub.add_parser("locate", help="locate resource(s)")
     pp.set_defaults(func=locate_resources)
@@ -229,7 +230,9 @@ def main(argv=None):
         help="compute sha1 hash and check that it matches a record in the database",
     )
     pp.set_defaults(func=verify_file_hash)
-    pp.add_argument("files", nargs="+", help="the files or directories to verify")
+    pp.add_argument(
+        "files", nargs="+", type=Path, help="the files or directories to verify"
+    )
 
     pp = sub.add_parser(
         "modify", help="update values in resource metadata of resource(s)"
@@ -244,6 +247,14 @@ def main(argv=None):
         metavar="KEY=VALUE",
         dest="metadata",
     )
+    pp.add_argument(
+        "-K",
+        help="delete metadata field",
+        action="append",
+        default=[],
+        metavar="KEY",
+        dest="metadata_remove",
+    )
     pp.add_argument("id", nargs="+", help="identifier(s) of the resource(s)")
 
     pp = sub.add_parser(
@@ -254,6 +265,7 @@ def main(argv=None):
     pp.add_argument("id", help="identifier of the resource")
     pp.add_argument(
         "target",
+        type=Path,
         help="path where the downloaded resource should be stored. If this is a directory, "
         "the target file is named after the resource (without any extension)",
     )
@@ -274,11 +286,24 @@ def main(argv=None):
 
     args = p.parse_args(argv)
 
-    setup_log(log, args.debug)
-
     if not hasattr(args, "func"):
         p.print_usage()
         return 0
+
+    setup_log(log, args.debug)
+    log.debug("version: %s", __version__)
+    log.debug("run time: %s", datetime.datetime.now())
+
+    # most commands requre a registry, so check it here once
+    if args.registry_url is None and args.func not in (
+        store_resources,
+        locate_resources,
+    ):
+        log.error(
+            "error: supply a registry url with '-r' or %s environment variable",
+            registry._env_registry,
+        )
+        return
 
     # some of the error handling is common; sub-funcs should only catch specific errors
     try:
@@ -294,34 +319,36 @@ def main(argv=None):
                 "                      Or, you may not have permission for this operation."
             )
         else:
-            log.error("internal registry error:")
-            raise e
+            log_error(e)
     except RuntimeError as e:
         log.error("MAJOR ERROR: archive may have become corrupted")
         raise e
 
 
+def registry_info(args):
+    log.info("registry info:")
+    log.info("  - address: %s", args.registry_url)
+    url, params = registry.get_info(args.registry_url)
+    for k, v in util.query_registry(rq, url, params, auth=args.auth).items():
+        log.info("  - %s: %s", k, v)
+
+
 def init_archive(args):
     log.debug("version: %s", __version__)
     log.debug("run time: %s", datetime.datetime.now())
-    args.directory = os.path.abspath(args.directory)
+    args.directory = args.directory.resolve()
     if args.name is None:
-        args.name = os.path.basename(args.directory)
-    if args.registry_url is None:
-        log.error(
-            "error: supply a registry url with '-r' or %s environment variable",
-            core.env_registry,
-        )
-        return
+        args.name = args.directory.name
 
+    url, params = registry.add_archive(
+        args.registry_url,
+        args.name,
+        registry._neurobank_scheme,
+        args.directory,
+    )
     try:
-        registry.add_archive(
-            args.registry_url,
-            args.name,
-            registry._neurobank_scheme,
-            args.directory,
-            args.auth,
-        )
+        r = rq.post(url, json=params, auth=args.auth)
+        r.raise_for_status()
     except rq.exceptions.HTTPError as e:
         log_error(e)
     else:
@@ -331,8 +358,6 @@ def init_archive(args):
 
 
 def store_resources(args):
-    log.debug("version: %s", __version__)
-    log.debug("run time: %s", datetime.datetime.now())
     if args.read_stdin:
         args.file.extend(l.strip() for l in sys.stdin)
     try:
@@ -350,40 +375,36 @@ def store_resources(args):
                 sys.stdout.write("\n")
     except ValueError as e:
         log.error("error: %s", e)
-    except rq.exceptions.HTTPError as e:
-        log_error(e)
 
 
 def locate_resources(args):
-    import shutil
-
-    for id in args.id:
-        base, sid = core.parse_resource_id(id, args.registry_url)
-        if base is None:
-            print("%-25s [no registry to resolve short identifier]" % id)
-            continue
-        for loc in registry.get_locations(base, sid):
-            path = core.get_archive(loc)
-            if args.local_only or args.link or args.print0:
-                path = archive.find_resource(path)
-            if path is not None:
-                if args.link is not None:
-                    linkpath = os.path.join(args.link, os.path.basename(path))
-                    print("%-20s\t-> %s" % (sid, linkpath))
-                    os.symlink(path, linkpath)
-                elif args.print0:
-                    print(path, end="\0")
-                else:
-                    print("%-20s\t%s" % (sid, path))
+    # This subcommand can handle IDs or full neurobank URLs
+    with rq.Session() as session:
+        for id in args.id:
+            try:
+                base, id = registry.parse_resource_id(id)
+            except ValueError:
+                base = args.registry_url
+            if base is None:
+                print("%-25s [no registry to resolve short identifier]" % id)
+                continue
+            url, params = registry.get_locations(base, id)
+            for loc in util.query_registry_paginated(session, url, params):
+                path = core.get_archive(loc)
+                if args.local_only or args.link or args.print0:
+                    path = archive.find_resource(path)
+                if path is not None:
+                    if args.link is not None:
+                        linkpath = os.path.join(args.link, os.path.basename(path))
+                        print("%-20s\t-> %s" % (short_id, linkpath))
+                        os.symlink(path, linkpath)
+                    elif args.print0:
+                        print(path, end="\0")
+                    else:
+                        print("%-20s\t%s" % (short_id, path))
 
 
 def search_resources(args):
-    if args.registry_url is None:
-        log.error(
-            "error: supply a registry url with '-r' or %s environment variable",
-            core.env_registry,
-        )
-        return
     # parse commandline args to query dict
     argmap = [
         ("name", "name"),
@@ -405,7 +426,7 @@ def search_resources(args):
     if len(params) == 0:
         log.error("nbank search: error: at least one filter parameter is required")
         return
-    for d in registry.find_resource(args.registry_url, **params):
+    for d in core.search(args.registry_url, **params):
         if args.json_out:
             json.dump(d, fp=sys.stdout, indent=2)
             sys.stdout.write("\n")
@@ -414,76 +435,62 @@ def search_resources(args):
 
 
 def get_resource_info(args):
-    for id in args.id:
-        data = core.describe(id, args.registry_url)
-        if data is None:
-            data = {"id": id, "error": "not found"}
-        json.dump(data, fp=sys.stdout, indent=2)
+    # we don't use core.describe to allow request pooling
+    with rq.Session() as session:
+        for id in args.id:
+            url, params = registry.get_resource(args.registry_url, id)
+            data = util.query_registry(session, url, params)
+            if data is None:
+                data = {"id": id, "error": "not found"}
+            json.dump(data, fp=sys.stdout, indent=2)
+            sys.stdout.write("\n")
 
 
 def set_resource_metadata(args):
-    for id in args.id:
-        data = registry.update_resource_metadata(
-            args.registry_url, id, auth=args.auth, **args.metadata
-        )
-        json.dump(data, fp=sys.stdout, indent=2)
+    for key in args.metadata_remove:
+        args.metadata[key] = None
+    for result in core.update(args.registry_url, *args.id, **args.metadata):
+        json.dump(result, fp=sys.stdout, indent=2)
+        sys.stdout.write("\n")
 
 
 def fetch_resource(args):
-    if os.path.isdir(args.target):
-        target = os.path.join(args.target, args.id)
+    if args.target.is_dir():
+        target = args.target / args.id
     else:
         target = args.target
-    if os.path.exists(target):
+    if target.exists():
         if args.force:
             log.debug("removing target file %s", target)
-            os.remove(target)
+            target.unlink()
         else:
             log.error("nbank fetch: error: the target file %s exists already", target)
             return
     try:
-        registry.fetch_resource(args.registry_url, args.id, target)
+        core.fetch(args.registry_url, args.id, target)
         log.info("downloaded %s to %s", args.id, target)
-    except (rq.exceptions.HTTPError, ValueError) as e:
+    except ValueError as e:
         log.error(e)
         return
 
 
 def list_datatypes(args):
-    if args.registry_url is None:
-        log.error(
-            "error: supply a registry url with '-r' or %s environment variable",
-            core.env_registry,
-        )
-        return
-    for dtype in registry.get_datatypes(args.registry_url):
+    url, params = registry.get_datatypes(args.registry_url)
+    for dtype in util.query_registry_paginated(rq, url, params):
         print("%(name)-25s\t(%(content_type)s)" % dtype)
 
 
 def add_datatype(args):
-    if args.registry_url is None:
-        log.error(
-            "error: supply a registry url with '-r' or %s environment variable",
-            core.env_registry,
-        )
-        return
-    try:
-        data = registry.add_datatype(
-            args.registry_url, args.dtype_name, args.content_type, auth=args.auth
-        )
-        print("added datatype %(name)s (content-type: %(content_type)s)" % data)
-    except rq.exceptions.HTTPError as e:
-        log_error(e)
+    url, params = registry.add_datatype(
+        args.registry_url, args.dtype_name, args.content_type
+    )
+    data = rq.post(url, json=params, auth=args.auth)
+    log.info("added datatype %(name)s (content-type: %(content_type)s)" % data.json())
 
 
 def list_archives(args):
-    if args.registry_url is None:
-        log.error(
-            "error: supply a registry url with '-r' or %s environment variable",
-            core.env_registry,
-        )
-        return
-    for arch in registry.get_archives(args.registry_url):
+    url, params = registry.get_archives(args.registry_url)
+    for arch in util.query_registry_paginated(rq, url, params):
         if arch["scheme"] == "neurobank":
             print("%(name)-25s\t%(root)s" % arch)
         else:
@@ -494,25 +501,19 @@ def list_archives(args):
 def verify_file_hash(args):
     from nbank.util import id_from_fname
 
-    if args.registry_url is None:
-        log.error(
-            "error: supply a registry url with '-r' or %s environment variable",
-            core.env_registry,
-        )
-        return
     for path in args.files:
-        if not os.path.exists(path):
+        if not path.exists():
             print("%s: no such file or directory" % path)
             continue
         test_id = id_from_fname(path)
         try:
-            if core.verify(path, args.registry_url, id=test_id):
+            if core.verify(args.registry_url, path, id=test_id):
                 print("%s: OK" % path)
             else:
                 print("%s: FAILED to match record for %s" % (path, test_id))
         except ValueError:
             i = 0
-            for resource in core.verify(path, args.registry_url):
+            for resource in core.verify(args.registry_url, path):
                 print("%s: matches %s" % (path, resource["name"]))
                 i += 1
             if i == 0:
