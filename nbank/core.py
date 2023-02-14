@@ -5,59 +5,22 @@
 Copyright (C) 2013 Dan Meliza <dan@meliza.org>
 Created Mon Nov 25 08:52:28 2013
 """
-from __future__ import absolute_import
-from __future__ import print_function
-from __future__ import division
-from __future__ import unicode_literals
-
-import os
+from pathlib import Path
+from typing import Tuple, Dict, Iterator, Union, Optional
 import logging
-
-from nbank import util
+import requests as rq
 
 log = logging.getLogger("nbank")  # root logger
-env_registry = "NBANK_REGISTRY"
-
-
-def default_registry():
-    """Return the registry URL associated with the default registry environment variable """
-    return os.environ.get(env_registry, None)
-
-
-def parse_resource_id(id, base_url=None):
-    """Parse a full or short resource identifier into base url and id.
-
-    http://domain.name/app/resources/id/ -> (http://domain.name/app/, id)
-    (id, "http://domain.name/app") -> ("http://domain.name/app/", id)
-    (id, None) -> (default_registry(), id)
-    """
-    import re
-
-    try:
-        from urllib.parse import urlparse, urlunparse
-    except ImportError:
-        from urlparse import urlparse, urlunparse
-    pr = urlparse(id)
-    if pr.scheme and pr.netloc:
-        m = re.match(r"(\S+?/)resources/([-_~0-9a-zA-Z]+)", pr.path)
-        if m is None:
-            raise ValueError("invalid neurobank resource URL")
-        return (urlunparse(pr._replace(path=m.group(1))), m.group(2))
-    if base_url is None:
-        base_url = default_registry()
-    return base_url, id
-
-
-def full_url(id, base_url=None):
-    """Returns the full URL of the resource"""
-    base_url, id = parse_resource_id(id, base_url)
-    if base_url is None:
-        raise ValueError("short identifier supplied without a registry to resolve it")
-    return "{}/resources/{}/".format(base_url.rstrip("/"), id)
 
 
 def deposit(
-    archive_path, files, dtype=None, hash=False, auto_id=False, auth=None, **metadata
+    archive_path: Path,
+    files: Iterator[Path],
+    dtype: str = None,
+    hash: bool = False,
+    auto_id: bool = False,
+    auth: Union[Tuple[str], None] = None,
+    **metadata,
 ):
     """Main entry point to deposit resources into an archive
 
@@ -80,90 +43,111 @@ def deposit(
 
     """
     import uuid
+    from nbank.util import query_registry, id_from_fname, hash
     from nbank.archive import get_config, store_resource, check_permissions
-    from nbank.registry import add_resource, find_archive_by_path
+    from nbank.registry import add_resource, find_archive_by_path, full_url
 
-    archive_path = os.path.abspath(archive_path)
-    cfg = get_config(archive_path)
-    if cfg is None:
+    archive_cfg = get_config(archive_path)
+    if archive_cfg is None:
         raise ValueError("%s is not a valid archive" % archive_path)
     log.info("archive: %s", archive_path)
-    registry_url = cfg["registry"]
+    registry_url = archive_cfg["registry"]
     log.info("   registry: %s", registry_url)
-    auto_id = cfg["policy"]["auto_identifiers"] or auto_id
-    auto_id_type = cfg["policy"].get("auto_id_type", None)
-    allow_dirs = cfg["policy"]["allow_directories"]
+    auto_id = archive_cfg["policy"]["auto_identifiers"] or auto_id
+    auto_id_type = archive_cfg["policy"].get("auto_id_type", None)
+    allow_dirs = archive_cfg["policy"]["allow_directories"]
 
-    # check that archive exists for this path
-    archive = find_archive_by_path(registry_url, archive_path)
-    log.info("   archive name: %s", archive)
-    if archive is None:
-        raise RuntimeError("archive '%s' not in registry. did it move?" % archive_path)
+    with rq.Session() as session:
+        session.auth = auth
+        # check that archive exists for this path
+        try:
+            url, params = find_archive_by_path(registry_url, archive_path)
+            archive = query_registry(session, url, params)[0]["name"]
+        except IndexError:
+            raise RuntimeError(
+                "archive '%s' not in registry. did it move?" % archive_path
+            )
+        log.info("   archive name: %s", archive)
 
-    for src in files:
-        log.info("processing '%s':", src)
-        if not os.path.exists(src):
-            log.info("   does not exist; skipping")
-            continue
-        if not allow_dirs and os.path.isdir(src):
-            log.info("   is a directory; skipping")
-            continue
-        if auto_id:
-            if auto_id_type == "uuid":
-                id = str(uuid.uuid4())
+        for src in files:
+            log.info("processing '%s':", src)
+            if not src.exists():
+                log.info("   does not exist; skipping")
+                continue
+            if not allow_dirs and src.is_dir():
+                log.info("   is a directory; skipping")
+                continue
+            if auto_id:
+                if auto_id_type == "uuid":
+                    id = str(uuid.uuid4())
+                else:
+                    id = None
             else:
-                id = None
-        else:
-            id = util.id_from_fname(src)
-        if not check_permissions(cfg, src, id):
-            raise OSError("unable to write to archive, aborting")
-        if hash or cfg["policy"]["require_hash"]:
-            sha1 = util.hash(src)
-            log.info("   sha1: %s", sha1)
-        else:
-            sha1 = None
-        result = add_resource(registry_url, id, dtype, archive, sha1, auth, **metadata)
-        id = full_url(result["name"], registry_url)
-        log.info("   registered as %s", id)
-        tgt = store_resource(cfg, src, id=result["name"])
-        log.info("   deposited in %s", tgt)
-        yield {"source": src, "id": result["name"]}
+                id = id_from_fname(src)
+            if not check_permissions(archive_cfg, src, id):
+                raise OSError("unable to write to archive, aborting")
+            if hash or archive_cfg["policy"]["require_hash"]:
+                sha1 = hash(src)
+                log.info("   sha1: %s", sha1)
+            else:
+                sha1 = None
+            url, params = add_resource(
+                registry_url, id, dtype, archive, sha1, **metadata
+            )
+            log.debug("POST %s: %s", url, params)
+            r = session.post(url, json=params)
+            r.raise_for_status()
+            result = r.json()
+
+            log.info("   registered as %s", full_url(registry_url, result["name"]))
+            tgt = store_resource(archive_cfg, src, id=result["name"])
+            log.info("   deposited in %s", tgt)
+            yield {"source": src, "id": result["name"]}
 
 
-def search(registry_url=None, **params):
+def search(registry_url: str, **params) -> Iterator[Dict]:
     """Searches the registry for resources that match query params, yielding a sequence of hits"""
+    from nbank.util import query_registry_paginated
     from nbank.registry import find_resource
 
-    if registry_url is None:
-        registry_url = default_registry()
-    return find_resource(registry_url, **params)
+    url, _ = find_resource(registry_url)
+    with rq.Session() as session:
+        return query_registry_paginated(session, url, params)
 
 
-def find(id, registry_url=None, local_only=False, alt_base=None):
+def describe(registry_url: str, id: str) -> Dict:
+    """Returns the database record for id, or None if no match can be found"""
+    from nbank.util import query_registry
+    from nbank.registry import get_resource
+
+    url, params = get_resource(registry_url, id)
+    try:
+        return query_registry(rq, url, params)
+    except ValueError:
+        pass
+
+
+def find(
+    registry_url: str, id: str, alt_base: Optional[Path] = None
+) -> Iterator[Union[Path, str]]:
     """Generates a sequence of paths or URLs where id can be located
-
-    If local_only is True, only files that can be found on the local filesystem
-    are yielded.
 
     Set alt_base to replace the dirname of any local resources. This is intended
     to be used with temporary copies of archives on other hosts.
 
     """
+    from nbank.util import query_registry, parse_location
     from nbank.registry import get_locations
-    from nbank.archive import find_resource
 
-    base, sid = parse_resource_id(id, registry_url)
-    if base is None:
-        raise ValueError("short identifier supplied without a registry to resolve it")
-    for loc in get_locations(base, sid):
-        path = get_archive(loc, alt_base)
-        if local_only:
-            yield find_resource(path)
-        else:
-            yield path
+    url, params = get_locations(registry_url, id)
+    try:
+        for loc in query_registry(rq, url, params):
+            yield parse_location(loc, alt_base)
+    except ValueError:
+        pass
 
 
-def get(id, registry_url=None, local_only=False, alt_base=None):
+def get(registry_url: str, id: str, alt_base: Optional[Path] = None) -> Optional[Path]:
     """Returns the first path or URL where id can be found, or None if no match.
 
     If local_only is True, only files that can be found on the local filesystem
@@ -174,76 +158,50 @@ def get(id, registry_url=None, local_only=False, alt_base=None):
 
     """
     try:
-        return next(find(id, registry_url, local_only, alt_base))
+        return next(find(registry_url, id, alt_base))
     except StopIteration:
         pass
 
 
-def describe(id, registry_url=None):
-    """Returns the database record for id, or None if no match can be found """
-    from nbank.registry import get_resource
-
-    base, sid = parse_resource_id(id, registry_url)
-    return get_resource(base, sid)
-
-
-def verify(file, registry_url=None, id=None):
+def verify(
+    registry_url: str, file: Union[str, Path], id: str = None
+) -> Union[Iterator[Dict], bool]:
     """Compute the hash for file and search the registry for any resource(s) associated with it.
 
     Returns a sequence of matching records. If id is not None, search instead by id
     and return True if the hash matches.
 
     """
-    from nbank.registry import find_resource, get_resource
-
-    if registry_url is None:
-        registry_url = default_registry()
-    if registry_url is None:
-        raise ValueError("hash verification requires a registry")
+    from nbank.util import hash
 
     log.debug("verifying %s", file)
-    file_hash = util.hash(file)
+    file_hash = hash(file)
     if id is None:
         log.debug("  searching by hash (%s)", file_hash)
-        return find_resource(registry_url, sha1=file_hash)
+        return search(registry_url, sha1=file_hash)
     else:
         log.debug("  searching by id (%s)", id)
-        resource = get_resource(registry_url, id=id)
+        resource = describe(registry_url, id=id)
         try:
             return resource["sha1"] == file_hash
         except TypeError:
             raise ValueError("%s does not exist" % id)
 
 
-def get_archive(location, alt_base=None):
-    """Return the path or URL associated with location
+def fetch(base_url: str, id: str, target: Path) -> None:
+    """Download the resource from the server and save as `target`.
 
-    location is a dict with 'scheme', 'path', and 'resource_name' (like what's
-    yielded by registry.get_locations). Note that for local (neurobank)
-    locations, the resource may have an extension; this is not included.
-
-    If alt_base is set, the dirname of the root will
-    be replaced with this value; e.g. alt_base='/scratch' will change
-    '/home/data/starlings' to '/scratch/starlings'. This is intended to be used
-    with temporary copies of archives on other hosts.
+    Raises ValueError if the resource does not exist or is not downloadable.
+    Raises HTTPError on an error in the actual download.
+    Raises FileExistsError if `target` already exists.
 
     """
-    import posixpath as pp
-    from nbank.archive import resource_path
+    from nbank.util import download_to_file
+    from nbank.registry import fetch_resource
 
-    try:
-        from urllib.parse import urlunparse
-    except ImportError:
-        from urlparse import urlunparse
-    root = location["root"]
-    if location["scheme"] == "neurobank":
-        if alt_base is not None:
-            root = pp.join(alt_base, pp.basename(root))
-        return resource_path(root, location["resource_name"])
-    else:
-        return urlunparse(
-            (location["scheme"], root, location["resource_name"], "", "", "")
-        )
+    url, _ = fetch_resource(base_url, id)
+    with rq.Session() as session:
+        return download_to_file(session, url, target)
 
 
 # Variables:
