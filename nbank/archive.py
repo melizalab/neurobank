@@ -82,6 +82,7 @@ def get_config(path: Union[Path, str]) -> Optional[ArchiveConfig]:
     """
     path = Path(path)
     fname = path / _config_fname
+
     if fname.is_file():
         with open(fname, "rt") as fp:
             ret = json.load(fp)
@@ -177,9 +178,13 @@ def id_stub(id: str) -> str:
     return id[:2]
 
 
-def resource_path(cfg: ArchiveConfig, id: str) -> Path:
+def resource_path(cfg: Union[ArchiveConfig, Path, str], id: str) -> Path:
     """Returns path of the resource specified by id"""
-    return cfg["path"] / _resource_subdir / id_stub(id) / id
+    try:
+        root = cfg["path"]
+    except TypeError:
+        root = Path(cfg)
+    return root / _resource_subdir / id_stub(id) / id
 
 
 def find_resource(cfg: ArchiveConfig, id: str) -> Optional[Path]:

@@ -25,7 +25,16 @@ def tmp_noext_archive(tmp_path):
     return archive.create(root, dummy_registry, keep_extensions=False)
 
 
+def test_invalid_archive(tmp_path):
+    assert archive.get_config(tmp_path) is None
+
+
 def test_can_read_config(tmp_archive):
+    cfg = archive.get_config(tmp_archive["path"])
+    assert tmp_archive == cfg
+
+
+def test_archive_umask(tmp_archive):
     # cfgtmpl = json.loads(archive._nbank_json)
     root = tmp_archive["path"]
     mode = (root / archive._resource_subdir).stat().st_mode
