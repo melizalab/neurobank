@@ -39,6 +39,17 @@ def setup_log(log, debug=False):
     log.addHandler(ch)
 
 
+def log_error(err):
+    """Writes error message from server to log. Reraises errors where code != 400"""
+    if err.response.status_code == 400:
+        data = err.response.json()
+        for k, v in data.items():
+            for vv in v:
+                log.error("   error: %s: %s", k, vv)
+    else:
+        raise err
+
+
 def userpwd(arg):
     """If arg is of the form username:password, returns them as a tuple. Otherwise None."""
     ret = arg.split(":")
@@ -312,7 +323,7 @@ def init_archive(args):
             args.auth,
         )
     except rq.exceptions.HTTPError as e:
-        registry.log_error(e)
+        log_error(e)
     else:
         log.info("registered '%s' as archive '%s'", args.directory, args.name)
         archive.create(args.directory, args.registry_url, args.umask)
@@ -340,7 +351,7 @@ def store_resources(args):
     except ValueError as e:
         log.error("error: %s", e)
     except rq.exceptions.HTTPError as e:
-        registry.log_error(e)
+        log_error(e)
 
 
 def locate_resources(args):
@@ -361,7 +372,7 @@ def locate_resources(args):
                     print("%-20s\t-> %s" % (sid, linkpath))
                     os.symlink(path, linkpath)
                 elif args.print0:
-                    print(path, end='\0')
+                    print(path, end="\0")
                 else:
                     print("%-20s\t%s" % (sid, path))
 
@@ -462,7 +473,7 @@ def add_datatype(args):
         )
         print("added datatype %(name)s (content-type: %(content_type)s)" % data)
     except rq.exceptions.HTTPError as e:
-        registry.log_error(e)
+        log_error(e)
 
 
 def list_archives(args):

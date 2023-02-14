@@ -6,7 +6,7 @@ Copyright (C) 2013 Dan Meliza <dan@meliza.org>
 Created Mon Nov 25 08:52:28 2013
 """
 from pathlib import Path
-from typing import Tuple, Dict, Iterator, Union, Optional
+from typing import Tuple, Dict, Iterator, Union, Optional, Any
 import logging
 import requests as rq
 
@@ -20,7 +20,7 @@ def deposit(
     hash: bool = False,
     auto_id: bool = False,
     auth: Union[Tuple[str], None] = None,
-    **metadata,
+    **metadata: Any,
 ):
     """Main entry point to deposit resources into an archive
 
@@ -43,7 +43,7 @@ def deposit(
 
     """
     import uuid
-    from nbank.util import query_registry, id_from_fname, hash
+    from nbank import util
     from nbank.archive import get_config, store_resource, check_permissions
     from nbank.registry import add_resource, find_archive_by_path, full_url
 
@@ -62,7 +62,7 @@ def deposit(
         # check that archive exists for this path
         try:
             url, params = find_archive_by_path(registry_url, archive_path)
-            archive = query_registry(session, url, params)[0]["name"]
+            archive = util.query_registry(session, url, params)[0]["name"]
         except IndexError:
             raise RuntimeError(
                 "archive '%s' not in registry. did it move?" % archive_path
@@ -83,11 +83,11 @@ def deposit(
                 else:
                     id = None
             else:
-                id = id_from_fname(src)
+                id = util.id_from_fname(src)
             if not check_permissions(archive_cfg, src, id):
                 raise OSError("unable to write to archive, aborting")
             if hash or archive_cfg["policy"]["require_hash"]:
-                sha1 = hash(src)
+                sha1 = util.hash(src)
                 log.info("   sha1: %s", sha1)
             else:
                 sha1 = None
@@ -202,6 +202,26 @@ def fetch(base_url: str, id: str, target: Path) -> None:
     url, _ = fetch_resource(base_url, id)
     with rq.Session() as session:
         return download_to_file(session, url, target)
+
+
+def update(
+    base_url: str, id: str, auth: Union[Tuple[str], None] = None, **metadata: Any
+) -> Dict:
+    """Update metadata for the resource specified by id"""
+    from nbank.registry import update_resource_metadata
+
+    url, params = update_resource_metadata(base_url, id, **metadata)
+    r = rq.patch(
+        url,
+        json=params,
+        auth=auth,
+        headers={"Accept": "application/json"},
+        verify=True,
+    )
+    if r.status_code == 404:
+        raise ValueError(f"{url} not found")
+    r.raise_for_status()
+    return r.json()
 
 
 # Variables:
