@@ -45,6 +45,30 @@ def test_hash_directory(tmp_path):
     assert hash1 != hash2
 
 
+def test_parse_neurobank_location():
+    from nbank.archive import resource_path
+
+    location = {
+        "scheme": "neurobank",
+        "root": "/home/data/starlings",
+        "resource_name": "dummy",
+    }
+    path = util.parse_location(location)
+    assert path == resource_path(location["root"], location["resource_name"])
+    path = util.parse_location(location, "/scratch/")
+    assert path == resource_path("/scratch/starlings/", location["resource_name"])
+
+
+def test_parse_http_location():
+    location = {
+        "scheme": "https",
+        "root": "localhost:8000/bucket",
+        "resource_name": "dummy",
+    }
+    path = util.parse_location(location)
+    assert path == "https://localhost:8000/bucket/dummy"
+
+
 @responses.activate
 def test_query_registry():
     url = "https://meliza.org/neurobank/info/"
@@ -63,7 +87,6 @@ def test_query_registry_invalid():
 
 @responses.activate
 def test_query_params():
-
     url = "https://meliza.org/neurobank/resources/"
     params = {"experimenter": "dmeliza"}
     responses.get(url, json=dummy_info, match=[matchers.query_param_matcher(params)])

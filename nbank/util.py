@@ -70,6 +70,44 @@ def hash_directory(path: Union[Path, str], method: str = "sha1") -> str:
     return hashlib.new(method, "\n".join(hashes).encode("utf-8")).hexdigest()
 
 
+def parse_location(
+    location: Dict, alt_base: Union[Path, str, None] = None
+) -> Union[Path, str]:
+    """Return the path or URL associated with location
+
+    location is a dict with 'scheme', 'root', and 'resource_name'.
+
+    If scheme is "neurobank", the root field is interpreted as being the path of
+    a neurobank archive on the local file system. If the `alt_base` parameter is
+    set, the dirname of the root will be replaced with this value; e.g.
+    alt_base='/scratch' will change '/home/data/starlings' to
+    '/scratch/starlings'. This is intended to be used with temporary copies of
+    archives on other hosts.
+
+    All other schemes are interpreted as schemes in network URLs.
+
+    """
+    from nbank.archive import resource_path
+    from urllib.parse import urlunparse
+
+    if location["scheme"] == "neurobank":
+        root = Path(location["root"])
+        if alt_base is not None:
+            root = Path(alt_base) / root.name
+        return resource_path(root, location["resource_name"])
+    else:
+        return urlunparse(
+            (
+                location["scheme"],
+                location["root"],
+                location["resource_name"],
+                "",
+                "",
+                "",
+            )
+        )
+
+
 def query_registry(
     session: Any, url: str, params: Union[Dict, None] = None
 ) -> Union[Dict, None]:
