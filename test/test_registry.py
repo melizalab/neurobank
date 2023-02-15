@@ -26,22 +26,22 @@ def test_short_to_full_noslash():
 
 
 def test_full_to_parts():
-    B, I = registry.parse_resource_url(full)
-    assert B == base_url
-    assert I == id
+    BB, II = registry.parse_resource_url(full)
+    assert BB == base_url
+    assert II == id
 
 
 def test_full_to_parts_noslash():
-    B, I = registry.parse_resource_url(full.rstrip("/"))
-    assert B == base_url
-    assert I == id
+    BB, II = registry.parse_resource_url(full.rstrip("/"))
+    assert BB == base_url
+    assert II == id
 
 
 def test_parts_to_parts():
     url = registry.full_url(base_url, id)
-    B, I = registry.parse_resource_url(url)
-    assert B == base_url
-    assert I == id
+    BB, II = registry.parse_resource_url(url)
+    assert BB == base_url
+    assert II == id
 
 
 def test_incomplete_resource_url():

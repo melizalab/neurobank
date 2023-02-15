@@ -351,7 +351,7 @@ def init_archive(args):
 
 def store_resources(args):
     if args.read_stdin:
-        args.file.extend(l.strip() for l in sys.stdin)
+        args.file.extend(line.strip() for line in sys.stdin)
     try:
         for res in core.deposit(
             args.directory,

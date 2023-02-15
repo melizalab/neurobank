@@ -11,8 +11,6 @@ from nbank import core, registry, archive, util
 from test.test_registry import (
     base_url,
     resource_url,
-    info_url,
-    datatypes_url,
     archives_url,
 )
 
