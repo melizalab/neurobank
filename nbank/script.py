@@ -5,18 +5,17 @@
 Copyright (C) 2013 Dan Meliza <dan@meliza.org>
 Created Tue Nov 26 22:48:58 2013
 """
-import sys
-import json
 import argparse
 import datetime
+import json
 import logging
+import sys
 from pathlib import Path
 from urllib.parse import urlunparse
 
 import requests as rq
 
-from nbank import __version__
-from nbank import core, archive, registry, util
+from nbank import __version__, archive, core, registry, util
 
 log = logging.getLogger("nbank")  # root logger
 

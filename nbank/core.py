@@ -5,9 +5,10 @@
 Copyright (C) 2013 Dan Meliza <dan@meliza.org>
 Created Mon Nov 25 08:52:28 2013
 """
-from pathlib import Path
-from typing import Tuple, Dict, Iterator, Union, Optional, Any
 import logging
+from pathlib import Path
+from typing import Any, Dict, Iterator, Optional, Tuple, Union
+
 import requests as rq
 
 log = logging.getLogger("nbank")  # root logger
@@ -43,8 +44,9 @@ def deposit(
 
     """
     import uuid
+
     from nbank import util
-    from nbank.archive import get_config, store_resource, check_permissions
+    from nbank.archive import check_permissions, get_config, store_resource
     from nbank.registry import add_resource, find_archive_by_path, full_url
 
     try:
@@ -112,8 +114,8 @@ def deposit(
 
 def search(registry_url: str, **params) -> Iterator[Dict]:
     """Searches the registry for resources that match query params, yielding a sequence of hits"""
-    from nbank.util import query_registry_paginated
     from nbank.registry import find_resource
+    from nbank.util import query_registry_paginated
 
     url, _ = find_resource(registry_url)
     with rq.Session() as session:
@@ -122,8 +124,8 @@ def search(registry_url: str, **params) -> Iterator[Dict]:
 
 def describe(registry_url: str, id: str) -> Optional[Dict]:
     """Returns the database record for id, or None if no match can be found"""
-    from nbank.util import query_registry
     from nbank.registry import get_resource
+    from nbank.util import query_registry
 
     url, params = get_resource(registry_url, id)
     return query_registry(rq, url, params)
@@ -138,8 +140,8 @@ def find(
     to be used with temporary copies of archives on other hosts.
 
     """
-    from nbank.util import query_registry_paginated, parse_location
     from nbank.registry import get_locations
+    from nbank.util import parse_location, query_registry_paginated
 
     url, params = get_locations(registry_url, id)
     with rq.Session() as session:
@@ -196,8 +198,8 @@ def fetch(base_url: str, id: str, target: Path) -> None:
     Raises FileExistsError if `target` already exists.
 
     """
-    from nbank.util import download_to_file
     from nbank.registry import fetch_resource
+    from nbank.util import download_to_file
 
     url, _ = fetch_resource(base_url, id)
     with rq.Session() as session:

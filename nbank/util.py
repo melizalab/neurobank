@@ -6,7 +6,7 @@ Copyright (C) 2014 Dan Meliza <dan@meliza.org>
 Created Tue Jul  8 14:23:35 2014
 """
 from pathlib import Path
-from typing import Union, Dict, Any, Iterator, Optional
+from typing import Any, Dict, Iterator, Optional, Union
 
 
 def id_from_fname(fname: Union[Path, str]) -> str:
@@ -87,9 +87,10 @@ def parse_location(
     All other schemes are interpreted as schemes in network URLs.
 
     """
-    from nbank.registry import _local_schemes
-    from nbank.archive import resource_path
     from urllib.parse import urlunparse
+
+    from nbank.archive import resource_path
+    from nbank.registry import _local_schemes
 
     if location["scheme"] in _local_schemes:
         root = Path(location["root"])

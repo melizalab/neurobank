@@ -7,8 +7,8 @@ Created Mon Nov 25 08:52:28 2013
 """
 import json
 import logging
-from typing import Union, Dict, Optional, NewType, Any
 from pathlib import Path
+from typing import Any, Dict, NewType, Optional, Union
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -82,10 +82,10 @@ def create(
     Returns the config dict for the archive
 
     """
-    from os import getuid, getgid
-    import pwd
     import grp
+    import pwd
     import subprocess
+    from os import getgid, getuid
 
     archive_path = archive_path.resolve(strict=False)
     try:
@@ -261,9 +261,9 @@ def fix_permissions(cfg: ArchiveConfig, tgt: Path) -> None:
     gid, and permission bits often need to be updated.
 
     """
-    from os import getuid, chown
-    import pwd
     import grp
+    import pwd
+    from os import chown, getuid
 
     myuid = getuid()
     if myuid == 0:
