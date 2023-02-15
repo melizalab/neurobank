@@ -170,24 +170,19 @@ def main(argv=None):
         "file", nargs="+", type=Path, help="path of file(s) to add to the repository"
     )
 
-    pp = sub.add_parser("locate", help="locate resource(s)")
+    pp = sub.add_parser("locate", help="locate local resource(s)")
     pp.set_defaults(func=locate_resources)
-    pp.add_argument(
-        "-l",
-        "--local-only",
-        help="only show local resources that exist",
-        action="store_true",
-    )
     pp.add_argument(
         "-L",
         "--link",
-        help="generate symbolic link to the resource in DIR (implies --local-only)",
+        type=Path,
+        help="generate symbolic link to the resource in DIR",
         metavar="DIR",
     )
     pp.add_argument(
         "-0",
         "--print0",
-        help="print paths to stdout separated by null, for piping to xargs -0 (implies --local-only)",
+        help="print paths to stdout separated by null, for piping to xargs -0",
         action="store_true",
     )
     pp.add_argument("id", help="the identifier of the resource", nargs="+")
@@ -320,9 +315,6 @@ def main(argv=None):
             )
         else:
             log_error(e)
-    except RuntimeError as e:
-        log.error("MAJOR ERROR: archive may have become corrupted")
-        raise e
 
 
 def registry_info(args):
@@ -382,7 +374,7 @@ def locate_resources(args):
     with rq.Session() as session:
         for id in args.id:
             try:
-                base, id = registry.parse_resource_id(id)
+                base, id = registry.parse_resource_url(id)
             except ValueError:
                 base = args.registry_url
             if base is None:
@@ -390,18 +382,19 @@ def locate_resources(args):
                 continue
             url, params = registry.get_locations(base, id)
             for loc in util.query_registry_paginated(session, url, params):
-                path = core.get_archive(loc)
-                if args.local_only or args.link or args.print0:
-                    path = archive.find_resource(path)
-                if path is not None:
-                    if args.link is not None:
-                        linkpath = os.path.join(args.link, os.path.basename(path))
-                        print("%-20s\t-> %s" % (short_id, linkpath))
-                        os.symlink(path, linkpath)
-                    elif args.print0:
-                        print(path, end="\0")
-                    else:
-                        print("%-20s\t%s" % (short_id, path))
+                partial = util.parse_location(loc)
+                try:
+                    path = archive.resolve_extension(partial)
+                except FileNotFoundError:
+                    continue
+                if args.link is not None:
+                    linkpath = args.link / path.name
+                    print("%-20s\t-> %s" % (id, linkpath))
+                    linkpath.symlink_to(path)
+                elif args.print0:
+                    print(str(path), end="\0")
+                else:
+                    print("%-20s\t%s" % (id, path))
 
 
 def search_resources(args):

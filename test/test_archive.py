@@ -26,7 +26,8 @@ def tmp_noext_archive(tmp_path):
 
 
 def test_invalid_archive(tmp_path):
-    assert archive.get_config(tmp_path) is None
+    with pytest.raises(FileNotFoundError):
+        _ = archive.get_config(tmp_path)
 
 
 def test_can_read_config(tmp_archive):
@@ -50,7 +51,7 @@ def test_store_and_find_resource(tmp_archive, tmp_path):
     src.write_text(contents)
     archive.store_resource(tmp_archive, src, name)
     # assertions
-    path = archive.find_resource(tmp_archive, name)
+    path = archive.resource_path(tmp_archive, name, resolve_ext=True)
     assert path.is_file()
     mode = path.stat().st_mode
     assert mode & tmp_archive["policy"]["access"]["umask"] == 0
@@ -64,7 +65,7 @@ def test_store_and_find_named_resource(tmp_archive, tmp_path):
     src.write_text(contents)
     archive.store_resource(tmp_archive, src, name)
     # assertions
-    path = archive.find_resource(tmp_archive, name)
+    path = archive.resource_path(tmp_archive, name, resolve_ext=True)
     assert path.is_file()
     assert path.name == name
     assert path.read_text() == contents
@@ -77,7 +78,7 @@ def test_store_and_find_resource_with_extension(tmp_archive, tmp_path):
     src.write_text(contents)
     archive.store_resource(tmp_archive, src, name)
     # assertions
-    path = archive.find_resource(tmp_archive, name)
+    path = archive.resource_path(tmp_archive, name, resolve_ext=True)
     assert path.is_file()
     assert path.stem == name
     assert path.suffix == src.suffix
@@ -99,7 +100,7 @@ def test_cannot_store_duplicate_basenames(tmp_archive, tmp_path):
     contents = "not a wave file"
     src.write_text(contents)
     archive.store_resource(tmp_archive, src)
-    path = archive.find_resource(tmp_archive, "temp")
+    path = archive.resource_path(tmp_archive, "temp", resolve_ext=True)
     assert path.name == src.name
     src.write_text(contents)
     with pytest.raises(KeyError):
@@ -124,7 +125,7 @@ def test_can_store_directories(tmp_dir_archive, tmp_path):
     assert (fname.stat().st_mode & umask) != 0
 
     archive.store_resource(tmp_dir_archive, dname, id)
-    path = archive.find_resource(tmp_dir_archive, id)
+    path = archive.resource_path(tmp_dir_archive, id, resolve_ext=True)
     assert path.is_dir()
     assert (path.stat().st_mode & umask) == 0
 
@@ -139,7 +140,7 @@ def test_can_strip_extensions(tmp_noext_archive, tmp_path):
     contents = "not a wave file"
     src.write_text(contents)
     archive.store_resource(tmp_noext_archive, src, name)
-    path = archive.find_resource(tmp_noext_archive, name)
+    path = archive.resource_path(tmp_noext_archive, name, resolve_ext=True)
     assert path.exists()
     assert path.suffix == ""
 

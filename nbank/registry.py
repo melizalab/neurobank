@@ -12,11 +12,12 @@ URLs with the POST method; and `update_` URLs with the PATCH method.
 """
 from pathlib import Path
 import os
-from typing import Tuple, Dict, Any, Union
+from typing import Tuple, Dict, Any, Union, Optional
 import logging
 
 _env_registry = "NBANK_REGISTRY"
 _neurobank_scheme = "neurobank"
+_local_schemes = (_neurobank_scheme,)
 log = logging.getLogger("nbank")
 
 
@@ -108,10 +109,10 @@ def add_archive(
 
 def add_resource(
     base_url: str,
-    id: str,
-    dtype: str,
-    archive: str,
-    sha1: str = None,
+    id: Optional[str],
+    dtype: Optional[str],
+    archive: Optional[str],
+    sha1: Optional[str] = None,
     **metadata: Any,
 ) -> Tuple[str, Dict]:
     """Constructs URL to add a resource to the registry"""

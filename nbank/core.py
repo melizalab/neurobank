@@ -16,10 +16,10 @@ log = logging.getLogger("nbank")  # root logger
 def deposit(
     archive_path: Path,
     files: Iterator[Path],
-    dtype: str = None,
+    dtype: Optional[str] = None,
     hash: bool = False,
     auto_id: bool = False,
-    auth: Union[Tuple[str], None] = None,
+    auth: Optional[Tuple[str, str]] = None,
     **metadata: Any,
 ):
     """Main entry point to deposit resources into an archive
@@ -47,8 +47,9 @@ def deposit(
     from nbank.archive import get_config, store_resource, check_permissions
     from nbank.registry import add_resource, find_archive_by_path, full_url
 
-    archive_cfg = get_config(archive_path)
-    if archive_cfg is None:
+    try:
+        archive_cfg = get_config(archive_path)
+    except FileNotFoundError:
         raise ValueError("%s is not a valid archive" % archive_path)
     archive_path = archive_cfg["path"]  # this will resolve the path
     log.info("archive: %s", archive_path)
@@ -62,14 +63,15 @@ def deposit(
         session.auth = auth
         # check that archive exists for this path
         url, params = find_archive_by_path(registry_url, archive_path)
-        try:
-            archive = util.query_registry(session, url, params)[0]["name"]
-        except IndexError:
+        archives = util.query_registry(session, url, params)
+        if archives is None:
+            raise ValueError(f"no archive list at {url}")
+        elif len(archives) == 0:
             raise RuntimeError(
                 f"archive '{archive_path}' not in registry. did it move?"
             )
-        except TypeError:
-            raise ValueError(f"no archive list at {url}")
+        else:
+            archive = archives[0]["name"]
         log.info("   archive name: %s", archive)
 
         for src in files:
@@ -118,7 +120,7 @@ def search(registry_url: str, **params) -> Iterator[Dict]:
         return query_registry_paginated(session, url, params)
 
 
-def describe(registry_url: str, id: str) -> Dict:
+def describe(registry_url: str, id: str) -> Optional[Dict]:
     """Returns the database record for id, or None if no match can be found"""
     from nbank.util import query_registry
     from nbank.registry import get_resource
@@ -162,7 +164,7 @@ def get(registry_url: str, id: str, alt_base: Optional[Path] = None) -> Optional
 
 
 def verify(
-    registry_url: str, file: Union[str, Path], id: str = None
+    registry_url: str, file: Union[str, Path], id: Optional[str] = None
 ) -> Union[Iterator[Dict], bool]:
     """Compute the hash for file and search the registry for any resource(s) associated with it.
 
@@ -203,8 +205,8 @@ def fetch(base_url: str, id: str, target: Path) -> None:
 
 
 def update(
-    base_url: str, *ids: str, auth: Union[Tuple[str], None] = None, **metadata: Any
-) -> Dict:
+    base_url: str, *ids: str, auth: Optional[Tuple[str, str]] = None, **metadata: Any
+) -> Iterator[Dict]:
     """Update metadata for one or more resources. Set a key to None to delete."""
     from nbank.registry import update_resource_metadata
 

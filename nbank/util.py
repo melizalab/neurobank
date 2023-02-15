@@ -87,10 +87,11 @@ def parse_location(
     All other schemes are interpreted as schemes in network URLs.
 
     """
+    from nbank.registry import _local_schemes
     from nbank.archive import resource_path
     from urllib.parse import urlunparse
 
-    if location["scheme"] == "neurobank":
+    if location["scheme"] in _local_schemes:
         root = Path(location["root"])
         if alt_base is not None:
             root = Path(alt_base) / root.name
@@ -125,7 +126,9 @@ def query_registry(
     return r.json()
 
 
-def query_registry_paginated(session: Any, url: str, params: Dict) -> Iterator[Dict]:
+def query_registry_paginated(
+    session: Any, url: str, params: Optional[Dict]
+) -> Iterator[Dict]:
     """Perform GET request(s) to yield records from a paginated endpoint"""
     r = session.get(
         url, params=params, headers={"Accept": "application/json"}, verify=True

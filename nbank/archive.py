@@ -48,59 +48,26 @@ If you have issues accessing files, run the following commands (usually, as root
 
 """
 
-_nbank_json = """{
-  "$schema": "%(schema)s",
-  "project": {
-    "name": null,
-    "description": null
-  },
-  "owner": {
-    "name": null,
-    "email": null
-  },
-  "registry": "%(registry_url)s",
-  "policy": {
-    "auto_identifiers": false,
-    "auto_id_type": null,
-    "keep_extensions": true,
-    "allow_directories": false,
-    "require_hash": true,
-    "access": {
-      "user": "%(user)s",
-      "group": "%(group)s",
-      "umask": "%(umask)03o"
-    }
-  }
-}
-"""
 
-
-def get_config(path: Union[Path, str]) -> Optional[ArchiveConfig]:
-    """Returns the configuration for the archive specified by path, or None
-    if the path does not refer to a valid neurobank archive.
-
-    """
-    path = Path(path)
+def get_config(path: Path) -> ArchiveConfig:
+    """Returns the configuration for the archive specified by path."""
     fname = path / _config_fname
 
-    if fname.is_file():
-        with open(fname, "rt") as fp:
-            ret = json.load(fp)
-            umask = ret["policy"]["access"]["umask"]
-            if not isinstance(umask, int):
-                ret["policy"]["access"]["umask"] = int(
-                    ret["policy"]["access"]["umask"], 8
-                )
-            ret["path"] = path.resolve(strict=True)
-            return ret
+    with open(fname, "rt") as fp:
+        ret = json.load(fp)
+        umask = ret["policy"]["access"]["umask"]
+        if not isinstance(umask, int):
+            ret["policy"]["access"]["umask"] = int(ret["policy"]["access"]["umask"], 8)
+        ret["path"] = path.resolve(strict=True)
+        return ret
 
 
 def create(
-    archive_path: Union[Path, str],
+    archive_path: Path,
     registry_url: str,
     umask: int = _default_umask,
     **policies: Any,
-) -> None:
+) -> ArchiveConfig:
     """Initializes a new data archive in archive_path.
 
     archive_path: the absolute or relative path of the archive
@@ -120,10 +87,12 @@ def create(
     import grp
     import subprocess
 
-    archive_path = Path(archive_path).resolve(strict=False)
-    cfg = get_config(archive_path)
-    if cfg is not None:
+    archive_path = archive_path.resolve(strict=False)
+    try:
+        cfg = get_config(archive_path)
         umask = cfg["policy"]["access"]["umask"]
+    except FileNotFoundError:
+        pass
 
     umask &= 0o777  # mask out the umask
 
@@ -178,29 +147,37 @@ def id_stub(id: str) -> str:
     return id[:2]
 
 
-def resource_path(cfg: Union[ArchiveConfig, Path, str], id: str) -> Path:
+def resource_path(
+    cfg: Union[ArchiveConfig, Path, str], id: str, resolve_ext: bool = False
+) -> Path:
     """Returns path of the resource specified by id"""
     try:
         root = cfg["path"]
     except TypeError:
         root = Path(cfg)
-    return root / _resource_subdir / id_stub(id) / id
+    partial = root / _resource_subdir / id_stub(id) / id
+    if not resolve_ext:
+        return partial
+    else:
+        return resolve_extension(partial)
 
 
-def find_resource(cfg: ArchiveConfig, id: str) -> Optional[Path]:
-    """Finds the resource specified  by id within an archive.
+def resolve_extension(path: Path) -> Path:
+    """Resolves the full path including extension of a resource.
 
     This function is needed if the 'keep_extension' policy is True, in which
     case resource 'xyzzy' could refer to a file called 'xyzzy.wav' or
     'xyzzy.json', etc. If no resource associated with the supplied path exists,
-    returns None.
+    raises FileNotFoundError.
 
     """
-    path = resource_path(cfg, id)
     if path.exists():
         return path
-    for fn in path.parent.glob(f"{id}.*"):
-        return fn
+    paths = path.parent.glob(f"{path.name}.*")
+    try:
+        return next(paths)
+    except StopIteration:
+        raise FileNotFoundError(f"resource '{path}' does not exist")
 
 
 def check_permissions(
@@ -257,9 +234,12 @@ def store_resource(
         id = Path(id).stem + src.suffix
 
     # check for existing resource
-    if find_resource(cfg, id) is not None:
+    try:
+        _ = resource_path(cfg, id, resolve_ext=True)
+    except FileNotFoundError:
+        pass
+    else:
         raise KeyError("a file already exists for id %s", id)
-
     log.debug("%s -> %s", src, id)
 
     # execute commands in this order to prevent data loss; source file is not
