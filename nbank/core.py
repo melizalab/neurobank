@@ -65,15 +65,11 @@ def deposit(
         session.auth = auth
         # check that archive exists for this path
         url, params = find_archive_by_path(registry_url, archive_path)
-        archives = util.query_registry(session, url, params)
-        if archives is None:
-            raise ValueError(f"no archive list at {url}")
-        elif len(archives) == 0:
+        archive = util.query_registry_first(session, url, params)
+        if archive is None:
             raise RuntimeError(
                 f"archive '{archive_path}' not in registry. did it move?"
             )
-        else:
-            archive = archives[0]["name"]
         log.info("   archive name: %s", archive)
 
         for src in files:

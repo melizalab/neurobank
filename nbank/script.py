@@ -171,6 +171,7 @@ def main(argv=None):
 
     pp = sub.add_parser("locate", help="locate local resource(s)")
     pp.set_defaults(func=locate_resources)
+    pp.add_argument("-R", "--remote", action="store_true", help="show remote locations")
     pp.add_argument(
         "-L",
         "--link",
@@ -381,19 +382,20 @@ def locate_resources(args):
                 continue
             url, params = registry.get_locations(base, id)
             for loc in util.query_registry_paginated(session, url, params):
+                # this will return a Path for local files and a str for URLs
                 partial = util.parse_location(loc)
-                try:
+                if args.remote and isinstance(partial, str):
+                    print("%-20s\t%s" % (id, partial))
+                elif not args.remote and isinstance(partial, Path):
                     path = archive.resolve_extension(partial)
-                except FileNotFoundError:
-                    continue
-                if args.link is not None:
-                    linkpath = args.link / path.name
-                    print("%-20s\t-> %s" % (id, linkpath))
-                    linkpath.symlink_to(path)
-                elif args.print0:
-                    print(str(path), end="\0")
-                else:
-                    print("%-20s\t%s" % (id, path))
+                    if args.link is not None:
+                        linkpath = args.link / path.name
+                        print("%-20s\t-> %s" % (id, linkpath))
+                        linkpath.symlink_to(path)
+                    elif args.print0:
+                        print(str(path), end="\0")
+                    else:
+                        print("%-20s\t%s" % (id, path))
 
 
 def search_resources(args):

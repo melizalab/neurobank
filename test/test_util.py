@@ -69,6 +69,16 @@ def test_parse_http_location():
     assert path == "https://localhost:8000/bucket/dummy"
 
 
+def test_parse_http_location_strip_slash():
+    location = {
+        "scheme": "https",
+        "root": "localhost:8000/bucket/",
+        "resource_name": "dummy",
+    }
+    path = util.parse_location(location)
+    assert path == "https://localhost:8000/bucket/dummy"
+
+
 @responses.activate
 def test_query_registry():
     url = "https://meliza.org/neurobank/info/"
@@ -100,6 +110,42 @@ def test_query_params():
     responses.get(url, json=dummy_info, match=[matchers.query_param_matcher(params)])
     data = util.query_registry(requests, url, params)
     assert data == dummy_info
+
+
+@responses.activate
+def test_query_paginated():
+    url = "https://meliza.org/neurobank/resources/"
+    params = {"experimenter": "dmeliza"}
+    data = [{"first": "one"}, {"second": "one"}]
+    responses.get(url, json=data, match=[matchers.query_param_matcher(params)])
+    for i, result in enumerate(util.query_registry_paginated(requests, url, params)):
+        assert result == data[i]
+
+
+@responses.activate
+def test_query_first():
+    url = "https://meliza.org/neurobank/resources/"
+    data = [{"item": "one"}]
+    responses.get(url, json=data)
+    result = util.query_registry_first(requests, url)
+    assert result == data[0]
+
+
+@responses.activate
+def test_query_first_empty():
+    url = "https://meliza.org/neurobank/resources/"
+    data = []
+    responses.get(url, json=data)
+    result = util.query_registry_first(requests, url)
+    assert result is None
+
+
+@responses.activate
+def test_query_first_invalid():
+    url = "https://meliza.org/neurobank/bad/"
+    responses.get(url, json={"detail": "not found"}, status=404)
+    with pytest.raises(requests.exceptions.HTTPError):
+        _ = util.query_registry_first(requests, url)
 
 
 @responses.activate

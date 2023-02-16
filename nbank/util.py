@@ -101,7 +101,7 @@ def parse_location(
         return urlunparse(
             (
                 location["scheme"],
-                location["root"],
+                location["root"].rstrip("/"),
                 location["resource_name"],
                 "",
                 "",
@@ -146,6 +146,14 @@ def query_registry_paginated(
         r.raise_for_status()
         for d in r.json():
             yield d
+
+
+def query_registry_first(session: Any, url: str, params: Optional[Dict] = None) -> Dict:
+    """Perform a GET response to a url and return the first result or None"""
+    try:
+        return next(query_registry_paginated(session, url, params))
+    except StopIteration:
+        return None
 
 
 def download_to_file(session: Any, url: str, target: Union[Path, str]) -> None:
