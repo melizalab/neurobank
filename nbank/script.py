@@ -462,7 +462,6 @@ def fetch_resource(args):
             return
     try:
         core.fetch(args.registry_url, args.id, target)
-        log.info("downloaded %s to %s", args.id, target)
     except ValueError as e:
         log.error(e)
         return

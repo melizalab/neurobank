@@ -11,6 +11,7 @@ resource_url = "https://localhost:8000/neurobank/resources/"
 info_url = "https://localhost:8000/neurobank/info/"
 datatypes_url = "https://localhost:8000/neurobank/datatypes/"
 archives_url = "https://localhost:8000/neurobank/archives/"
+download_url = "https://localhost:8000/neurobank/download/"
 
 
 def test_join_url():
@@ -95,7 +96,7 @@ def test_get_resource():
 
 def test_fetch_resource():
     url, params = registry.fetch_resource(base_url, id)
-    assert url == registry.url_join(full, "download")
+    assert url == registry.url_join(download_url, id)
     assert params is None
 
 

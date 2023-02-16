@@ -65,8 +65,9 @@ def deposit(
         session.auth = auth
         # check that archive exists for this path
         url, params = find_archive_by_path(registry_url, archive_path)
-        archive = util.query_registry_first(session, url, params)
-        if archive is None:
+        try:
+            archive = util.query_registry_first(session, url, params)["name"]
+        except TypeError:
             raise RuntimeError(
                 f"archive '{archive_path}' not in registry. did it move?"
             )
@@ -194,11 +195,17 @@ def fetch(base_url: str, id: str, target: Path) -> None:
     Raises FileExistsError if `target` already exists.
 
     """
-    from nbank.registry import fetch_resource
-    from nbank.util import download_to_file
+    from nbank.registry import get_locations
+    from nbank.util import query_registry_first, download_to_file, parse_location
 
-    url, _ = fetch_resource(base_url, id)
+    # query the database for the URL
+    url, _ = get_locations(base_url, id)
     with rq.Session() as session:
+        loc = query_registry_first(session, url, {"name": "registry"})
+        if loc is None:
+            raise ValueError(f"resource '{id}' does not exist or is not downloadable")
+        res_url = parse_location(loc)
+        log.info("fetching %s → %s", res_url, target)
         return download_to_file(session, url, target)
 
 

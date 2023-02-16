@@ -81,7 +81,7 @@ def get_resource(base_url: str, id: str) -> Tuple[str, None]:
 
 def fetch_resource(base_url: str, id: str) -> Tuple[str, None]:
     """Constructs URL to download a resource from the server"""
-    return (url_join(base_url, "resources", id, "download"), None)
+    return (url_join(base_url, "download", id), None)
 
 
 def get_locations(base_url: str, id: str) -> Tuple[str, None]:
