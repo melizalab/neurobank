@@ -103,7 +103,14 @@ def test_fetch_resource():
 def test_get_locations():
     url, params = registry.get_locations(base_url, id)
     assert url == registry.url_join(full, "locations/")
-    assert params is None
+    assert params == {}
+
+
+def test_get_locations_with_params():
+    test_params = {"archive": "registry"}
+    url, params = registry.get_locations(base_url, id, **test_params)
+    assert url == registry.url_join(full, "locations/")
+    assert params == test_params
 
 
 def test_add_datatype():
