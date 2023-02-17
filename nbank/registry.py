@@ -11,7 +11,6 @@ URLs with the POST method; and `update_` URLs with the PATCH method.
 
 """
 import logging
-import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -23,6 +22,8 @@ log = logging.getLogger("nbank")
 
 def default_registry() -> str:
     """Return the registry URL associated with the default registry environment variable"""
+    import os
+
     return os.environ[_env_registry]
 
 
@@ -84,9 +85,9 @@ def fetch_resource(base_url: str, id: str) -> Tuple[str, None]:
     return (url_join(base_url, "download", id), None)
 
 
-def get_locations(base_url: str, id: str) -> Tuple[str, None]:
+def get_locations(base_url: str, id: str, **params) -> Tuple[str, Dict]:
     """Constructs URL to look up the locations of a resource."""
-    return (url_join(base_url, "resources", id, "locations/"), None)
+    return (url_join(base_url, "resources", id, "locations/"), params)
 
 
 def add_datatype(base_url: str, name: str, content_type: str) -> Tuple[str, Dict]:
