@@ -139,10 +139,8 @@ def query_registry_paginated(
         yield d
     while "next" in r.links:
         url = r.links["next"]["url"]
-        # we may need to throttle request rate
-        r = session.get(
-            url, params=params, headers={"Accept": "application/json"}, verify=True
-        )
+        # parameters are already part of the URL
+        r = session.get(url, headers={"Accept": "application/json"}, verify=True)
         r.raise_for_status()
         for d in r.json():
             yield d
