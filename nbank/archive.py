@@ -244,23 +244,26 @@ def store_resource(
 
     # execute commands in this order to prevent data loss; source file is not
     # renamed unless it's copied
+    pfix = permission_fixer(cfg)
     tgt_dir = cfg["path"] / _resource_subdir / id_stub(id)
-    tgt_dir.mkdir(parents=True, exist_ok=True)
-    fix_permissions(cfg, tgt_dir)
+    try:
+        tgt_dir.mkdir(parents=True)
+        pfix(tgt_dir)
+    except FileExistsError:
+        pass
 
     tgt_file = tgt_dir / id
     shutil.move(src, tgt_file)
-    fix_permissions(cfg, tgt_file)
+    pfix(tgt_file)
+    if tgt_file.is_dir():
+        for f in tgt_file.rglob("*"):
+            pfix(f)
+
     return tgt_file
 
 
-def fix_permissions(cfg: ArchiveConfig, tgt: Path) -> None:
-    """Fixes permission bits on resource (or containing directory).
-
-    This is needed because we try to move files whenever possible, so the uid,
-    gid, and permission bits often need to be updated.
-
-    """
+def permission_fixer(cfg: ArchiveConfig):
+    """Returns a function that will fix ownership/permissions for a resource or containing directory."""
     import grp
     import pwd
     from os import chown, getuid
@@ -273,13 +276,11 @@ def fix_permissions(cfg: ArchiveConfig, tgt: Path) -> None:
     gid = grp.getgrnam(cfg["policy"]["access"]["group"]).gr_gid
     umask = cfg["policy"]["access"]["umask"]
 
-    def fix(p):
+    def fix(p: Path) -> None:
         try:
             chown(p, uid, gid)
+            p.chmod(p.stat().st_mode & ~umask)
         except PermissionError:
-            log.warn("unable to change uid/gid of '%s'", tgt)
-        p.chmod(tgt.stat().st_mode & ~umask)
+            log.warn("unable to change uid/gid or permissions of %s", tgt_dir)
 
-    fix(tgt)
-    for f in tgt.rglob("*"):
-        fix(f)
+    return fix

@@ -5,7 +5,7 @@
 Copyright (C) 2013--2023 Dan Meliza <dan@meliza.org>
 """
 
-__version__ = "0.10.1"
+__version__ = "0.10.2"
 
 from nbank.core import (
     deposit,
