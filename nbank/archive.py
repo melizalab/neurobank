@@ -283,6 +283,6 @@ def permission_fixer(cfg: ArchiveConfig):
             chown(p, uid, gid)
             p.chmod(p.stat().st_mode & ~umask)
         except PermissionError:
-            log.warn("unable to change uid/gid or permissions of %s", tgt_dir)
+            log.warn("unable to change uid/gid or permissions of %s", p)
 
     return fix
