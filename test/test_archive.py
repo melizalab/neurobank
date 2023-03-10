@@ -151,20 +151,23 @@ def test_check_permissions(tmp_archive, tmp_path):
     contents = "not a wave file"
     src.write_text(contents)
     archive.store_resource(tmp_archive, src, name)
+    # need a second source file for check_permissions
+    dummy = tmp_path / "dummy"
+    dummy.write_text("blah")
 
     tgt_base = tmp_archive["path"] / archive._resource_subdir
     tgt_sub = tgt_base / archive.id_stub(name)
     mode = tgt_base.stat().st_mode
     tgt_base.chmod(0o500)
-    assert not archive.check_permissions(tmp_archive, src)
+    assert not archive.check_permissions(tmp_archive, dummy)
     tgt_base.chmod(0o400)
-    assert not archive.check_permissions(tmp_archive, src)
+    assert not archive.check_permissions(tmp_archive, dummy)
     tgt_base.chmod(mode)
-    assert archive.check_permissions(tmp_archive, src)
+    assert archive.check_permissions(tmp_archive, dummy)
     mode = tgt_sub.stat().st_mode
     tgt_sub.chmod(0o500)
-    assert not archive.check_permissions(tmp_archive, src, name)
+    assert not archive.check_permissions(tmp_archive, dummy, name)
     tgt_sub.chmod(0o400)
-    assert not archive.check_permissions(tmp_archive, src, name)
+    assert not archive.check_permissions(tmp_archive, dummy, name)
     tgt_sub.chmod(mode)
-    assert archive.check_permissions(tmp_archive, src, name)
+    assert archive.check_permissions(tmp_archive, dummy, name)
