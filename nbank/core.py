@@ -220,10 +220,7 @@ def update(
     with httpx.Client(headers={"Accept": "application/json"}, auth=auth) as session:
         for id in ids:
             url, params = update_resource_metadata(base_url, id, **metadata)
-            r = session.patch(
-                url,
-                json=params,
-            )
+            r = session.patch(url, json=params)
             if r.status_code == 404:
                 yield {"name": id, "error": "not found"}
             r.raise_for_status()

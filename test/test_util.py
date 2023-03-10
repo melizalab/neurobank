@@ -2,9 +2,8 @@
 # -*- mode: python -*-
 import pytest
 from pathlib import Path
-import responses
-from responses import matchers
-import requests
+import respx
+import httpx
 
 from nbank import util
 
@@ -12,9 +11,9 @@ dummy_info = {"name": "django-neurobank", "version": "0.10.11", "api_version": "
 
 
 @pytest.fixture
-def mocked_responses():
-    with responses.RequestsMock() as rsps:
-        yield rsps
+def mocked_api():
+    with respx.mock(assert_all_called=True, assert_all_mocked=True) as respx_mock:
+        yield respx_mock
 
 
 def test_id_from_str_fname():
@@ -79,84 +78,71 @@ def test_parse_http_location_strip_slash():
     assert path == "https://localhost:8000/bucket/dummy"
 
 
-@responses.activate
-def test_query_registry():
+def test_query_registry(mocked_api):
     url = "https://meliza.org/neurobank/info/"
-    responses.get(url, json=dummy_info)
-    data = util.query_registry(requests, url)
+    mocked_api.get(url).respond(200, json=dummy_info)
+    data = util.query_registry(httpx, url)
     assert data == dummy_info
 
 
-@responses.activate
-def test_query_registry_invalid():
+def test_query_registry_invalid(mocked_api):
     url = "https://meliza.org/neurobank/bad/"
-    responses.get(url, json={"detail": "not found"}, status=404)
-    data = util.query_registry(requests, url)
+    mocked_api.get(url).respond(404, json={"detail": "not found"})
+    data = util.query_registry(httpx, url)
     assert data is None
 
 
-@responses.activate
-def test_query_registry_error():
+def test_query_registry_error(mocked_api):
     url = "https://meliza.org/neurobank/bad/"
-    responses.get(url, json={"error": "bad request"}, status=400)
-    with pytest.raises(requests.exceptions.HTTPError):
-        _ = util.query_registry(requests, url)
+    mocked_api.get(url).respond(400, json={"error": "bad request"})
+    with pytest.raises(httpx.HTTPStatusError):
+        _ = util.query_registry(httpx, url)
 
 
-@responses.activate
-def test_query_params():
+def test_query_params(mocked_api):
     url = "https://meliza.org/neurobank/resources/"
     params = {"experimenter": "dmeliza"}
-    responses.get(url, json=dummy_info, match=[matchers.query_param_matcher(params)])
-    data = util.query_registry(requests, url, params)
+    mocked_api.get(url, params=params).respond(200, json=dummy_info)
+    data = util.query_registry(httpx, url, params)
     assert data == dummy_info
 
 
-@responses.activate
-def test_query_paginated():
+def test_query_paginated(mocked_api):
     url = "https://meliza.org/neurobank/resources/"
     params = {"experimenter": "dmeliza"}
     data = [{"first": "one"}, {"second": "one"}]
-    responses.get(url, json=data, match=[matchers.query_param_matcher(params)])
-    for i, result in enumerate(util.query_registry_paginated(requests, url, params)):
+    mocked_api.get(url, params=params).respond(200, json=data)
+    for i, result in enumerate(util.query_registry_paginated(httpx, url, params)):
         assert result == data[i]
 
 
-@responses.activate
-def test_query_first():
+def test_query_first(mocked_api):
     url = "https://meliza.org/neurobank/resources/"
     data = [{"item": "one"}]
-    responses.get(url, json=data)
-    result = util.query_registry_first(requests, url)
+    mocked_api.get(url).respond(200, json=data)
+    result = util.query_registry_first(httpx, url)
     assert result == data[0]
 
 
-@responses.activate
-def test_query_first_empty():
+def test_query_first_empty(mocked_api):
     url = "https://meliza.org/neurobank/resources/"
     data = []
-    responses.get(url, json=data)
-    result = util.query_registry_first(requests, url)
+    mocked_api.get(url).respond(json=data)
+    result = util.query_registry_first(httpx, url)
     assert result is None
 
 
-@responses.activate
-def test_query_first_invalid():
+def test_query_first_invalid(mocked_api):
     url = "https://meliza.org/neurobank/bad/"
-    responses.get(url, json={"detail": "not found"}, status=404)
-    with pytest.raises(requests.exceptions.HTTPError):
-        _ = util.query_registry_first(requests, url)
+    mocked_api.get(url).respond(404, json={"detail": "not found"})
+    with pytest.raises(httpx.HTTPStatusError):
+        _ = util.query_registry_first(httpx, url)
 
 
-@responses.activate
-def test_download(tmp_path):
+def test_download(mocked_api, tmp_path):
     url = "https://meliza.org/neurobank/resources/dummy/download"
     content = str(dummy_info)
     p = tmp_path / "output"
-    responses.get(
-        url,
-        body=content,
-        match=[matchers.request_kwargs_matcher({"stream": True})],
-    )
-    util.download_to_file(requests, url, p)
+    mocked_api.get(url).respond(content=content)
+    util.download_to_file(httpx, url, p)
     assert p.read_text() == content
