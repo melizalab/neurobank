@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlunparse
 
-import requests as rq
+import httpx
 
 from nbank import __version__, archive, core, registry, util
 
@@ -303,9 +303,9 @@ def main(argv=None):
     # some of the error handling is common; sub-funcs should only catch specific errors
     try:
         args.func(args)
-    except rq.exceptions.ConnectionError:
+    except httpx.RequestError:
         log.error("registry error: unable to contact server")
-    except rq.exceptions.HTTPError as e:
+    except httpx.HTTPStatusError as e:
         if e.response.status_code == 403:
             log.error(
                 "authentication error: Authenticate with '-a username:password' or .netrc file."
@@ -315,13 +315,15 @@ def main(argv=None):
             )
         else:
             log_error(e)
+    except KeyboardInterrupt:
+        pass
 
 
 def registry_info(args):
     log.info("registry info:")
     log.info("  - address: %s", args.registry_url)
     url, params = registry.get_info(args.registry_url)
-    for k, v in util.query_registry(rq, url, params, auth=args.auth).items():
+    for k, v in util.query_registry(httpx, url, params, auth=args.auth).items():
         log.info("  - %s: %s", k, v)
 
 
@@ -339,9 +341,9 @@ def init_archive(args):
         args.directory,
     )
     try:
-        r = rq.post(url, json=params, auth=args.auth)
+        r = httpx.post(url, json=params, auth=args.auth)
         r.raise_for_status()
-    except rq.exceptions.HTTPError as e:
+    except httpx.HTTPStatusError as e:
         log_error(e)
     else:
         log.info("registered '%s' as archive '%s'", args.directory, args.name)
@@ -371,7 +373,7 @@ def store_resources(args):
 
 def locate_resources(args):
     # This subcommand can handle IDs or full neurobank URLs
-    with rq.Session() as session:
+    with httpx.Client() as session:
         for id in args.id:
             try:
                 base, id = registry.parse_resource_url(id)
@@ -387,7 +389,10 @@ def locate_resources(args):
                 if args.remote and isinstance(partial, str):
                     print("%-20s\t%s" % (id, partial))
                 elif not args.remote and isinstance(partial, Path):
-                    path = archive.resolve_extension(partial)
+                    try:
+                        path = archive.resolve_extension(partial)
+                    except FileNotFoundError:
+                        continue
                     if args.link is not None:
                         linkpath = args.link / path.name
                         print("%-20s\t-> %s" % (id, linkpath))
@@ -430,7 +435,7 @@ def search_resources(args):
 
 def get_resource_info(args):
     # we don't use core.describe to allow request pooling
-    with rq.Session() as session:
+    with httpx.Client() as session:
         for id in args.id:
             url, params = registry.get_resource(args.registry_url, id)
             data = util.query_registry(session, url, params)
@@ -443,7 +448,9 @@ def get_resource_info(args):
 def set_resource_metadata(args):
     for key in args.metadata_remove:
         args.metadata[key] = None
-    for result in core.update(args.registry_url, *args.id, **args.metadata):
+    for result in core.update(
+        args.registry_url, *args.id, auth=args.auth, **args.metadata
+    ):
         json.dump(result, fp=sys.stdout, indent=2)
         sys.stdout.write("\n")
 
@@ -469,7 +476,7 @@ def fetch_resource(args):
 
 def list_datatypes(args):
     url, params = registry.get_datatypes(args.registry_url)
-    for dtype in util.query_registry_paginated(rq, url, params):
+    for dtype in util.query_registry_paginated(httpx, url, params):
         print("%(name)-25s\t(%(content_type)s)" % dtype)
 
 
@@ -477,13 +484,13 @@ def add_datatype(args):
     url, params = registry.add_datatype(
         args.registry_url, args.dtype_name, args.content_type
     )
-    data = rq.post(url, json=params, auth=args.auth)
+    data = httpx.post(url, json=params, auth=args.auth)
     log.info("added datatype %(name)s (content-type: %(content_type)s)" % data.json())
 
 
 def list_archives(args):
     url, params = registry.get_archives(args.registry_url)
-    for arch in util.query_registry_paginated(rq, url, params):
+    for arch in util.query_registry_paginated(httpx, url, params):
         if arch["scheme"] == "neurobank":
             print("%(name)-25s\t%(root)s" % arch)
         else:

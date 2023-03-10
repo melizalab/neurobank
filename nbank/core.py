@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional, Tuple, Union
 
-import requests as rq
+import httpx
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -61,7 +61,7 @@ def deposit(
     auto_id_type = archive_cfg["policy"].get("auto_id_type", None)
     allow_dirs = archive_cfg["policy"]["allow_directories"]
 
-    with rq.Session() as session:
+    with httpx.Client() as session:
         session.auth = auth
         # check that archive exists for this path
         url, params = find_archive_by_path(registry_url, archive_path)
@@ -115,8 +115,9 @@ def search(registry_url: str, **params) -> Iterator[Dict]:
     from nbank.util import query_registry_paginated
 
     url, _ = find_resource(registry_url)
-    with rq.Session() as session:
-        return query_registry_paginated(session, url, params)
+    with httpx.Client() as session:
+        for result in query_registry_paginated(session, url, params):
+            yield result
 
 
 def describe(registry_url: str, id: str) -> Optional[Dict]:
@@ -125,7 +126,8 @@ def describe(registry_url: str, id: str) -> Optional[Dict]:
     from nbank.util import query_registry
 
     url, params = get_resource(registry_url, id)
-    return query_registry(rq, url, params)
+    with httpx.Client() as session:
+        return query_registry(session, url, params)
 
 
 def find(
@@ -141,7 +143,7 @@ def find(
     from nbank.util import parse_location, query_registry_paginated
 
     url, params = get_locations(registry_url, id)
-    with rq.Session() as session:
+    with httpx.Client() as session:
         for loc in query_registry_paginated(session, url, params):
             yield parse_location(loc, alt_base)
 
@@ -200,13 +202,13 @@ def fetch(base_url: str, id: str, target: Path) -> None:
 
     # query the database for the URL
     url, _ = get_locations(base_url, id)
-    with rq.Session() as session:
+    with httpx.Client() as session:
         loc = query_registry_first(session, url, {"name": "registry"})
         if loc is None:
             raise ValueError(f"resource '{id}' does not exist or is not downloadable")
         res_url = parse_location(loc)
         log.info("fetching %s → %s", res_url, target)
-        return download_to_file(session, url, target)
+        return download_to_file(session, res_url, target)
 
 
 def update(
@@ -215,15 +217,12 @@ def update(
     """Update metadata for one or more resources. Set a key to None to delete."""
     from nbank.registry import update_resource_metadata
 
-    with rq.Session() as session:
+    with httpx.Client(headers={"Accept": "application/json"}, auth=auth) as session:
         for id in ids:
             url, params = update_resource_metadata(base_url, id, **metadata)
             r = session.patch(
                 url,
                 json=params,
-                auth=auth,
-                headers={"Accept": "application/json"},
-                verify=True,
             )
             if r.status_code == 404:
                 yield {"name": id, "error": "not found"}

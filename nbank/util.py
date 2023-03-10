@@ -119,7 +119,6 @@ def query_registry(
         params=params,
         headers={"Accept": "application/json"},
         auth=auth,
-        verify=True,
     )
     if r.status_code == 404:
         return None
@@ -131,16 +130,14 @@ def query_registry_paginated(
     session: Any, url: str, params: Optional[Dict]
 ) -> Iterator[Dict]:
     """Perform GET request(s) to yield records from a paginated endpoint"""
-    r = session.get(
-        url, params=params, headers={"Accept": "application/json"}, verify=True
-    )
+    r = session.get(url, params=params, headers={"Accept": "application/json"})
     r.raise_for_status()
     for d in r.json():
         yield d
     while "next" in r.links:
         url = r.links["next"]["url"]
         # parameters are already part of the URL
-        r = session.get(url, headers={"Accept": "application/json"}, verify=True)
+        r = session.get(url, headers={"Accept": "application/json"})
         r.raise_for_status()
         for d in r.json():
             yield d
@@ -156,10 +153,10 @@ def query_registry_first(session: Any, url: str, params: Optional[Dict] = None) 
 
 def download_to_file(session: Any, url: str, target: Union[Path, str]) -> None:
     """Download contents of url to target"""
-    with session.get(url, stream=True) as r:
+    with session.stream("GET", url) as r:
         # if r.status_code == 404:
         #     raise ValueError(f"The resource {id} does not exist or is not downloadable")
         r.raise_for_status()
         with open(target, "wb") as fp:
-            for chunk in r.iter_content(chunk_size=1024):
+            for chunk in r.iter_bytes(chunk_size=1024):
                 fp.write(chunk)
