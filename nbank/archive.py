@@ -187,6 +187,8 @@ def check_permissions(
     import os
 
     src = Path(src)
+    if not os.access(src, os.R_OK):
+        return False
     reqd_perms = os.R_OK | os.W_OK | os.X_OK
     if id is None:
         id = src.name
