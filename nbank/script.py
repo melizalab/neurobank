@@ -76,7 +76,6 @@ class ParseKeyVal(argparse.Action):
 
 
 def main(argv=None):
-
     p = argparse.ArgumentParser(description="manage source files and collected data")
     p.add_argument(
         "-v", "--version", action="version", version="%(prog)s " + __version__
@@ -383,24 +382,30 @@ def locate_resources(args):
                 print("%-25s [no registry to resolve short identifier]" % id)
                 continue
             url, params = registry.get_locations(base, id)
-            for loc in util.query_registry_paginated(session, url, params):
-                # this will return a Path for local files and a str for URLs
-                partial = util.parse_location(loc)
-                if args.remote and isinstance(partial, str):
-                    print("%-20s\t%s" % (id, partial))
-                elif not args.remote and isinstance(partial, Path):
-                    try:
-                        path = archive.resolve_extension(partial)
-                    except FileNotFoundError:
-                        continue
-                    if args.link is not None:
-                        linkpath = args.link / path.name
-                        print("%-20s\t-> %s" % (id, linkpath))
-                        linkpath.symlink_to(path)
-                    elif args.print0:
-                        print(str(path), end="\0")
-                    else:
-                        print("%-20s\t%s" % (id, path))
+            try:
+                for loc in util.query_registry_paginated(session, url, params):
+                    # this will return a Path for local files and a str for URLs
+                    partial = util.parse_location(loc)
+                    if args.remote and isinstance(partial, str):
+                        print("%-20s\t%s" % (id, partial))
+                    elif not args.remote and isinstance(partial, Path):
+                        try:
+                            path = archive.resolve_extension(partial)
+                        except FileNotFoundError:
+                            continue
+                        if args.link is not None:
+                            linkpath = args.link / path.name
+                            print("%-20s\t-> %s" % (id, linkpath))
+                            linkpath.symlink_to(path)
+                        elif args.print0:
+                            print(str(path), end="\0")
+                        else:
+                            print("%-20s\t%s" % (id, path))
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    log.error("%s: not found", id)
+                else:
+                    log_error(e)
 
 
 def search_resources(args):
