@@ -93,7 +93,7 @@ def main(argv=None):
         help="username:password to authenticate with registry. "
         "If not supplied, will attempt to use .netrc file",
         type=userpwd,
-        default=None,
+        default=httpx.NetRCAuth(None),
     )
     p.add_argument("--debug", help="show verbose log messages", action="store_true")
 
@@ -489,8 +489,9 @@ def add_datatype(args):
     url, params = registry.add_datatype(
         args.registry_url, args.dtype_name, args.content_type
     )
-    data = httpx.post(url, json=params, auth=args.auth)
-    log.info("added datatype %(name)s (content-type: %(content_type)s)" % data.json())
+    resp = httpx.post(url, json=params, auth=args.auth)
+    resp.raise_for_status()
+    log.info("added datatype %(name)s (content-type: %(content_type)s)" % resp.json())
 
 
 def list_archives(args):
