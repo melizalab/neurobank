@@ -439,15 +439,14 @@ def search_resources(args):
 
 
 def get_resource_info(args):
-    # we don't use core.describe to allow request pooling
-    with httpx.Client() as session:
-        for id in args.id:
-            url, params = registry.get_resource(args.registry_url, id)
-            data = util.query_registry(session, url, params)
-            if data is None:
-                data = {"id": id, "error": "not found"}
-            json.dump(data, fp=sys.stdout, indent=2)
-            sys.stdout.write("\n")
+    # missing ids just get skipped by the server, so we track which have not
+    # been returned
+    results = {id: {"id": id, "error": "not found"} for id in args.id}
+    for result in core.describe_many(args.registry_url, *args.id):
+        results[result["name"]] = result
+    for _, result in results.items():
+        json.dump(result, fp=sys.stdout, indent=2)
+        sys.stdout.write("\n")
 
 
 def set_resource_metadata(args):
@@ -520,7 +519,7 @@ def verify_file_hash(args):
         except ValueError:
             i = 0
             for resource in core.verify(args.registry_url, path):
-                print("%s: matches %s" % (path, resource["name"]))
+                print("%s: matches registry resource %s" % (path, resource["name"]))
                 i += 1
             if i == 0:
                 print("%s: no matches in registry" % path)

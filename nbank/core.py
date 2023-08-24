@@ -7,7 +7,7 @@ Created Mon Nov 25 08:52:28 2013
 """
 import logging
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional, Tuple, Union
+from typing import Any, List, Dict, Iterator, Optional, Tuple, Union
 
 import httpx
 
@@ -121,13 +121,28 @@ def search(registry_url: str, **params) -> Iterator[Dict]:
 
 
 def describe(registry_url: str, id: str) -> Optional[Dict]:
-    """Returns the database record for id, or None if no match can be found"""
+    """Returns the database record for a resource, or None if it does not exist in the registry"""
     from nbank.registry import get_resource
     from nbank.util import query_registry
 
     url, params = get_resource(registry_url, id)
     with httpx.Client() as session:
         return query_registry(session, url, params)
+
+
+def describe_many(registry_url: str, *ids: str) -> List[Dict]:
+    """Returns the database record(s) for one or more resources.
+
+    Returns a list of records, one for each resource that was located in the
+    registry.
+
+    """
+    from nbank.registry import get_resource_bulk
+    from nbank.util import query_registry_bulk
+
+    url, query = get_resource_bulk(registry_url, ids)
+    with httpx.Client() as session:
+        return query_registry_bulk(session, url, query)
 
 
 def find(
@@ -150,9 +165,6 @@ def find(
 
 def get(registry_url: str, id: str, alt_base: Optional[Path] = None) -> Optional[Path]:
     """Returns the first path or URL where id can be found, or None if no match.
-
-    If local_only is True, only files that can be found on the local filesystem
-    are considered.
 
     Set alt_base to replace the dirname of any local resources. This is intended
     to be used with temporary copies of archives on other hosts.

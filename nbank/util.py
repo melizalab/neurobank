@@ -6,7 +6,7 @@ Copyright (C) 2014 Dan Meliza <dan@meliza.org>
 Created Tue Jul  8 14:23:35 2014
 """
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional, Union
+from typing import Any, Mapping, Dict, List, Iterator, Optional, Union
 
 
 def id_from_fname(fname: Union[Path, str]) -> str:
@@ -71,7 +71,7 @@ def hash_directory(path: Union[Path, str], method: str = "sha1") -> str:
 
 
 def parse_location(
-    location: Dict, alt_base: Union[Path, str, None] = None
+    location: Mapping[str, str], alt_base: Union[Path, str, None] = None
 ) -> Union[Path, str]:
     """Return the path or URL associated with location
 
@@ -111,7 +111,10 @@ def parse_location(
 
 
 def query_registry(
-    session: Any, url: str, params: Optional[Dict] = None, auth: Optional[str] = None
+    session: Any,
+    url: str,
+    params: Optional[Mapping[str, Any]] = None,
+    auth: Optional[str] = None,
 ) -> Optional[Dict]:
     """Perform a GET request to url with params. Returns None for 404 HTTP errors"""
     r = session.get(
@@ -127,7 +130,7 @@ def query_registry(
 
 
 def query_registry_paginated(
-    session: Any, url: str, params: Optional[Dict]
+    session: Any, url: str, params: Optional[Mapping[str, Any]] = None
 ) -> Iterator[Dict]:
     """Perform GET request(s) to yield records from a paginated endpoint"""
     r = session.get(url, params=params, headers={"Accept": "application/json"})
@@ -143,7 +146,9 @@ def query_registry_paginated(
             yield d
 
 
-def query_registry_first(session: Any, url: str, params: Optional[Dict] = None) -> Dict:
+def query_registry_first(
+    session: Any, url: str, params: Optional[Mapping[str, Any]] = None
+) -> Dict:
     """Perform a GET response to a url and return the first result or None"""
     try:
         return next(query_registry_paginated(session, url, params))
@@ -160,3 +165,17 @@ def download_to_file(session: Any, url: str, target: Union[Path, str]) -> None:
         with open(target, "wb") as fp:
             for chunk in r.iter_bytes(chunk_size=1024):
                 fp.write(chunk)
+
+
+def query_registry_bulk(
+    session: Any, url: str, query: Mapping[str, Any], auth: Optional[str] = None
+) -> List[Dict]:
+    """Perform a POST request to a bulk query url. Returns a list of results."""
+    r = session.post(
+        url,
+        json=query,
+        headers={"Accept": "application/json"},
+        auth=auth,
+    )
+    r.raise_for_status()
+    return r.json()

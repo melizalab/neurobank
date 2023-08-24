@@ -12,6 +12,7 @@ info_url = "https://localhost:8000/neurobank/info/"
 datatypes_url = "https://localhost:8000/neurobank/datatypes/"
 archives_url = "https://localhost:8000/neurobank/archives/"
 download_url = "https://localhost:8000/neurobank/download/"
+bulk_url = "https://localhost:8000/neurobank/bulk/"
 
 
 def test_join_url():
@@ -94,6 +95,13 @@ def test_get_resource():
     assert params is None
 
 
+def test_get_resource_bulk():
+    ids = (id, "abcd3")
+    url, params = registry.get_resource_bulk(base_url, *ids)
+    assert url == registry.url_join(bulk_url, "resources/")
+    assert params == {"names": ids}
+
+
 def test_fetch_resource():
     url, params = registry.fetch_resource(base_url, id)
     assert url == registry.url_join(download_url, id)
@@ -104,6 +112,13 @@ def test_get_locations():
     url, params = registry.get_locations(base_url, id)
     assert url == registry.url_join(full, "locations/")
     assert params == {}
+
+
+def test_get_locations_bulk():
+    ids = (id, "abcd3")
+    url, params = registry.get_locations_bulk(base_url, *ids)
+    assert url == registry.url_join(bulk_url, "locations/")
+    assert params == {"names": ids}
 
 
 def test_get_locations_with_params():

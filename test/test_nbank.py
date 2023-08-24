@@ -11,6 +11,7 @@ from test.test_registry import (
     base_url,
     resource_url,
     archives_url,
+    bulk_url,
 )
 
 archive_name = "archive"
@@ -171,6 +172,16 @@ def test_describe_nonexistent_resource(mocked_api):
     mocked_api.get(registry.full_url(base_url, name)).respond(404, json=data)
     info = core.describe(base_url, name)
     assert info is None
+
+
+def test_describe_multiple_resources(mocked_api):
+    names = ["dummy_2", "dummy_3"]
+    data = [{"name": "dummy_2"}, {"name": "dummy_3"}]
+    mocked_api.post(
+        registry.url_join(bulk_url, "resources/"), json={"names": names}
+    ).respond(json=data)
+    info = core.describe_many(base_url, *names)
+    assert info == data
 
 
 def test_search_resource(mocked_api):

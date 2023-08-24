@@ -12,7 +12,7 @@ URLs with the POST method; and `update_` URLs with the PATCH method.
 """
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union, Sequence
 
 _env_registry = "NBANK_REGISTRY"
 _neurobank_scheme = "neurobank"
@@ -76,8 +76,13 @@ def find_resource(base_url: str, **params) -> Tuple[str, Dict]:
 
 
 def get_resource(base_url: str, id: str) -> Tuple[str, None]:
-    """Constructs URL to retrieve registry record for id, or None if it doesn't exist"""
+    """Constructs URL to retrieve registry record for id"""
     return (full_url(base_url, id), None)
+
+
+def get_resource_bulk(base_url: str, ids: Sequence[str]) -> Tuple[str, Dict]:
+    """Constructs URL to bulk retrieve registry records for ids"""
+    return (url_join(base_url, "bulk", "resources/"), {"names": ids})
 
 
 def fetch_resource(base_url: str, id: str) -> Tuple[str, None]:
@@ -88,6 +93,11 @@ def fetch_resource(base_url: str, id: str) -> Tuple[str, None]:
 def get_locations(base_url: str, id: str, **params) -> Tuple[str, Dict]:
     """Constructs URL to look up the locations of a resource."""
     return (url_join(base_url, "resources", id, "locations/"), params)
+
+
+def get_locations_bulk(base_url: str, ids: Sequence[str]) -> Tuple[str, Dict]:
+    """Constructs URL to bulk retrieve locations for multiple ids"""
+    return (url_join(base_url, "bulk", "locations/"), {"names": ids})
 
 
 def add_datatype(base_url: str, name: str, content_type: str) -> Tuple[str, Dict]:

@@ -124,6 +124,14 @@ def test_query_first(mocked_api):
     assert result == data[0]
 
 
+def test_query_bulk(mocked_api):
+    url = "https://meliza.org/neurobank/bulk/resources"
+    data = [{"item": "one"}]
+    mocked_api.post(url).respond(200, json=data)
+    result = util.query_registry_bulk(httpx, url, {"names": "one"})
+    assert result == data
+
+
 def test_query_first_empty(mocked_api):
     url = "https://meliza.org/neurobank/resources/"
     data = []
