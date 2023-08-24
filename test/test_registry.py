@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # -*- mode: python -*-
 import pytest
+
 from nbank import registry
 
 base_url = "https://localhost:8000/neurobank/"

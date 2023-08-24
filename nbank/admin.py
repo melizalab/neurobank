@@ -7,8 +7,10 @@ example, if a lot of files were deposited erroneously.
 """
 import logging
 from pathlib import Path
+
 import httpx
-from nbank import __version__, registry, archive, util
+
+from nbank import __version__, archive, registry, util
 from nbank.script import setup_log, userpwd
 
 log = logging.getLogger("nbank")  # root logger

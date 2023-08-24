@@ -7,7 +7,7 @@ Created Mon Nov 25 08:52:28 2013
 """
 import logging
 from pathlib import Path
-from typing import Any, List, Dict, Iterator, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import httpx
 
@@ -210,7 +210,7 @@ def fetch(base_url: str, id: str, target: Path) -> None:
 
     """
     from nbank.registry import get_locations
-    from nbank.util import query_registry_first, download_to_file, parse_location
+    from nbank.util import download_to_file, parse_location, query_registry_first
 
     # query the database for the URL
     url, _ = get_locations(base_url, id)

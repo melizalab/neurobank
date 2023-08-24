@@ -205,7 +205,6 @@ def check_permissions(
 def store_resource(
     cfg: ArchiveConfig, src: Union[Path, str], id: Optional[str] = None
 ) -> Path:
-
     """Stores resource (src) in the repository under a unique identifier.
 
     cfg - the configuration dict for the archive

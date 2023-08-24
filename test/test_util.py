@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 # -*- mode: python -*-
-import pytest
 from pathlib import Path
-import respx
+
 import httpx
+import pytest
+import respx
 
 from nbank import util
 

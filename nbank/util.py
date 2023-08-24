@@ -6,7 +6,7 @@ Copyright (C) 2014 Dan Meliza <dan@meliza.org>
 Created Tue Jul  8 14:23:35 2014
 """
 from pathlib import Path
-from typing import Any, Mapping, Dict, List, Iterator, Optional, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Union
 
 
 def id_from_fname(fname: Union[Path, str]) -> str:

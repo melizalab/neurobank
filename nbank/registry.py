@@ -12,7 +12,7 @@ URLs with the POST method; and `update_` URLs with the PATCH method.
 """
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
 _env_registry = "NBANK_REGISTRY"
 _neurobank_scheme = "neurobank"

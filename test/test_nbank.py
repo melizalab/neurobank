@@ -1,18 +1,12 @@
 # -*- coding: utf-8 -*-
 # -*- mode: python -*-
-import pytest
+from test.test_registry import archives_url, base_url, bulk_url, resource_url
 
-import respx
 import httpx
+import pytest
+import respx
 
-from nbank import core, registry, archive, util
-
-from test.test_registry import (
-    base_url,
-    resource_url,
-    archives_url,
-    bulk_url,
-)
+from nbank import archive, core, registry, util
 
 archive_name = "archive"
 

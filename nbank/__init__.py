@@ -7,15 +7,7 @@ Copyright (C) 2013--2023 Dan Meliza <dan@meliza.org>
 
 __version__ = "0.10.5"
 
-from nbank.core import (
-    deposit,
-    search,
-    find,
-    get,
-    describe,
-    verify,
-    fetch,
-)
+from nbank.core import deposit, describe, fetch, find, get, search, verify
 
 # Variables:
 # End:
