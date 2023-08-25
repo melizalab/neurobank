@@ -82,7 +82,7 @@ def get_resource(base_url: str, id: str) -> Tuple[str, None]:
 
 def get_resource_bulk(base_url: str, ids: Sequence[str]) -> Tuple[str, Dict]:
     """Constructs URL to bulk retrieve registry records for ids"""
-    return (url_join(base_url, "bulk", "resources/"), {"names": ids})
+    return (url_join(base_url, "bulk", "resources/"), {"names": list(ids)})
 
 
 def fetch_resource(base_url: str, id: str) -> Tuple[str, None]:
@@ -97,7 +97,7 @@ def get_locations(base_url: str, id: str, **params) -> Tuple[str, Dict]:
 
 def get_locations_bulk(base_url: str, ids: Sequence[str]) -> Tuple[str, Dict]:
     """Constructs URL to bulk retrieve locations for multiple ids"""
-    return (url_join(base_url, "bulk", "locations/"), {"names": ids})
+    return (url_join(base_url, "bulk", "locations/"), {"names": list(ids)})
 
 
 def add_datatype(base_url: str, name: str, content_type: str) -> Tuple[str, Dict]:

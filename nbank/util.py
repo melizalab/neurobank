@@ -6,7 +6,9 @@ Copyright (C) 2014 Dan Meliza <dan@meliza.org>
 Created Tue Jul  8 14:23:35 2014
 """
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Union, NewType
+
+ResourceLocation = NewType("ResourceLocation", Union[Path, str])
 
 
 def id_from_fname(fname: Union[Path, str]) -> str:
@@ -72,7 +74,7 @@ def hash_directory(path: Union[Path, str], method: str = "sha1") -> str:
 
 def parse_location(
     location: Mapping[str, str], alt_base: Union[Path, str, None] = None
-) -> Union[Path, str]:
+) -> ResourceLocation:
     """Return the path or URL associated with location
 
     location is a dict with 'scheme', 'root', and 'resource_name'.

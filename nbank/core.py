@@ -7,22 +7,26 @@ Created Mon Nov 25 08:52:28 2013
 """
 import logging
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, Iterable, List, Optional, Tuple, Union
 
 import httpx
+
+from nbank.util import ResourceLocation
+
+RegistryAuth = Tuple[str, str]
 
 log = logging.getLogger("nbank")  # root logger
 
 
 def deposit(
     archive_path: Path,
-    files: Iterator[Path],
+    files: Iterable[Path],
     dtype: Optional[str] = None,
     hash: bool = False,
     auto_id: bool = False,
-    auth: Optional[Tuple[str, str]] = None,
+    auth: Optional[RegistryAuth] = None,
     **metadata: Any,
-):
+) -> Iterator[Dict]:
     """Main entry point to deposit resources into an archive
 
     Yields the short IDs for each deposited item in files
@@ -147,7 +151,7 @@ def describe_many(registry_url: str, *ids: str) -> List[Dict]:
 
 def find(
     registry_url: str, id: str, alt_base: Optional[Path] = None
-) -> Iterator[Union[Path, str]]:
+) -> Iterator[ResourceLocation]:
     """Generates a sequence of paths or URLs where id can be located
 
     Set alt_base to replace the dirname of any local resources. This is intended
