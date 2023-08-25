@@ -7,7 +7,7 @@ Created Mon Nov 25 08:52:28 2013
 """
 import logging
 from pathlib import Path
-from typing import Any, Dict, Iterator, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 import httpx
 

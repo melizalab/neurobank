@@ -6,7 +6,7 @@ Copyright (C) 2014 Dan Meliza <dan@meliza.org>
 Created Tue Jul  8 14:23:35 2014
 """
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Union, NewType
+from typing import Any, Dict, Iterator, List, Mapping, NewType, Optional, Union
 
 ResourceLocation = NewType("ResourceLocation", Union[Path, str])
 
