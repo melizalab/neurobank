@@ -100,7 +100,7 @@ def test_get_resource_bulk():
     ids = (id, "abcd3")
     url, params = registry.get_resource_bulk(base_url, ids)
     assert url == registry.url_join(bulk_url, "resources/")
-    assert params == {"names": ids}
+    assert params == {"names": list(ids)}
 
 
 def test_fetch_resource():
@@ -116,10 +116,10 @@ def test_get_locations():
 
 
 def test_get_locations_bulk():
-    ids = (id, "abcd3")
+    ids = {id, "abcd3"}
     url, params = registry.get_locations_bulk(base_url, ids)
     assert url == registry.url_join(bulk_url, "locations/")
-    assert params == {"names": ids}
+    assert params == {"names": list(ids)}
 
 
 def test_get_locations_with_params():
