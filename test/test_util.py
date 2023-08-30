@@ -66,7 +66,7 @@ def test_parse_http_location():
         "resource_name": "dummy",
     }
     path = util.parse_location(location)
-    assert path == "https://localhost:8000/bucket/dummy"
+    assert path == "https://localhost:8000/bucket/dummy/"
 
 
 def test_parse_http_location_strip_slash():
@@ -76,7 +76,7 @@ def test_parse_http_location_strip_slash():
         "resource_name": "dummy",
     }
     path = util.parse_location(location)
-    assert path == "https://localhost:8000/bucket/dummy"
+    assert path == "https://localhost:8000/bucket/dummy/"
 
 
 def test_query_registry(mocked_api):
