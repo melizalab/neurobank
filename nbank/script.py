@@ -472,7 +472,7 @@ def fetch_resource(args):
             log.error("nbank fetch: error: the target file %s exists already", target)
             return
     try:
-        core.fetch(args.registry_url, args.id, target)
+        core.fetch(args.registry_url, args.id, target, auth=args.auth)
     except ValueError as e:
         log.error(e)
         return

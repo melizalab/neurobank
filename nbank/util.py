@@ -94,17 +94,21 @@ def parse_location(
     from nbank.archive import resource_path
     from nbank.registry import _local_schemes
 
+    root = Path(location["root"])
     if location["scheme"] in _local_schemes:
-        root = Path(location["root"])
         if alt_base is not None:
             root = Path(alt_base) / root.name
         return resource_path(root, location["resource_name"])
     else:
+        # the root contains the netloc and the base path
+        netloc = root.parts[0]
+        # this will strip off any trailing slash
+        path = Path(*root.parts[1:], location["resource_name"])
         return urlunparse(
             (
                 location["scheme"],
-                location["root"].rstrip("/"),
-                location["resource_name"],
+                netloc,
+                f"{path}/",
                 "",
                 "",
                 "",

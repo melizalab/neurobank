@@ -205,7 +205,13 @@ def verify(
             raise ValueError("%s does not exist" % id)
 
 
-def fetch(base_url: str, id: str, target: Path) -> None:
+def fetch(
+    base_url: str,
+    id: str,
+    target: Path,
+    *,
+    auth: Optional[RegistryAuth] = None,
+) -> None:
     """Download the resource from the server and save as `target`.
 
     Raises ValueError if the resource does not exist or is not downloadable.
@@ -214,21 +220,21 @@ def fetch(base_url: str, id: str, target: Path) -> None:
 
     """
     from nbank.registry import get_locations
-    from nbank.util import download_to_file, parse_location, query_registry_first
+    from nbank.util import download_to_file, parse_location, query_registry
 
     # query the database for the URL
     url, _ = get_locations(base_url, id)
-    with httpx.Client() as session:
-        loc = query_registry_first(session, url, {"name": "registry"})
-        if loc is None:
-            raise ValueError(f"resource '{id}' does not exist or is not downloadable")
-        res_url = parse_location(loc)
-        log.info("fetching %s → %s", res_url, target)
-        return download_to_file(session, res_url, target)
+    with httpx.Client(auth=auth) as session:
+        for loc in query_registry(session, url):
+            if loc["scheme"] in ("https", "http"):
+                res_url = parse_location(loc)
+                log.info("fetching %s → %s", res_url, target)
+                return download_to_file(session, res_url, target)
+        raise ValueError(f"resource '{id}' does not exist or is not downloadable")
 
 
 def update(
-    base_url: str, *ids: str, auth: Optional[Tuple[str, str]] = None, **metadata: Any
+    base_url: str, *ids: str, auth: Optional[RegistryAuth] = None, **metadata: Any
 ) -> Iterator[Dict]:
     """Update metadata for one or more resources. Set a key to None to delete."""
     from nbank.registry import update_resource_metadata
