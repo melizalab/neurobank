@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 # -*- mode: python -*-
-from test.test_registry import archives_url, base_url, bulk_url, resource_url
+import json
 
 import httpx
 import pytest
 import respx
 
 from nbank import archive, core, registry, util
+from test.test_registry import archives_url, base_url, bulk_url, resource_url
 
 archive_name = "archive"
 
@@ -171,10 +172,11 @@ def test_describe_nonexistent_resource(mocked_api):
 def test_describe_multiple_resources(mocked_api):
     names = ["dummy_2", "dummy_3"]
     data = [{"name": "dummy_2"}, {"name": "dummy_3"}]
+    stream = (json.dumps(item).encode() + b"\n" for item in data)
     mocked_api.post(
         registry.url_join(bulk_url, "resources/"), json={"names": names}
-    ).respond(json=data)
-    info = core.describe_many(base_url, *names)
+    ).respond(stream=stream)
+    info = list(core.describe_many(base_url, *names))
     assert info == data
 
 

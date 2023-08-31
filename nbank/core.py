@@ -134,11 +134,10 @@ def describe(registry_url: str, id: str) -> Optional[Dict]:
         return query_registry(session, url, params)
 
 
-def describe_many(registry_url: str, *ids: str) -> List[Dict]:
+def describe_many(registry_url: str, *ids: str) -> Iterator[Dict]:
     """Returns the database record(s) for one or more resources.
 
-    Returns a list of records, one for each resource that was located in the
-    registry.
+    Yields one record for each resource that was located in the registry.
 
     """
     from nbank.registry import get_resource_bulk
@@ -146,7 +145,8 @@ def describe_many(registry_url: str, *ids: str) -> List[Dict]:
 
     url, query = get_resource_bulk(registry_url, ids)
     with httpx.Client() as session:
-        return query_registry_bulk(session, url, query)
+        for result in query_registry_bulk(session, url, query):
+            yield result
 
 
 def find(

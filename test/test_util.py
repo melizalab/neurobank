@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # -*- mode: python -*-
+import json
 from pathlib import Path
 
 import httpx
@@ -128,8 +129,9 @@ def test_query_first(mocked_api):
 def test_query_bulk(mocked_api):
     url = "https://meliza.org/neurobank/bulk/resources"
     data = [{"item": "one"}]
-    mocked_api.post(url).respond(200, json=data)
-    result = util.query_registry_bulk(httpx, url, {"names": "one"})
+    stream = (json.dumps(item).encode() for item in data)
+    mocked_api.post(url).respond(200, stream=stream)
+    result = list(util.query_registry_bulk(httpx, url, {"names": "one"}))
     assert result == data
 
 

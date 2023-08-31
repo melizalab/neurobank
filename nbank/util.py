@@ -5,6 +5,7 @@
 Copyright (C) 2014 Dan Meliza <dan@meliza.org>
 Created Tue Jul  8 14:23:35 2014
 """
+import json
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Mapping, NewType, Optional, Union
 
@@ -165,8 +166,6 @@ def query_registry_first(
 def download_to_file(session: Any, url: str, target: Union[Path, str]) -> None:
     """Download contents of url to target"""
     with session.stream("GET", url) as r:
-        # if r.status_code == 404:
-        #     raise ValueError(f"The resource {id} does not exist or is not downloadable")
         r.raise_for_status()
         with open(target, "wb") as fp:
             for chunk in r.iter_bytes(chunk_size=1024):
@@ -176,12 +175,8 @@ def download_to_file(session: Any, url: str, target: Union[Path, str]) -> None:
 def query_registry_bulk(
     session: Any, url: str, query: Mapping[str, Any], auth: Optional[str] = None
 ) -> List[Dict]:
-    """Perform a POST request to a bulk query url. Returns a list of results."""
-    r = session.post(
-        url,
-        json=query,
-        headers={"Accept": "application/json"},
-        auth=auth,
-    )
-    r.raise_for_status()
-    return r.json()
+    """Perform a POST request to a bulk query url. These endpoints all stream line-delimited json"""
+    with session.stream("POST", url, json=query, auth=auth) as r:
+        r.raise_for_status()
+        for line in r.iter_lines():
+            yield json.loads(line)
