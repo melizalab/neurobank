@@ -157,3 +157,16 @@ def url_join(base: str, *path: str) -> str:
 def strip_nulls(d: Dict) -> Dict:
     """Removes all keys from a dict that are equal to None"""
     return {k: v for k, v in d.items() if v is not None}
+
+
+def log_error(err):
+    """Writes error message from server to log. Reraises errors where code != 400"""
+    if err.response.status_code == 400:
+        data = err.response.json()
+        for k, v in data.items():
+            for vv in v:
+                log.error("   registry error: %s: %s", k, vv)
+    elif err.response.status_code == 415:
+        log.error("    registry error: %s", err.response.reason)
+    else:
+        raise err

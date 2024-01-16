@@ -2,7 +2,7 @@
 # -*- mode: python -*-
 """Script entry points for neurobank
 
-Copyright (C) 2013 Dan Meliza <dan@meliza.org>
+Copyright (C) 2013-2024 Dan Meliza <dan@meliza.org>
 Created Tue Nov 26 22:48:58 2013
 """
 import argparse
@@ -28,19 +28,6 @@ def setup_log(log, debug=False):
     ch.setLevel(loglevel)
     ch.setFormatter(formatter)
     log.addHandler(ch)
-
-
-def log_error(err):
-    """Writes error message from server to log. Reraises errors where code != 400"""
-    if err.response.status_code == 400:
-        data = err.response.json()
-        for k, v in data.items():
-            for vv in v:
-                log.error("   registry error: %s: %s", k, vv)
-    elif err.response.status_code == 415:
-        log.error("    registry error: %s", err.response.reason)
-    else:
-        raise err
 
 
 def userpwd(arg):
@@ -313,7 +300,7 @@ def main(argv=None):
                 "                      Or, you may not have permission for this operation."
             )
         else:
-            log_error(e)
+            registry.log_error(e)
     except KeyboardInterrupt:
         pass
 
@@ -343,7 +330,7 @@ def init_archive(args):
         r = httpx.post(url, json=params, auth=args.auth)
         r.raise_for_status()
     except httpx.HTTPStatusError as e:
-        log_error(e)
+        registry.log_error(e)
     else:
         log.info("registered '%s' as archive '%s'", args.directory, args.name)
         archive.create(args.directory, args.registry_url, args.umask)
@@ -405,7 +392,7 @@ def locate_resources(args):
                 if e.response.status_code == 404:
                     log.error("%s: not found", id)
                 else:
-                    log_error(e)
+                    registry.log_error(e)
 
 
 def search_resources(args):

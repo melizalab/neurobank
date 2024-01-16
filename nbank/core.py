@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
-import httpx
+from httpx import NetRCAuth, Client
 
 from nbank.util import ResourceLocation
 
@@ -24,7 +24,7 @@ def deposit(
     dtype: Optional[str] = None,
     hash: bool = False,
     auto_id: bool = False,
-    auth: Optional[RegistryAuth] = None,
+    auth: RegistryAuth = NetRCAuth(None),
     **metadata: Any,
 ) -> Iterator[Dict]:
     """Main entry point to deposit resources into an archive
@@ -65,7 +65,7 @@ def deposit(
     auto_id_type = archive_cfg["policy"].get("auto_id_type", None)
     allow_dirs = archive_cfg["policy"]["allow_directories"]
 
-    with httpx.Client() as session:
+    with Client() as session:
         session.auth = auth
         # check that archive exists for this path
         url, params = find_archive_by_path(registry_url, archive_path)
@@ -119,7 +119,7 @@ def search(registry_url: str, **params) -> Iterator[Dict]:
     from nbank.util import query_registry_paginated
 
     url, _ = find_resource(registry_url)
-    with httpx.Client() as session:
+    with Client() as session:
         for result in query_registry_paginated(session, url, params):
             yield result
 
@@ -130,7 +130,7 @@ def describe(registry_url: str, id: str) -> Optional[Dict]:
     from nbank.util import query_registry
 
     url, params = get_resource(registry_url, id)
-    with httpx.Client() as session:
+    with Client() as session:
         return query_registry(session, url, params)
 
 
@@ -144,7 +144,7 @@ def describe_many(registry_url: str, *ids: str) -> Iterator[Dict]:
     from nbank.util import query_registry_bulk
 
     url, query = get_resource_bulk(registry_url, ids)
-    with httpx.Client() as session:
+    with Client() as session:
         for result in query_registry_bulk(session, url, query):
             yield result
 
@@ -162,7 +162,7 @@ def find(
     from nbank.util import parse_location, query_registry_paginated
 
     url, params = get_locations(registry_url, id)
-    with httpx.Client() as session:
+    with Client() as session:
         for loc in query_registry_paginated(session, url, params):
             yield parse_location(loc, alt_base)
 
@@ -224,7 +224,7 @@ def fetch(
 
     # query the database for the URL
     url, _ = get_locations(base_url, id)
-    with httpx.Client(auth=auth) as session:
+    with Client(auth=auth) as session:
         for loc in query_registry(session, url):
             if loc["scheme"] in ("https", "http"):
                 res_url = parse_location(loc)
@@ -239,7 +239,7 @@ def update(
     """Update metadata for one or more resources. Set a key to None to delete."""
     from nbank.registry import update_resource_metadata
 
-    with httpx.Client(headers={"Accept": "application/json"}, auth=auth) as session:
+    with Client(headers={"Accept": "application/json"}, auth=auth) as session:
         for id in ids:
             url, params = update_resource_metadata(base_url, id, **metadata)
             r = session.patch(url, json=params)
