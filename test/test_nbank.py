@@ -1,5 +1,6 @@
 # -*- mode: python -*-
 import json
+from base64 import b64encode
 from test.test_registry import archives_url, base_url, bulk_url, resource_url
 
 import httpx
@@ -9,6 +10,8 @@ import respx
 from nbank import archive, core, registry, util
 
 archive_name = "archive"
+auth = ("dmeliza", "dummy_pw!")
+auth_enc = b64encode(("{}:{}".format(*auth)).encode()).decode()
 
 
 def random_string(N):
@@ -33,6 +36,14 @@ def mocked_api():
         yield respx_mock
 
 
+@pytest.fixture
+def netrc_auth(tmp_path):
+    auth_str = "machine localhost\nlogin {}\npassword {}\n".format(*auth)
+    netrc = tmp_path / ".netrc"
+    netrc.write_text(auth_str)
+    return httpx.NetRCAuth(netrc)
+
+
 def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
     root = tmp_archive["path"]
     name = "dummy_1"
@@ -54,8 +65,11 @@ def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
             "sha1": sha1,
             "metadata": metadata,
         },
+        headers={"Authorization": f"Basic {auth_enc}"},
     ).respond(json={"name": name})
-    items = list(core.deposit(root, files=[src], dtype=dtype, hash=True, **metadata))
+    items = list(
+        core.deposit(root, files=[src], dtype=dtype, auth=auth, hash=True, **metadata)
+    )
     assert items == [{"source": src, "id": name}]
 
 
@@ -253,9 +267,25 @@ def test_update_metadata(mocked_api):
     name = "dummy_11"
     metadata = {"new": "value"}
     mocked_api.patch(
-        registry.full_url(base_url, name), json={"metadata": metadata}
+        registry.full_url(base_url, name),
+        json={"metadata": metadata},
+        headers={"Authorization": f"Basic {auth_enc}"},
     ).respond(
         json={"name": name, "metadata": metadata},
     )
-    updated = list(core.update(base_url, name, **metadata))
+    updated = list(core.update(base_url, name, auth=auth, **metadata))
+    assert updated == [{"metadata": metadata, "name": name}]
+
+
+def test_update_with_netrc(mocked_api, netrc_auth):
+    name = "dummy_11"
+    metadata = {"new": "value"}
+    mocked_api.patch(
+        registry.full_url(base_url, name),
+        json={"metadata": metadata},
+        headers={"Authorization": f"Basic {auth_enc}"},
+    ).respond(
+        json={"name": name, "metadata": metadata},
+    )
+    updated = list(core.update(base_url, name, auth=netrc_auth, **metadata))
     assert updated == [{"metadata": metadata, "name": name}]
