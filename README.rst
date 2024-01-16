@@ -279,13 +279,6 @@ suggested for POSIX operating systems:
    so that added files are accessible only to the group.
    (``setfacl -d -m u::rwx,g::rwx,o::- resources metadata``).
 
-Unit testing
-------------
-
-Unit tests are included, but you’ll need a running registry. Set the
-``NBANK_REGISTRY`` environment variable to the registry’s URL, and if
-needed make an entry in ``.netrc`` with the required credentials.
-
 License
 -------
 
