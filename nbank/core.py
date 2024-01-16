@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # -*- mode: python -*-
 """functions for managing a data archive
 
@@ -7,9 +6,9 @@ Created Mon Nov 25 08:52:28 2013
 """
 import logging
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, Optional, Tuple, Union
 
-from httpx import NetRCAuth, Client
+from httpx import Client, NetRCAuth
 
 from nbank.util import ResourceLocation
 
@@ -24,7 +23,7 @@ def deposit(
     dtype: Optional[str] = None,
     hash: bool = False,
     auto_id: bool = False,
-    auth: RegistryAuth = NetRCAuth(None),
+    auth: Optional[RegistryAuth] = None,
     **metadata: Any,
 ) -> Iterator[Dict]:
     """Main entry point to deposit resources into an archive
@@ -55,8 +54,8 @@ def deposit(
 
     try:
         archive_cfg = get_config(archive_path)
-    except FileNotFoundError:
-        raise ValueError("%s is not a valid archive" % archive_path)
+    except FileNotFoundError as err:
+        raise ValueError("%s is not a valid archive" % archive_path) from err
     archive_path = archive_cfg["path"]  # this will resolve the path
     log.info("archive: %s", archive_path)
     registry_url = archive_cfg["registry"]
@@ -66,15 +65,15 @@ def deposit(
     allow_dirs = archive_cfg["policy"]["allow_directories"]
 
     with Client() as session:
-        session.auth = auth
+        session.auth = auth or NetRCAuth(None)
         # check that archive exists for this path
         url, params = find_archive_by_path(registry_url, archive_path)
         try:
             archive = util.query_registry_first(session, url, params)["name"]
-        except TypeError:
+        except TypeError as err:
             raise RuntimeError(
                 f"archive '{archive_path}' not in registry. did it move?"
-            )
+            ) from err
         log.info("   archive name: %s", archive)
 
         for src in files:
@@ -120,8 +119,7 @@ def search(registry_url: str, **params) -> Iterator[Dict]:
 
     url, _ = find_resource(registry_url)
     with Client() as session:
-        for result in query_registry_paginated(session, url, params):
-            yield result
+        yield from query_registry_paginated(session, url, params)
 
 
 def describe(registry_url: str, id: str) -> Optional[Dict]:
@@ -145,8 +143,7 @@ def describe_many(registry_url: str, *ids: str) -> Iterator[Dict]:
 
     url, query = get_resource_bulk(registry_url, ids)
     with Client() as session:
-        for result in query_registry_bulk(session, url, query):
-            yield result
+        yield from query_registry_bulk(session, url, query)
 
 
 def find(
@@ -201,8 +198,8 @@ def verify(
         resource = describe(registry_url, id=id)
         try:
             return resource["sha1"] == file_hash
-        except TypeError:
-            raise ValueError("%s does not exist" % id)
+        except TypeError as err:
+            raise ValueError("%s does not exist" % id) from err
 
 
 def fetch(
@@ -224,7 +221,8 @@ def fetch(
 
     # query the database for the URL
     url, _ = get_locations(base_url, id)
-    with Client(auth=auth) as session:
+    with Client() as session:
+        session.auth = auth or NetRCAuth(None)
         for loc in query_registry(session, url):
             if loc["scheme"] in ("https", "http"):
                 res_url = parse_location(loc)
@@ -239,7 +237,8 @@ def update(
     """Update metadata for one or more resources. Set a key to None to delete."""
     from nbank.registry import update_resource_metadata
 
-    with Client(headers={"Accept": "application/json"}, auth=auth) as session:
+    with Client(headers={"Accept": "application/json"}) as session:
+        session.auth = auth or NetRCAuth(None)
         for id in ids:
             url, params = update_resource_metadata(base_url, id, **metadata)
             r = session.patch(url, json=params)

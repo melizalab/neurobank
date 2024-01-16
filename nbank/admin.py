@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # -*- mode: python -*-
 """This script is used for administrative tasks on archives: and the registry. It
 is intended only for unusual situations that can't easily be fixed manually. For
@@ -48,7 +47,7 @@ def delete_resources(args):
     if args.dry_run:
         log.info("DRY RUN")
 
-    with open(args.resources, "rt") as fp, httpx.Client(auth=args.auth) as session:
+    with open(args.resources) as fp, httpx.Client(auth=args.auth) as session:
         for line in fp:
             resource_id = line.strip()
             if len(resource_id) == 0 or resource_id.startswith("#"):

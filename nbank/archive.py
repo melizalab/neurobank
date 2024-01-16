@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # -*- mode: python -*-
 """functions for managing a data archive
 
@@ -53,7 +52,7 @@ def get_config(path: Path) -> ArchiveConfig:
     """Returns the configuration for the archive specified by path."""
     fname = path / _config_fname
 
-    with open(fname, "rt") as fp:
+    with open(fname) as fp:
         ret = json.load(fp)
         umask = ret["policy"]["access"]["umask"]
         if not isinstance(umask, int):
@@ -103,7 +102,7 @@ def create(
 
     # try to set default facl; fail silently if setfacl doesn't exist
     # FIXME this is not correct if umask is not 005
-    faclcmd = "setfacl -d -m u::rwx,g::rwx,o::rx {}".format(resdir).split()
+    faclcmd = f"setfacl -d -m u::rwx,g::rwx,o::rx {resdir}".split()
     try:
         _ = subprocess.call(faclcmd)
     except FileNotFoundError:
@@ -176,8 +175,8 @@ def resolve_extension(path: Path) -> Path:
     paths = path.parent.glob(f"{path.name}.*")
     try:
         return next(paths)
-    except StopIteration:
-        raise FileNotFoundError(f"resource '{path}' does not exist")
+    except StopIteration as err:
+        raise FileNotFoundError(f"resource '{path}' does not exist") from err
 
 
 def check_permissions(
@@ -282,6 +281,6 @@ def permission_fixer(cfg: ArchiveConfig):
             chown(p, uid, gid)
             p.chmod(p.stat().st_mode & ~umask)
         except PermissionError:
-            log.warn("unable to change uid/gid or permissions of %s", p)
+            log.warning("unable to change uid/gid or permissions of %s", p)
 
     return fix

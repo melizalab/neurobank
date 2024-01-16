@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # -*- mode: python -*-
 """Construct HTTP URLs and queries to the neurobank registry.
 

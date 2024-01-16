@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # -*- mode: python -*-
 """Script entry points for neurobank
 
@@ -348,7 +347,7 @@ def store_resources(args):
             hash=args.hash,
             auto_id=args.auto_id,
             auth=args.auth,
-            **args.metadata
+            **args.metadata,
         ):
             if args.json_out:
                 json.dump(res, fp=sys.stdout)
@@ -477,7 +476,8 @@ def add_datatype(args):
     )
     resp = httpx.post(url, json=params, auth=args.auth)
     resp.raise_for_status()
-    log.info("added datatype %(name)s (content-type: %(content_type)s)" % resp.json())
+    data = resp.json()
+    log.info("added datatype {name} (content-type: {content_type})".format(**data))
 
 
 def list_archives(args):
@@ -500,16 +500,16 @@ def verify_file_hash(args):
         test_id = id_from_fname(path)
         try:
             if core.verify(args.registry_url, path, id=test_id):
-                print("%s: OK" % path)
+                print(f"{path}: OK")
             else:
-                print("%s: FAILED to match record for %s" % (path, test_id))
+                print(f"{path}: FAILED to match record for {test_id}")
         except ValueError:
             i = 0
             for resource in core.verify(args.registry_url, path):
-                print("%s: matches registry resource %s" % (path, resource["name"]))
+                print(f"{path}: matches registry resource {resource['name']}")
                 i += 1
             if i == 0:
-                print("%s: no matches in registry" % path)
+                print(f"{path}: no matches in registry")
 
 
 # Variables:

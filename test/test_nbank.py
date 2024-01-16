@@ -1,13 +1,12 @@
-# -*- coding: utf-8 -*-
 # -*- mode: python -*-
 import json
+from test.test_registry import archives_url, base_url, bulk_url, resource_url
 
 import httpx
 import pytest
 import respx
 
 from nbank import archive, core, registry, util
-from test.test_registry import archives_url, base_url, bulk_url, resource_url
 
 archive_name = "archive"
 

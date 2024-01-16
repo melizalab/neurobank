@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # -*- mode: python -*-
 """utility functions
 
@@ -65,10 +64,7 @@ def hash_directory(path: Union[Path, str], method: str = "sha1") -> str:
     for fn in sorted(p.rglob("*")):
         with open(fn, "rb") as fp:
             hashes.append(
-                "{}={}".format(
-                    fn,
-                    hashlib.new(method, fp.read()).hexdigest(),
-                )
+                f"{fn}={hashlib.new(method, fp.read()).hexdigest()}"
             )
     return hashlib.new(method, "\n".join(hashes).encode("utf-8")).hexdigest()
 

@@ -4,3 +4,19 @@ include = ["nbank"]
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+target-version = "py37"
+extend-exclude = ["attic"]
+
+[tool.ruff.lint]
+extend-select = [
+  "B",   # flake8-bugbear
+  "I",   # isort
+  "PGH", # pygrep-hooks
+  "RUF", # Ruff-specific
+  "UP",  # pyupgrade
+]
+
+[tool.mypy]
+ignore_missing_imports = true
