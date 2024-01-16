@@ -284,3 +284,13 @@ def permission_fixer(cfg: ArchiveConfig):
             log.warning("unable to change uid/gid or permissions of %s", p)
 
     return fix
+
+
+__all__ = [
+    "get_config",
+    "create",
+    "id_stub",
+    "resolve_extension",
+    "check_permissions",
+    "store_resource",
+]

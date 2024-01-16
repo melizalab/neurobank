@@ -9,8 +9,8 @@ neurobank
 .. |Version| image:: https://img.shields.io/pypi/v/neurobank.svg
 .. _Version: https://pypi.python.org/pypi/neurobank/
 
-.. |BuildStatus| image:: https://github.com/melizalab/neurobank/actions/workflows/tests-python.yml/badge.svg
-.. _BuildStatus: https://github.com/melizalab/neurobank/actions/workflows/tests-python.yml
+.. |BuildStatus| image:: https://github.com/melizalab/neurobank/actions/workflows/python_tests.yml/badge.svg
+.. _BuildStatus: https://github.com/melizalab/neurobank/actions/workflows/python_tests.yml
 
 .. |License| image:: https://img.shields.io/pypi/l/neurobank.svg
 .. _License: https://opensource.org/license/bsd-3-clause/

@@ -169,3 +169,30 @@ def log_error(err):
         log.error("    registry error: %s", err.response.reason)
     else:
         raise err
+
+
+def local_schemes() -> Tuple[str]:
+    return _local_schemes
+
+
+__all__ = [
+    "default_registry",
+    "parse_resource_url",
+    "full_url",
+    "get_info",
+    "get_datatypes",
+    "get_archives",
+    "find_archive_by_path",
+    "find_resource",
+    "get_resource",
+    "get_resource_bulk",
+    "fetch_resource",
+    "get_locations",
+    "get_locations_bulk",
+    "add_datatype",
+    "add_archive",
+    "add_resource",
+    "update_resource_metadata",
+    "log_error",
+    "local_schemes",
+]

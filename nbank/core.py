@@ -261,5 +261,17 @@ def update(
             yield r.json()
 
 
+__all__ = [
+    "deposit",
+    "search",
+    "describe",
+    "describe_many",
+    "find",
+    "get",
+    "verify",
+    "fetch",
+    "update",
+]
+
 # Variables:
 # End:

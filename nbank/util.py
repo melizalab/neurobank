@@ -63,9 +63,7 @@ def hash_directory(path: Union[Path, str], method: str = "sha1") -> str:
     hashes = []
     for fn in sorted(p.rglob("*")):
         with open(fn, "rb") as fp:
-            hashes.append(
-                f"{fn}={hashlib.new(method, fp.read()).hexdigest()}"
-            )
+            hashes.append(f"{fn}={hashlib.new(method, fp.read()).hexdigest()}")
     return hashlib.new(method, "\n".join(hashes).encode("utf-8")).hexdigest()
 
 
@@ -176,3 +174,12 @@ def query_registry_bulk(
         r.raise_for_status()
         for line in r.iter_lines():
             yield json.loads(line)
+
+
+__all__ = [
+    "parse_location",
+    "query_registry",
+    "query_registry_bulk",
+    "query_registry_paginated",
+    "download_to_file",
+]
