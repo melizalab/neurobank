@@ -96,8 +96,8 @@ if __name__ == "__main__":
     )
     pp.set_defaults(func=delete_resources)
     pp.add_argument(
-        "--dry-run",
         "-y",
+        "--dry-run",
         help="if set, don't actually delete anything",
         action="store_true",
     )
