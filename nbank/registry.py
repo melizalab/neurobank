@@ -19,15 +19,19 @@ _local_schemes = (_neurobank_scheme,)
 log = logging.getLogger("nbank")
 
 
-def default_registry() -> str:
-    """Return the registry URL associated with the default registry environment variable"""
+def default_registry() -> Optional[str]:
+    """Return the registry URL associated with the default registry environment
+    variable, or None if the environment variable is not defined.
+    """
     import os
 
-    return os.environ[_env_registry]
+    return os.environ.get(_env_registry)
 
 
 def parse_resource_url(url: str) -> Tuple[str, str]:
-    """Parse a full resource identifier into base url and id."""
+    ""
+
+    "Parse a full resource identifier into base url and id."""
     import re
     from urllib.parse import urlparse, urlunparse
 
