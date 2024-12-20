@@ -177,9 +177,9 @@ def query_registry_bulk(
 
 
 __all__ = [
+    "download_to_file",
     "parse_location",
     "query_registry",
     "query_registry_bulk",
     "query_registry_paginated",
-    "download_to_file",
 ]

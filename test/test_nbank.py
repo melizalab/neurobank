@@ -1,13 +1,13 @@
 # -*- mode: python -*-
 import json
 from base64 import b64encode
-from test.test_registry import archives_url, base_url, bulk_url, resource_url
 
 import httpx
 import pytest
 import respx
 
 from nbank import archive, core, registry, util
+from test.test_registry import archives_url, base_url, bulk_url, resource_url
 
 archive_name = "archive"
 auth = ("dmeliza", "dummy_pw!")

@@ -287,10 +287,10 @@ def permission_fixer(cfg: ArchiveConfig):
 
 
 __all__ = [
-    "get_config",
+    "check_permissions",
     "create",
+    "get_config",
     "id_stub",
     "resolve_extension",
-    "check_permissions",
     "store_resource",
 ]

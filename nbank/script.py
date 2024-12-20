@@ -54,7 +54,7 @@ class ParseKeyVal(argparse.Action):
         if kv is None:
             kv = dict()
         if not arg.count("=") == 1:
-            raise ValueError("-k %s argument badly formed; needs key=value" % arg)
+            raise ValueError(f"-k {arg} argument badly formed; needs key=value")
         else:
             key, val = arg.split("=")
             kv[key] = self.parse_value(val)
@@ -70,7 +70,7 @@ def main(argv=None):
         "-r",
         dest="registry_url",
         help="URL of the registry service. "
-        "Default is to use the environment variable '%s'" % registry._env_registry,
+        f"Default is to use the environment variable '{registry._env_registry}'",
         default=registry.default_registry(),
     )
     p.add_argument(
@@ -365,7 +365,7 @@ def locate_resources(args):
             except ValueError:
                 base = args.registry_url
             if base is None:
-                print("%-25s [no registry to resolve short identifier]" % id)
+                print(f"{id:<25} [no registry to resolve short identifier]")
                 continue
             url, params = registry.get_locations(base, id)
             try:
@@ -373,7 +373,7 @@ def locate_resources(args):
                     # this will return a Path for local files and a str for URLs
                     partial = util.parse_location(loc)
                     if args.remote and isinstance(partial, str):
-                        print("%-20s\t%s" % (id, partial))
+                        print(f"{id:<20}\t{partial}")
                     elif not args.remote and isinstance(partial, Path):
                         try:
                             path = archive.resolve_extension(partial)
@@ -381,12 +381,12 @@ def locate_resources(args):
                             continue
                         if args.link is not None:
                             linkpath = args.link / path.name
-                            print("%-20s\t-> %s" % (id, linkpath))
+                            print(f"{id:<20}\t-> {linkpath}")
                             linkpath.symlink_to(path)
                         elif args.print0:
                             print(str(path), end="\0")
                         else:
-                            print("%-20s\t%s" % (id, path))
+                            print(f"{id:<20}\t{path}")
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
                     log.error("%s: not found", id)
@@ -408,10 +408,10 @@ def search_resources(args):
         if getattr(args, argname) is not None
     }
     for k, v in args.metadata.items():
-        kk = "metadata__%s" % k
+        kk = f"metadata__{k}"
         params[kk] = v
     for k, v in args.metadata_neq.items():
-        kk = "metadata__%s__neq" % k
+        kk = f"metadata__{k}__neq"
         params[kk] = v
     if len(params) == 0:
         log.error("nbank search: error: at least one filter parameter is required")
@@ -467,7 +467,7 @@ def fetch_resource(args):
 def list_datatypes(args):
     url, params = registry.get_datatypes(args.registry_url)
     for dtype in util.query_registry_paginated(httpx, url, params):
-        print("%(name)-25s\t(%(content_type)s)" % dtype)
+        print(f"{dtype['name']:<25}\t({dtype['content_type']})")
 
 
 def add_datatype(args):
@@ -477,17 +477,17 @@ def add_datatype(args):
     resp = httpx.post(url, json=params, auth=args.auth)
     resp.raise_for_status()
     data = resp.json()
-    log.info("added datatype {name} (content-type: {content_type})".format(**data))
+    log.info(f"added datatype {data['name']} (content-type: {data['content_type']})")
 
 
 def list_archives(args):
     url, params = registry.get_archives(args.registry_url)
     for arch in util.query_registry_paginated(httpx, url, params):
         if arch["scheme"] == "neurobank":
-            print("%(name)-25s\t%(root)s" % arch)
+            print(f"{arch['name']:<25}\t{arch['root']}")
         else:
             url = urlunparse(arch["scheme"], arch["root"], "", "", "", "")
-            print("%-25s\t%s" % (arch["name"], url))
+            print(f"{arch['name']:<25}\t{url}")
 
 
 def verify_file_hash(args):
@@ -495,7 +495,7 @@ def verify_file_hash(args):
 
     for path in args.files:
         if not path.exists():
-            print("%s: no such file or directory" % path)
+            print(f"{path}: no such file or directory")
             continue
         test_id = id_from_fname(path)
         try:

@@ -1,7 +1,7 @@
 # -*- mode: python -*-
 """This script is used for administrative tasks on archives: and the registry. It
 is intended only for unusual situations that can't easily be fixed manually. For
-example, if a lot of files were deposited erroneously. 
+example, if a lot of files were deposited erroneously.
 
 """
 import logging
@@ -77,7 +77,7 @@ if __name__ == "__main__":
         "-r",
         dest="registry_url",
         help="URL of the registry service. "
-        "Default is to use the environment variable '%s'" % registry._env_registry,
+        f"Default is to use the environment variable '{registry._env_registry}'",
         default=registry.default_registry(),
     )
     p.add_argument(

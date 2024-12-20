@@ -68,7 +68,7 @@ def deposit(
     try:
         archive_cfg = get_config(archive_path)
     except FileNotFoundError as err:
-        raise ValueError("%s is not a valid archive" % archive_path) from err
+        raise ValueError(f"{archive_path} is not a valid archive") from err
     archive_path = archive_cfg["path"]  # this will resolve the path
     log.info("archive: %s", archive_path)
     registry_url = archive_cfg["registry"]
@@ -212,7 +212,7 @@ def verify(
         try:
             return resource["sha1"] == file_hash
         except TypeError as err:
-            raise ValueError("%s does not exist" % id) from err
+            raise ValueError(f"{id} does not exist") from err
 
 
 def fetch(
@@ -263,14 +263,14 @@ def update(
 
 __all__ = [
     "deposit",
-    "search",
     "describe",
     "describe_many",
+    "fetch",
     "find",
     "get",
-    "verify",
-    "fetch",
+    "search",
     "update",
+    "verify",
 ]
 
 # Variables:
