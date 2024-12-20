@@ -486,7 +486,7 @@ def list_archives(args):
         if arch["scheme"] == "neurobank":
             print(f"{arch['name']:<25}\t{arch['root']}")
         else:
-            url = urlunparse(arch["scheme"], arch["root"], "", "", "", "")
+            url = urlunparse((arch["scheme"], arch["root"], "", "", "", ""))
             print(f"{arch['name']:<25}\t{url}")
 
 
