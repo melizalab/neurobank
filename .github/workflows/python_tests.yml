@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-13, macos-14, ubuntu-latest]
+        platform: [macos-13, macos-14, ubuntu-22.04]
         python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "pypy3.7", "pypy3.8", "pypy3.9", "pypy3.10"]
         exclude:
           - platform: macos-14
