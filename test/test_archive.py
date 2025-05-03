@@ -50,11 +50,24 @@ def test_store_and_find_resource(tmp_archive, tmp_path):
     src.write_text(contents)
     archive.store_resource(tmp_archive, src, name)
     # assertions
+    assert not src.exists()
     path = archive.resource_path(tmp_archive, name, resolve_ext=True)
     assert path.is_file()
     mode = path.stat().st_mode
     assert mode & tmp_archive["policy"]["access"]["umask"] == 0
     assert path.read_text() == contents
+
+
+def test_store_and_fetch_resource(tmp_archive, tmp_path):
+    name = "dummy_1"
+    src = tmp_path / name
+    contents = '{"foo": 10}\n'
+    src.write_text(contents)
+    archive.store_resource(tmp_archive, src, name)
+    resource = archive.Resource({"scheme": "neurobank", "root": tmp_archive["path"], "resource_name": name})
+    fetched = resource.fetch(tmp_path)
+    assert fetched.is_file()
+    assert fetched.read_text() == contents
 
 
 def test_store_and_find_named_resource(tmp_archive, tmp_path):

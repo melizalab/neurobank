@@ -7,7 +7,7 @@ Created Mon Nov 25 08:52:28 2013
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, NewType, Optional, Union
+from typing import Any, Dict, NewType, Optional, Union, Mapping
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -179,13 +179,39 @@ def resolve_extension(path: Path) -> Path:
         raise FileNotFoundError(f"resource '{path}' does not exist") from err
 
 
+class Resource:
+    """A resource stored in a local neurobank archive.
+
+    The `root` field of the location is interpreted as being the path of
+    a neurobank archive on the local file system. If the `alt_base` parameter is
+    set, the dirname of the root will be replaced with this value; e.g.
+    alt_base='/scratch' will change '/home/data/starlings' to
+    '/scratch/starlings'. This is intended to be used with temporary copies of
+    archives on other hosts.
+
+    """
+    def __init__(self, location: Mapping[str, str], alt_base: Optional[Path] = None):
+        assert location["scheme"] == "neurobank", "location scheme is not 'neurobank'"
+        root = Path(location["root"])
+        if alt_base is not None:
+            root = Path(alt_base) / root.name
+        self.path = resource_path(root, location["resource_name"], resolve_ext=True)
+
+    def fetch(self, target: Path) -> Path:
+        from shutil import copyfile
+
+        if target.is_dir():
+            target = target / self.path.name
+        copyfile(self.path, target)
+        return target
+
+
 def check_permissions(
-    cfg: ArchiveConfig, src: Union[Path, str], id: Optional[str] = None
+    cfg: ArchiveConfig, src: Path, id: Optional[str] = None
 ) -> bool:
     """Check if src file can be deposited in an archive."""
     import os
 
-    src = Path(src)
     if not os.access(src, os.R_OK):
         return False
     reqd_perms = os.R_OK | os.W_OK | os.X_OK
@@ -202,7 +228,7 @@ def check_permissions(
 
 
 def store_resource(
-    cfg: ArchiveConfig, src: Union[Path, str], id: Optional[str] = None
+    cfg: ArchiveConfig, src: Path, id: Optional[str] = None
 ) -> Path:
     """Stores resource (src) in the repository under a unique identifier.
 
@@ -221,9 +247,8 @@ def store_resource(
     exploited by a malicious caller.
 
     """
-    import shutil
+    from shutil import move
 
-    src = Path(src)
     if not cfg["policy"]["allow_directories"] and src.is_dir():
         raise TypeError("policy forbids depositing directories")
 
@@ -253,7 +278,7 @@ def store_resource(
         pass
 
     tgt_file = tgt_dir / id
-    shutil.move(src, tgt_file)
+    move(src, tgt_file)
     pfix(tgt_file)
     if tgt_file.is_dir():
         for f in tgt_file.rglob("*"):
