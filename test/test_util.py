@@ -45,28 +45,15 @@ def test_hash_directory(tmp_path):
     assert hash1 != hash2
 
 
-def test_parse_neurobank_location():
-    from nbank.archive import resource_path
-
-    location = {
-        "scheme": "neurobank",
-        "root": "/home/data/starlings",
-        "resource_name": "dummy",
-    }
-    path = util.parse_location(location)
-    assert path == resource_path(location["root"], location["resource_name"])
-    path = util.parse_location(location, "/scratch/")
-    assert path == resource_path("/scratch/starlings/", location["resource_name"])
-
-
 def test_parse_http_location():
     location = {
         "scheme": "https",
         "root": "localhost:8000/bucket",
         "resource_name": "dummy",
     }
-    path = util.parse_location(location)
-    assert path == "https://localhost:8000/bucket/dummy/"
+    res = util.parse_location(location)
+    assert isinstance(res, util.HttpResource)
+    assert res.url == "https://localhost:8000/bucket/dummy/"
 
 
 def test_parse_http_location_strip_slash():
@@ -75,8 +62,9 @@ def test_parse_http_location_strip_slash():
         "root": "localhost:8000/bucket/",
         "resource_name": "dummy",
     }
-    path = util.parse_location(location)
-    assert path == "https://localhost:8000/bucket/dummy/"
+    res = util.parse_location(location)
+    assert isinstance(res, util.HttpResource)
+    assert res.url == "https://localhost:8000/bucket/dummy/"
 
 
 def test_query_registry(mocked_api):
@@ -149,10 +137,12 @@ def test_query_first_invalid(mocked_api):
         _ = util.query_registry_first(httpx, url)
 
 
-def test_download(mocked_api, tmp_path):
-    url = "https://meliza.org/neurobank/resources/dummy/download"
+def test_fetch(mocked_api, tmp_path):
+    url = "https://meliza.org/neurobank/download/dummy/"
     content = str(dummy_info)
     p = tmp_path / "output"
+    resource = util.HttpResource({"scheme": "https", "root": "meliza.org/neurobank/download", "resource_name": "dummy"}, httpx)
+    assert resource.url == url
     mocked_api.get(url).respond(content=content)
-    util.download_to_file(httpx, url, p)
+    resource.fetch(p)
     assert p.read_text() == content

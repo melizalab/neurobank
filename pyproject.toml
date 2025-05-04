@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "neurobank"
-version = "0.10.10"
+version = "0.11.0"
 description = "Simple data management system for neuroscience"
 readme = "README.rst"
 license = {text = "BSD 3-Clause License"}

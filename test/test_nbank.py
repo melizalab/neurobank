@@ -210,24 +210,20 @@ def test_search_nonexistent_resource(mocked_api):
 
 
 def test_find_resource_location(mocked_api):
-    from nbank.archive import resource_path
-
     name = "dummy_3"
     mocked_api.get(
         registry.url_join(registry.full_url(base_url, name) + "locations/")
     ).respond(
         json=[
             {
-                "scheme": "neurobank",
-                "root": "/home/data/starlings",
+                "scheme": "https",
+                "root": "localhost:8000/bucket/",
                 "resource_name": name,
             }
         ],
     )
-    items = list(core.find(base_url, name))
-    assert items == [resource_path("/home/data/starlings", name)]
-    item = core.get(base_url, name)
-    assert item == resource_path("/home/data/starlings", name)
+    resource = core.get(base_url, name)
+    assert resource.url == f"https://localhost:8000/bucket/{name}/"
 
 
 def test_find_resource_location_nonexistent(mocked_api):

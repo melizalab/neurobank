@@ -1,7 +1,7 @@
 # -*- mode: python -*-
-"""functions for managing a data archive
+"""core functions for managing data registry and archives
 
-Copyright (C) 2013 Dan Meliza <dan@meliza.org>
+Copyright (C) 2013-2025 Dan Meliza <dan@meliza.org>
 Created Mon Nov 25 08:52:28 2013
 """
 import logging
@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, Iterator, Optional, Tuple, Union
 
 import httpx
 
-from nbank.util import ResourceLocation
+from nbank.util import Fetchable
 
 # types that can be turned into authentication for httpx
 RegistryAuth = Union[Tuple[str, str], httpx.Auth, None]
@@ -161,8 +161,8 @@ def describe_many(registry_url: str, *ids: str) -> Iterator[Dict]:
 
 def find(
     registry_url: str, id: str, alt_base: Optional[Path] = None
-) -> Iterator[ResourceLocation]:
-    """Generates a sequence of paths or URLs where id can be located
+) -> Iterator[Fetchable]:
+    """Generates a sequence of Fetchables where id can be located
 
     Set alt_base to replace the dirname of any local resources. This is intended
     to be used with temporary copies of archives on other hosts.
@@ -174,10 +174,10 @@ def find(
     url, params = get_locations(registry_url, id)
     with httpx.Client() as session:
         for loc in query_registry_paginated(session, url, params):
-            yield parse_location(loc, alt_base)
+            yield parse_location(loc, alt_base=alt_base, http_session=session)
 
 
-def get(registry_url: str, id: str, alt_base: Optional[Path] = None) -> Optional[Path]:
+def get(registry_url: str, id: str, alt_base: Optional[Path] = None) -> Optional[Fetchable]:
     """Returns the first path or URL where id can be found, or None if no match.
 
     Set alt_base to replace the dirname of any local resources. This is intended

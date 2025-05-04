@@ -58,13 +58,32 @@ def test_store_and_find_resource(tmp_archive, tmp_path):
     assert path.read_text() == contents
 
 
+def test_parse_neurobank_location(tmp_archive, tmp_path):
+    from nbank.util import parse_location
+
+    name = "dummy_1"
+    src = tmp_path / name
+    contents = '{"foo": 10}\n'
+    src.write_text(contents)
+    archive.store_resource(tmp_archive, src, name)
+
+    location = {
+        "scheme": "neurobank",
+        "root": tmp_archive["path"],
+        "resource_name": name,
+    }
+    res = parse_location(location)
+    assert isinstance(res, archive.Resource)
+    assert res.path == archive.resource_path(location["root"], location["resource_name"])
+
+
 def test_store_and_fetch_resource(tmp_archive, tmp_path):
     name = "dummy_1"
     src = tmp_path / name
     contents = '{"foo": 10}\n'
     src.write_text(contents)
     archive.store_resource(tmp_archive, src, name)
-    resource = archive.Resource({"scheme": "neurobank", "root": tmp_archive["path"], "resource_name": name})
+    resource = archive.Resource(tmp_archive["path"], name)
     fetched = resource.fetch(tmp_path)
     assert fetched.is_file()
     assert fetched.read_text() == contents

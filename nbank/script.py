@@ -4,6 +4,7 @@
 Copyright (C) 2013-2024 Dan Meliza <dan@meliza.org>
 Created Tue Nov 26 22:48:58 2013
 """
+import concurrent.futures
 import argparse
 import datetime
 import json
@@ -156,18 +157,17 @@ def main(argv=None):
 
     pp = sub.add_parser("locate", help="locate local resource(s)")
     pp.set_defaults(func=locate_resources)
-    pp.add_argument("-R", "--remote", action="store_true", help="show remote locations")
     pp.add_argument(
         "-L",
         "--link",
         type=Path,
-        help="generate symbolic link to the resource in DIR",
+        help="generate symbolic link to the resource in DIR (local only)",
         metavar="DIR",
     )
     pp.add_argument(
         "-0",
         "--print0",
-        help="print paths to stdout separated by null, for piping to xargs -0",
+        help="print paths to stdout separated by null, for piping to xargs -0 (local only)",
         action="store_true",
     )
     pp.add_argument("id", help="the identifier of the resource", nargs="+")
@@ -182,7 +182,7 @@ def main(argv=None):
     )
     pp.add_argument("-d", "--dtype", help="filter results by dtype")
     pp.add_argument("-H", "--hash", help="filter results by hash")
-    pp.add_argument("-n", "--archive", help="filter results by archive location")
+    pp.add_argument("-n", "--archive", help="filter results by archive name")
     pp.add_argument(
         "-k",
         help="filter by metadata field (use multiple -k for multiple values)",
@@ -240,9 +240,9 @@ def main(argv=None):
     pp = sub.add_parser(
         "fetch", help="fetch downloadable resources from the registry server"
     )
-    pp.set_defaults(func=fetch_resource)
+    pp.set_defaults(func=fetch_resources)
     pp.add_argument("-f", "--force", help="overwrite target file", action="store_true")
-    pp.add_argument("id", help="identifier of the resource")
+    pp.add_argument("ids", nargs="+", help="identifier of the resource or '-' to load list from stdin")
     pp.add_argument(
         "target",
         type=Path,
@@ -370,23 +370,22 @@ def locate_resources(args):
             url, params = registry.get_locations(base, id)
             try:
                 for loc in util.query_registry_paginated(session, url, params):
-                    # this will return a Path for local files and a str for URLs
-                    partial = util.parse_location(loc)
-                    if args.remote and isinstance(partial, str):
-                        print(f"{id:<20}\t{partial}")
-                    elif not args.remote and isinstance(partial, Path):
+                    try:
+                        resource = util.parse_location(loc)
+                    except FileNotFoundError:
+                        # local resource, not found, skip
+                        continue
+                    if args.link is not None:
                         try:
-                            path = archive.resolve_extension(partial)
-                        except FileNotFoundError:
-                            continue
-                        if args.link is not None:
-                            linkpath = args.link / path.name
+                            linkpath = resource.link(args.link)
                             print(f"{id:<20}\t-> {linkpath}")
-                            linkpath.symlink_to(path)
-                        elif args.print0:
-                            print(str(path), end="\0")
-                        else:
-                            print(f"{id:<20}\t{path}")
+                        except AttributeError:
+                            # not linkable
+                            continue
+                    elif args.print0 and resource.local:
+                        print(str(resource.path), end="\0")
+                    else:
+                        print(f"{id:<20}\t{resource}")
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
                     log.error("%s: not found", id)
@@ -445,23 +444,31 @@ def set_resource_metadata(args):
         sys.stdout.write("\n")
 
 
-def fetch_resource(args):
-    if args.target.is_dir():
-        target = args.target / args.id
-    else:
-        target = args.target
-    if target.exists():
-        if args.force:
-            log.debug("removing target file %s", target)
-            target.unlink()
-        else:
-            log.error("nbank fetch: error: the target file %s exists already", target)
-            return
-    try:
-        core.fetch(args.registry_url, args.id, target, auth=args.auth)
-    except ValueError as e:
-        log.error(e)
-        return
+# def fetch_resource(args):
+#     if args.target.is_dir():
+#         target = args.target / args.id
+#     else:
+#         target = args.target
+#     if target.exists():
+#         if args.force:
+#             log.debug("removing target file %s", target)
+#             target.unlink()
+#         else:
+#             log.error("nbank fetch: error: the target file %s exists already", target)
+#             return
+#     try:
+#         core.fetch(args.registry_url, args.id, target, auth=args.auth)
+#     except ValueError as e:
+#         log.error(e)
+#         return
+
+
+def fetch_resources(args):
+    url, query = registry.get_locations_bulk(args.registry, args.target, args.ids)
+    with httpx.Client() as session, concurrent.futures.ThreadPoolExecutor() as executor:
+        session.auth = core.make_auth(args.auth)
+
+
 
 
 def list_datatypes(args):

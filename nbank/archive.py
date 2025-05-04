@@ -189,13 +189,18 @@ class Resource:
     '/scratch/starlings'. This is intended to be used with temporary copies of
     archives on other hosts.
 
+
     """
-    def __init__(self, location: Mapping[str, str], alt_base: Optional[Path] = None):
-        assert location["scheme"] == "neurobank", "location scheme is not 'neurobank'"
-        root = Path(location["root"])
+    local: True
+
+    def __init__(self, root: str, id: str, alt_base: Optional[Path] = None):
+        root = Path(root)
         if alt_base is not None:
             root = Path(alt_base) / root.name
-        self.path = resource_path(root, location["resource_name"], resolve_ext=True)
+        self.path = resource_path(root, id, resolve_ext=True)
+
+    def __str__(self):
+        return str(self.path)
 
     def fetch(self, target: Path) -> Path:
         from shutil import copyfile
@@ -204,6 +209,11 @@ class Resource:
             target = target / self.path.name
         copyfile(self.path, target)
         return target
+
+    def link(self, target_dir: Path) -> Path:
+        linkpath = target_dir / self.path.name
+        linkpath.symlink_to(self.path)
+        return linkpath
 
 
 def check_permissions(
