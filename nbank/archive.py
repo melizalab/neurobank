@@ -4,10 +4,11 @@
 Copyright (C) 2013 Dan Meliza <dan@meliza.org>
 Created Mon Nov 25 08:52:28 2013
 """
+
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, NewType, Optional, Union, Mapping
+from typing import Any, Dict, NewType, Optional, Union
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -191,6 +192,7 @@ class Resource:
 
 
     """
+
     local: True
 
     def __init__(self, root: str, id: str, alt_base: Optional[Path] = None):
@@ -216,9 +218,7 @@ class Resource:
         return linkpath
 
 
-def check_permissions(
-    cfg: ArchiveConfig, src: Path, id: Optional[str] = None
-) -> bool:
+def check_permissions(cfg: ArchiveConfig, src: Path, id: Optional[str] = None) -> bool:
     """Check if src file can be deposited in an archive."""
     import os
 
@@ -237,9 +237,7 @@ def check_permissions(
         return True
 
 
-def store_resource(
-    cfg: ArchiveConfig, src: Path, id: Optional[str] = None
-) -> Path:
+def store_resource(cfg: ArchiveConfig, src: Path, id: Optional[str] = None) -> Path:
     """Stores resource (src) in the repository under a unique identifier.
 
     cfg - the configuration dict for the archive

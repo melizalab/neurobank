@@ -4,6 +4,7 @@
 Copyright (C) 2013-2025 Dan Meliza <dan@meliza.org>
 Created Mon Nov 25 08:52:28 2013
 """
+
 import logging
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, Optional, Tuple, Union
@@ -177,7 +178,9 @@ def find(
             yield parse_location(loc, alt_base=alt_base, http_session=session)
 
 
-def get(registry_url: str, id: str, alt_base: Optional[Path] = None) -> Optional[Fetchable]:
+def get(
+    registry_url: str, id: str, alt_base: Optional[Path] = None
+) -> Optional[Fetchable]:
     """Returns the first path or URL where id can be found, or None if no match.
 
     Set alt_base to replace the dirname of any local resources. This is intended

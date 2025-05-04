@@ -4,10 +4,19 @@
 Copyright (C) 2014 Dan Meliza <dan@meliza.org>
 Created Tue Jul  8 14:23:35 2014
 """
+
 import json
-import shutil
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Mapping, NewType, Optional, Union, Protocol
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    Union,
+)
 
 from httpx import Client
 
@@ -20,6 +29,7 @@ class NotFetchableError(Exception):
 
 class Fetchable(Protocol):
     """A resource that can be fetched from a location"""
+
     def fetch(self, target: Path) -> Path:
         """Copies or downloads the resource to target directory or file. Returns target path or raises an error"""
         pass
@@ -27,12 +37,16 @@ class Fetchable(Protocol):
 
 class HttpResource(Fetchable):
     """A resource that can be fetched from an HTTP(S) endpoint"""
+
     local: False
 
     def __init__(self, location: Mapping[str, str], session: Optional[Client] = None):
         from urllib.parse import urlunparse
 
-        assert location["scheme"] in ("http", "https"), "location scheme is not 'http' or 'https'"
+        assert location["scheme"] in (
+            "http",
+            "https",
+        ), "location scheme is not 'http' or 'https'"
         self.session = session
         root = Path(location["root"])
         # the root contains the netloc and the base path
@@ -55,7 +69,9 @@ class HttpResource(Fetchable):
 
     def fetch(self, target: Path) -> Path:
         if self.session is None:
-            raise NotFetchableError("No mechanism provided to fetch a resource over http(s)")
+            raise NotFetchableError(
+                "No mechanism provided to fetch a resource over http(s)"
+            )
         with self.session.stream("GET", self.url) as r:
             r.raise_for_status()
             with open(target, "wb") as fp:
@@ -68,7 +84,7 @@ def parse_location(
     location: Mapping[str, str],
     *,
     alt_base: Optional[Path] = None,
-    http_session: Optional[Client] = None
+    http_session: Optional[Client] = None,
 ) -> Fetchable:
     """Parse a location dict and return a Fetchable
 

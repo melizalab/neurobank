@@ -9,6 +9,7 @@ request body. `get_` and `find_` URLs should be used with the GET method; `add_`
 URLs with the POST method; and `update_` URLs with the PATCH method.
 
 """
+
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple, Union
@@ -31,7 +32,7 @@ def default_registry() -> Optional[str]:
 def parse_resource_url(url: str) -> Tuple[str, str]:
     ""
 
-    "Parse a full resource identifier into base url and id."""
+    "Parse a full resource identifier into base url and id." ""
     import re
     from urllib.parse import urlparse, urlunparse
 

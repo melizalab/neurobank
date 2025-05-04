@@ -141,7 +141,14 @@ def test_fetch(mocked_api, tmp_path):
     url = "https://meliza.org/neurobank/download/dummy/"
     content = str(dummy_info)
     p = tmp_path / "output"
-    resource = util.HttpResource({"scheme": "https", "root": "meliza.org/neurobank/download", "resource_name": "dummy"}, httpx)
+    resource = util.HttpResource(
+        {
+            "scheme": "https",
+            "root": "meliza.org/neurobank/download",
+            "resource_name": "dummy",
+        },
+        httpx,
+    )
     assert resource.url == url
     mocked_api.get(url).respond(content=content)
     resource.fetch(p)

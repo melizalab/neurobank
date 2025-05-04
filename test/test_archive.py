@@ -74,7 +74,9 @@ def test_parse_neurobank_location(tmp_archive, tmp_path):
     }
     res = parse_location(location)
     assert isinstance(res, archive.Resource)
-    assert res.path == archive.resource_path(location["root"], location["resource_name"])
+    assert res.path == archive.resource_path(
+        location["root"], location["resource_name"]
+    )
 
 
 def test_store_and_fetch_resource(tmp_archive, tmp_path):

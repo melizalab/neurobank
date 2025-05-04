@@ -4,8 +4,9 @@
 Copyright (C) 2013-2024 Dan Meliza <dan@meliza.org>
 Created Tue Nov 26 22:48:58 2013
 """
-import concurrent.futures
+
 import argparse
+import concurrent.futures
 import datetime
 import json
 import logging
@@ -242,7 +243,11 @@ def main(argv=None):
     )
     pp.set_defaults(func=fetch_resources)
     pp.add_argument("-f", "--force", help="overwrite target file", action="store_true")
-    pp.add_argument("ids", nargs="+", help="identifier of the resource or '-' to load list from stdin")
+    pp.add_argument(
+        "ids",
+        nargs="+",
+        help="identifier of the resource or '-' to load list from stdin",
+    )
     pp.add_argument(
         "target",
         type=Path,
@@ -467,8 +472,6 @@ def fetch_resources(args):
     url, query = registry.get_locations_bulk(args.registry, args.target, args.ids)
     with httpx.Client() as session, concurrent.futures.ThreadPoolExecutor() as executor:
         session.auth = core.make_auth(args.auth)
-
-
 
 
 def list_datatypes(args):
