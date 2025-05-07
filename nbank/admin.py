@@ -6,6 +6,7 @@ example, if a lot of files were deposited erroneously.
 """
 
 import logging
+import tarfile
 from pathlib import Path
 
 import httpx
@@ -66,6 +67,32 @@ def delete_resources(args):
                 else:
                     raise err
 
+def tar_resources(args):
+
+    log.info("transferring resources to %s", args.dest)
+    with open(args.resources) as fp, httpx.Client(auth=args.auth) as session, tarfile.open(args.dest, mode="a") as tarf:
+        for line in fp:
+            resource_id = line.strip()
+            if len(resource_id) == 0 or resource_id.startswith("#"):
+                continue
+            # locate the resource
+            url, query = registry.get_locations(args.registry_url, resource_id, archive=args.archive)
+            try:
+                response = util.query_registry_first(session, url, query)
+            except httpx.HTTPStatusError as err:
+                if err.response.status_code == 404:
+                    log.warning("%s -> no such resource", resource_id)
+                    continue
+                else:
+                    raise err
+            if response is None:
+                log.warning("%s -> not in '%s' archive", resource_id, args.archive)
+            elif (loc := util.parse_location(response)) is None:
+                log.warning("%s -> not on local drive", resource_id)
+            else:
+                log.info("%s -> %s", resource_id, loc.path)
+                tarf.add(loc.path, arcname=loc.path.name)
+
 
 if __name__ == "__main__":
     import argparse
@@ -92,7 +119,7 @@ if __name__ == "__main__":
     sub = p.add_subparsers(title="subcommands")
 
     pp = sub.add_parser(
-        "delete", help="delete resources from local archives: and registry"
+        "delete", help="delete resources from local archives and registry"
     )
     pp.set_defaults(func=delete_resources)
     pp.add_argument(
@@ -104,6 +131,24 @@ if __name__ == "__main__":
     pp.add_argument(
         "resources", type=Path, help="file with a list of resources to delete"
     )
+
+    pp = sub.add_parser(
+        "tar", help="transfer resources from local archives to a tar file for writing to tape"
+    )
+    pp.set_defaults(func=tar_resources)
+    pp.add_argument(
+        "resources", type=Path, help="file with a list of resources to transfer"
+    )
+    pp.add_argument(
+        "archive", type=str, help="name of the source archive (must be local)"
+    )
+    pp.add_argument(
+        "dest", type=Path, help="name of the destination tar file"
+    )
+    # pp.add_argument(
+    #     "archive_index", type=int, help="index of the file on the tape where the archive will be stored"
+    # )
+    
 
     args = p.parse_args()
     if not hasattr(args, "func"):
