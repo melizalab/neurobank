@@ -6,6 +6,7 @@ Created Tue Jul  8 14:23:35 2014
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import (
     Any,
@@ -23,6 +24,7 @@ from httpx import Client
 
 from nbank import archive
 
+log = logging.getLogger("nbank")  # root logger
 
 class NotFetchableError(Exception):
     pass
@@ -98,7 +100,7 @@ def parse_location(
     http_session: Optional[Client] = None,
 ) -> Optional[Resource]:
     """Parse a location dict and return a Resource or None if the location is invalid.
-    
+
     location is a dict with 'scheme', 'root', and 'resource_name'.
 
     """

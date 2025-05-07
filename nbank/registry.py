@@ -99,9 +99,9 @@ def get_locations(base_url: str, id: str, **params) -> Tuple[str, Dict]:
     return (url_join(base_url, "resources", id, "locations/"), params)
 
 
-def get_locations_bulk(base_url: str, ids: Sequence[str]) -> Tuple[str, Dict]:
+def get_locations_bulk(base_url: str, ids: Sequence[str], **params) -> Tuple[str, Dict]:
     """Constructs URL to bulk retrieve locations for multiple ids"""
-    return (url_join(base_url, "bulk", "locations/"), {"names": list(ids)})
+    return (url_join(base_url, "bulk", "locations/"), {"names": list(ids), **params})
 
 
 def add_datatype(base_url: str, name: str, content_type: str) -> Tuple[str, Dict]:

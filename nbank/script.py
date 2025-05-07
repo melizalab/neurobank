@@ -465,7 +465,6 @@ def fetch_resources(args):
     with httpx.Client() as session, concurrent.futures.ThreadPoolExecutor() as executor:
         session.auth = core.make_auth(args.auth)
         response = util.query_registry_bulk(session, url, query)
-        import pdb; pdb.set_trace()
         future_to_name = {
             executor.submit(
                 util.fetch_resource,

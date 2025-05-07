@@ -68,30 +68,27 @@ def delete_resources(args):
                     raise err
 
 def tar_resources(args):
-
-    log.info("transferring resources to %s", args.dest)
-    with open(args.resources) as fp, httpx.Client(auth=args.auth) as session, tarfile.open(args.dest, mode="a") as tarf:
+    log.info("- transferring resources to %s", args.dest)
+    resource_ids = set()
+    with open(args.resources) as fp:
         for line in fp:
             resource_id = line.strip()
             if len(resource_id) == 0 or resource_id.startswith("#"):
                 continue
-            # locate the resource
-            url, query = registry.get_locations(args.registry_url, resource_id, archive=args.archive)
-            try:
-                response = util.query_registry_first(session, url, query)
-            except httpx.HTTPStatusError as err:
-                if err.response.status_code == 404:
-                    log.warning("%s -> no such resource", resource_id)
-                    continue
-                else:
-                    raise err
-            if response is None:
-                log.warning("%s -> not in '%s' archive", resource_id, args.archive)
-            elif (loc := util.parse_location(response)) is None:
-                log.warning("%s -> not on local drive", resource_id)
-            else:
-                log.info("%s -> %s", resource_id, loc.path)
-                tarf.add(loc.path, arcname=loc.path.name)
+            resource_ids.add(resource_id)
+
+    log.info("- looking up %d resource id(s) in %s archive", len(resource_ids), args.archive)
+    with httpx.Client(auth=args.auth) as session, tarfile.open(args.dest, mode="a") as tarf:
+        url, query = registry.get_locations_bulk(args.registry_url, resource_ids, archive=args.archive)
+        for resource in util.query_registry_bulk(session, url, query):
+            for location in resource["locations"]:
+                if (loc := util.parse_location(location)) is not None:
+                    log.info("   - %s -> %s", resource_id, loc.path)
+                    tarf.add(loc.path, arcname=loc.path.name)
+                    resource_ids.remove(resource_id)
+                    break
+    if len(resource_ids) > 0:
+        log.warning("- warning: the following resources could not be located: %s", ",".join(resource_ids))
 
 
 if __name__ == "__main__":
@@ -148,7 +145,7 @@ if __name__ == "__main__":
     # pp.add_argument(
     #     "archive_index", type=int, help="index of the file on the tape where the archive will be stored"
     # )
-    
+
 
     args = p.parse_args()
     if not hasattr(args, "func"):
