@@ -15,6 +15,7 @@ from typing import (
     Mapping,
     Optional,
     Protocol,
+    Sequence,
     Union,
 )
 
@@ -26,19 +27,29 @@ from nbank import archive
 class NotFetchableError(Exception):
     pass
 
+class NonFetchableResource:
+    """A resource that can't be fetched (e.g., in an archive on tape)"""
+    pass
 
-class Fetchable(Protocol):
-    """A resource that can be fetched from a location"""
-
+class FetchableResource(Protocol):
+    """A resource that can be fetched from a local or remote location"""
     def fetch(self, target: Path) -> Path:
         """Copies or downloads the resource to target directory or file. Returns target path or raises an error"""
         pass
 
+class LocalResource(FetchableResource, Protocol):
+    """A local resource that can be linked or referred to by path"""
+    path: Path
 
-class HttpResource(Fetchable):
+    def link(self, target: Path) -> Path:
+        """Links the resource to a target directory or file. Returns target path or raises an error"""
+        pass
+
+Resource = Union[FetchableResource, NonFetchableResource]
+
+
+class HttpResource(FetchableResource):
     """A resource that can be fetched from an HTTP(S) endpoint"""
-
-    local: False
 
     def __init__(self, location: Mapping[str, str], session: Optional[Client] = None):
         from urllib.parse import urlunparse
@@ -85,19 +96,22 @@ def parse_location(
     *,
     alt_base: Optional[Path] = None,
     http_session: Optional[Client] = None,
-) -> Fetchable:
-    """Parse a location dict and return a Fetchable
-
+) -> Optional[Resource]:
+    """Parse a location dict and return a Resource or None if the location is invalid.
+    
     location is a dict with 'scheme', 'root', and 'resource_name'.
 
     """
     scheme = location["scheme"]
     if scheme == "neurobank":
-        return archive.Resource(location["root"], location["resource_name"], alt_base)
+        try:
+            return archive.Resource(location["root"], location["resource_name"], alt_base)
+        except FileNotFoundError:
+            pass
     elif scheme in ("http", "https"):
         return HttpResource(location, http_session)
     else:
-        raise NotImplementedError(f"Unrecognized location scheme '{scheme}'")
+        log.debug("Unrecognized location scheme %s", scheme)
 
 
 def id_from_fname(fname: Union[Path, str]) -> str:
@@ -211,6 +225,23 @@ def query_registry_bulk(
         for line in r.iter_lines():
             yield json.loads(line)
 
+
+def fetch_resource(session: Client, locations: Sequence[dict], target: Path, *,  alt_base: Optional[Path] = None) -> Optional[Path]:
+    """Fetch a resource from an archive.
+
+    Local resources are copied to the target directory; remote resources are
+    downloaded. Stops after the first success.
+
+    """
+    sorted_locations = sorted(
+        (loc for loc_input in locations if (loc := parse_location(loc_input, alt_base=alt_base, http_session=session)) is not None),
+        key=lambda x: hasattr(x, "path")
+    )
+    for location in sorted_locations:
+        try:
+            return location.fetch(target)
+        except NotFetchableError:
+            continue
 
 __all__ = [
     "parse_location",

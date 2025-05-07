@@ -243,16 +243,11 @@ def main(argv=None):
     )
     pp.set_defaults(func=fetch_resources)
     pp.add_argument("-f", "--force", help="overwrite target file", action="store_true")
+    pp.add_argument("-d", "--dest", type=Path, help="path where the downloaded resource should be stored. Default is the current directory")
     pp.add_argument(
         "ids",
         nargs="+",
-        help="identifier of the resource or '-' to load list from stdin",
-    )
-    pp.add_argument(
-        "target",
-        type=Path,
-        help="path where the downloaded resource should be stored. If this is a directory, "
-        "the target file is named after the resource (without any extension)",
+        help="identifier(s) of the resource(s) to fetch",
     )
 
     pp = sub.add_parser("dtype", help="list and add data types")
@@ -374,28 +369,24 @@ def locate_resources(args):
                 continue
             url, params = registry.get_locations(base, id)
             try:
-                for loc in util.query_registry_paginated(session, url, params):
-                    try:
-                        resource = util.parse_location(loc)
-                    except FileNotFoundError:
-                        # local resource, not found, skip
-                        continue
-                    if args.link is not None:
-                        try:
-                            linkpath = resource.link(args.link)
-                            print(f"{id:<20}\t-> {linkpath}")
-                        except AttributeError:
-                            # not linkable
-                            continue
-                    elif args.print0 and resource.local:
-                        print(str(resource.path), end="\0")
-                    else:
-                        print(f"{id:<20}\t{resource}")
+                locations = util.query_registry_paginated(session, url, params)
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
                     log.error("%s: not found", id)
                 else:
                     registry.log_error(e)
+                continue
+            for loc in locations:
+                resource = util.parse_location(loc)
+                if resource is None:
+                    pass
+                elif args.link is not None:
+                    linkpath = resource.link(args.link)
+                    print(f"{id:<20}\t-> {linkpath}")
+                elif args.print0:
+                    print(str(resource.path), end="\0")
+                else:
+                    print(f"{id:<20}\t{resource}")
 
 
 def search_resources(args):
@@ -469,9 +460,26 @@ def set_resource_metadata(args):
 
 
 def fetch_resources(args):
-    url, query = registry.get_locations_bulk(args.registry, args.target, args.ids)
+    dest = args.dest or Path()
+    url, query = registry.get_locations_bulk(args.registry_url, args.ids)
     with httpx.Client() as session, concurrent.futures.ThreadPoolExecutor() as executor:
         session.auth = core.make_auth(args.auth)
+        response = util.query_registry_bulk(session, url, query)
+        import pdb; pdb.set_trace()
+        future_to_name = {
+            executor.submit(
+                util.fetch_resource,
+                session,
+                resource["locations"],
+                dest,  # what to do about extension?
+            ): resource["name"]
+            for resource in response
+        }
+        for future in concurrent.futures.as_completed(future_to_name):
+            resource_id = future_to_name[future]
+            path = future.result() or "(no valid locations)"
+            print(f"{resource_id:<20}\t-> {path}")
+
 
 
 def list_datatypes(args):

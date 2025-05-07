@@ -11,7 +11,7 @@ from typing import Any, Dict, Iterable, Iterator, Optional, Tuple, Union
 
 import httpx
 
-from nbank.util import Fetchable
+from nbank.util import FetchableResource
 
 # types that can be turned into authentication for httpx
 RegistryAuth = Union[Tuple[str, str], httpx.Auth, None]
@@ -162,7 +162,7 @@ def describe_many(registry_url: str, *ids: str) -> Iterator[Dict]:
 
 def find(
     registry_url: str, id: str, alt_base: Optional[Path] = None
-) -> Iterator[Fetchable]:
+) -> Iterator[FetchableResource]:
     """Generates a sequence of Fetchables where id can be located
 
     Set alt_base to replace the dirname of any local resources. This is intended
@@ -180,7 +180,7 @@ def find(
 
 def get(
     registry_url: str, id: str, alt_base: Optional[Path] = None
-) -> Optional[Fetchable]:
+) -> Optional[FetchableResource]:
     """Returns the first path or URL where id can be found, or None if no match.
 
     Set alt_base to replace the dirname of any local resources. This is intended
