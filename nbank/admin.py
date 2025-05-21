@@ -78,17 +78,20 @@ def tar_resources(args):
             resource_ids.add(resource_id)
 
     log.info("- looking up %d resource id(s) in %s archive", len(resource_ids), args.archive)
+    count = 0
     with httpx.Client(auth=args.auth) as session, tarfile.open(args.dest, mode="a") as tarf:
         url, query = registry.get_locations_bulk(args.registry_url, resource_ids, archive=args.archive)
         for resource in util.query_registry_bulk(session, url, query):
             for location in resource["locations"]:
                 if (loc := util.parse_location(location)) is not None:
-                    log.info("   - %s -> %s", resource_id, loc.path)
+                    log.info("   - %s -> %s", resource["name"], loc.path)
                     tarf.add(loc.path, arcname=loc.path.name)
                     resource_ids.remove(resource_id)
+                    count += 1
                     break
+    log.info("- stored %d resource(s) in %s", count, args.dest)
     if len(resource_ids) > 0:
-        log.warning("- warning: the following resources could not be located: %s", ",".join(resource_ids))
+        log.warning("- warning: the following resource(s) could not be located: %s", ",".join(resource_ids))
 
 
 if __name__ == "__main__":
