@@ -560,8 +560,11 @@ def check_archive(args):
         url, _ = registry.find_resource(registry_url)
         resource_names = {
             item["name"]: item["sha1"]
-            for item in util.query_registry_paginated(session, url, name=archive_name)
+            for item in util.query_registry_paginated(session, url, {"location": archive_name})
         }
+        n_total = len(resource_names)
+        n_ok = 0
+        n_extra = 0
         log.info("verifying resources:")
         for resource_file in archive.iter_resources(archive_path):
             resource_name = resource_file.stem
@@ -569,6 +572,7 @@ def check_archive(args):
                 sha1 = resource_names.pop(resource_name)
             except KeyError:
                 log.error(" - %s: FAILED to find in the registry!", resource_file)
+                n_extra += 1
                 continue
             msg = f" - {resource_name} : {resource_file}"
             if not os.access(resource_file, os.R_OK):
@@ -577,9 +581,11 @@ def check_archive(args):
                 log.error("%s - FAILED to match hash!", msg)
             else:
                 log.info("%s - OK", msg)
+                n_ok += 1
         for resource_name in resource_names:
             log.error(" - %s: FAILED to find in the archive!", resource_name)
-
+        log.info("\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d",
+                 n_total, len(resource_names), n_extra, n_total - n_ok)
 
 def verify_file_hash(args):
     from nbank.util import id_from_fname
