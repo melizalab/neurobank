@@ -390,10 +390,17 @@ def locate_resources(args):
                 if resource is None:
                     pass
                 elif args.link is not None:
-                    linkpath = resource.link(args.link)
-                    print(f"{id:<20}\t-> {linkpath}")
+                    try:
+                        linkpath = resource.link(args.link)
+                        print(f"{id:<20}\t-> {linkpath}")
+                        break
+                    except AttributeError:
+                        log.debug("%s doesn't support linking", resource)
                 elif args.print0:
-                    print(str(resource.path), end="\0")
+                    try:
+                        print(str(resource.path), end="\0")
+                    except AttributeError:
+                        log.debug("%s isn't local, skipping", resource)
                 else:
                     print(f"{id:<20}\t{resource}")
 
@@ -451,10 +458,12 @@ def set_resource_metadata(args):
 
 def fetch_resources(args):
     dest = args.dest or Path()
-    url, query = registry.get_locations_bulk(args.registry_url, args.ids)
+    to_fetch = set(args.ids)
+    url, query = registry.get_locations_bulk(args.registry_url, to_fetch)
     with httpx.Client() as session, concurrent.futures.ThreadPoolExecutor() as executor:
         session.auth = core.make_auth(args.auth)
-        response = util.query_registry_bulk(session, url, query)
+        response = tuple(util.query_registry_bulk(session, url, query))
+        to_fetch -= {resource["name"] for resource in response}
         future_to_name = {
             executor.submit(
                 util.fetch_resource,
@@ -462,14 +471,15 @@ def fetch_resources(args):
                 resource["locations"],
                 (dest / resource["name"]),
                 extension=args.extension,
+                force=args.force,
             ): resource["name"]
             for resource in response
         }
         for future in concurrent.futures.as_completed(future_to_name):
             resource_id = future_to_name[future]
-            path = future.result() or "(no valid locations)"
-            print(f"{resource_id:<20}\t-> {path}")
-
+            print(f"{resource_id:<20}\t-> {future.result()}")
+    for resource_id in to_fetch:
+        print(f"{resource_id:<20}\t-> (no locations found)")
 
 def list_datatypes(args):
     url, params = registry.get_datatypes(args.registry_url)

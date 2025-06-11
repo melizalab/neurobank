@@ -246,11 +246,16 @@ def fetch_resource(
     force: bool = False,
     extension: Optional[str] = None,
     alt_base: Optional[Path] = None,
-) -> Optional[Path]:
+) -> Union[Path, NotFetchableError, FileExistsError]:
     """Fetch a resource from an archive.
 
-    Local resources are copied to the target directory; remote resources are
-    downloaded. Stops after the first success.
+    Tries local resources, then remote ones. Local resources are copied to the
+    target directory; remote resources are downloaded. Stops after the first
+    success.
+
+    Returns the path of the downloaded file if successful, NotFetchableError if
+    the resource could not be fetched, or FileExistsError if the target already
+    exists.
 
     """
     if target.is_dir():
@@ -262,7 +267,7 @@ def fetch_resource(
             log.debug("removing target file %s", target)
             target.unlink()
         else:
-            raise FileExistsError(f"target file {target} already exists")
+            return FileExistsError(f"(target file {target} already exists)")
     sorted_locations = sorted(
         (
             loc
@@ -274,14 +279,15 @@ def fetch_resource(
             )
             is not None
         ),
-        key=lambda x: hasattr(x, "path"),
+        key=lambda x: not hasattr(x, "path"),
     )
     for location in sorted_locations:
+        log.debug("trying %s", location)
         try:
             return location.fetch(target)
         except NotFetchableError:
             continue
-
+    return NotFetchableError("(no valid locations)")
 
 __all__ = [
     "parse_location",
