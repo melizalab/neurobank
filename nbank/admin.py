@@ -170,8 +170,8 @@ if __name__ == "__main__":
     )
 
     pp = sub.add_parser(
-        "tar",
-        help="transfer resources from local archives to a tar file",
+        "register-tar",
+        help="register a tar file as a tape location in the registry",
     )
     pp.set_defaults(func=tar_resources)
     pp.add_argument(

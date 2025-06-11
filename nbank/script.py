@@ -280,6 +280,12 @@ def main(argv=None):
 
     pp = ppsub.add_parser("check", help="verify integrity of an archive")
     pp.set_defaults(func=check_archive)
+    pp.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="show results for all resources, not just errors",
+    )
     pp.add_argument("path", type=Path, help="path of the archive to check")
 
     args = p.parse_args(argv)
@@ -540,8 +546,9 @@ def check_archive(args):
 
     try:
         archive_cfg = archive.get_config(args.path)
-    except FileNotFoundError as err:
-        raise ValueError(f"{args.path} is not a valid archive") from err
+    except FileNotFoundError:
+        log.error(f"error: {args.path} is not a valid neurobank archive")
+        return
     archive_path = archive_cfg["path"]  # this will resolve the path
     log.info("archive: %s", archive_path)
     registry_url = archive_cfg["registry"]
@@ -560,7 +567,9 @@ def check_archive(args):
         url, _ = registry.find_resource(registry_url)
         resource_names = {
             item["name"]: item["sha1"]
-            for item in util.query_registry_paginated(session, url, {"location": archive_name})
+            for item in util.query_registry_paginated(
+                session, url, {"location": archive_name}
+            )
         }
         n_total = len(resource_names)
         n_ok = 0
@@ -580,12 +589,19 @@ def check_archive(args):
             elif util.hash(resource_file) != sha1:
                 log.error("%s - FAILED to match hash!", msg)
             else:
-                log.info("%s - OK", msg)
+                if args.verbose:
+                    log.info("%s - OK", msg)
                 n_ok += 1
         for resource_name in resource_names:
             log.error(" - %s: FAILED to find in the archive!", resource_name)
-        log.info("\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d",
-                 n_total, len(resource_names), n_extra, n_total - n_ok)
+        log.info(
+            "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d",
+            n_total,
+            len(resource_names),
+            n_extra,
+            n_total - n_ok,
+        )
+
 
 def verify_file_hash(args):
     from nbank.util import id_from_fname
