@@ -26,26 +26,34 @@ from nbank import archive
 
 log = logging.getLogger("nbank")  # root logger
 
+
 class NotFetchableError(Exception):
     pass
 
+
 class NonFetchableResource:
     """A resource that can't be fetched (e.g., in an archive on tape)"""
+
     pass
+
 
 class FetchableResource(Protocol):
     """A resource that can be fetched from a local or remote location"""
+
     def fetch(self, target: Path) -> Path:
         """Copies or downloads the resource to target directory or file. Returns target path or raises an error"""
         pass
 
+
 class LocalResource(FetchableResource, Protocol):
     """A local resource that can be linked or referred to by path"""
+
     path: Path
 
     def link(self, target: Path) -> Path:
         """Links the resource to a target directory or file. Returns target path or raises an error"""
         pass
+
 
 Resource = Union[FetchableResource, NonFetchableResource]
 
@@ -107,7 +115,9 @@ def parse_location(
     scheme = location["scheme"]
     if scheme == "neurobank":
         try:
-            return archive.Resource(location["root"], location["resource_name"], alt_base)
+            return archive.Resource(
+                location["root"], location["resource_name"], alt_base
+            )
         except FileNotFoundError:
             pass
     elif scheme in ("http", "https"):
@@ -228,22 +238,50 @@ def query_registry_bulk(
             yield json.loads(line)
 
 
-def fetch_resource(session: Client, locations: Sequence[dict], target: Path, *,  alt_base: Optional[Path] = None) -> Optional[Path]:
+def fetch_resource(
+    session: Client,
+    locations: Sequence[dict],
+    target: Path,
+    *,
+    force: bool = False,
+    extension: Optional[str] = None,
+    alt_base: Optional[Path] = None,
+) -> Optional[Path]:
     """Fetch a resource from an archive.
 
     Local resources are copied to the target directory; remote resources are
     downloaded. Stops after the first success.
 
     """
+    if target.is_dir():
+        raise FileNotFoundError("target file must be a filename, not a directory")
+    if extension:
+        target = target.with_suffix(f".{extension}")
+    if target.exists():
+        if force:
+            log.debug("removing target file %s", target)
+            target.unlink()
+        else:
+            raise FileExistsError(f"target file {target} already exists")
     sorted_locations = sorted(
-        (loc for loc_input in locations if (loc := parse_location(loc_input, alt_base=alt_base, http_session=session)) is not None),
-        key=lambda x: hasattr(x, "path")
+        (
+            loc
+            for loc_input in locations
+            if (
+                loc := parse_location(
+                    loc_input, alt_base=alt_base, http_session=session
+                )
+            )
+            is not None
+        ),
+        key=lambda x: hasattr(x, "path"),
     )
     for location in sorted_locations:
         try:
             return location.fetch(target)
         except NotFetchableError:
             continue
+
 
 __all__ = [
     "parse_location",

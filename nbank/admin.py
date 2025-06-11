@@ -67,6 +67,7 @@ def delete_resources(args):
                 else:
                     raise err
 
+
 def tar_resources(args):
     log.info("- transferring resources to %s", args.dest)
     resource_ids = set()
@@ -91,8 +92,10 @@ def tar_resources(args):
                     break
     log.info("- stored %d resource(s) in %s", count, args.dest)
     if len(resource_ids) > 0:
-        log.warning("- warning: the following resource(s) could not be located: %s", ",".join(resource_ids))
-
+        log.warning(
+            "- warning: the following resources could not be located: %s",
+            ",".join(resource_ids),
+        )
 
 if __name__ == "__main__":
     import argparse
@@ -133,7 +136,8 @@ if __name__ == "__main__":
     )
 
     pp = sub.add_parser(
-        "tar", help="transfer resources from local archives to a tar file for writing to tape"
+        "tar",
+        help="transfer resources from local archives to a tar file for writing to tape",
     )
     pp.set_defaults(func=tar_resources)
     pp.add_argument(
@@ -142,13 +146,10 @@ if __name__ == "__main__":
     pp.add_argument(
         "archive", type=str, help="name of the source archive (must be local)"
     )
-    pp.add_argument(
-        "dest", type=Path, help="name of the destination tar file"
-    )
+    pp.add_argument("dest", type=Path, help="name of the destination tar file")
     # pp.add_argument(
     #     "archive_index", type=int, help="index of the file on the tape where the archive will be stored"
     # )
-
 
     args = p.parse_args()
     if not hasattr(args, "func"):

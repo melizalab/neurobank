@@ -239,11 +239,20 @@ def main(argv=None):
     pp.add_argument("id", nargs="+", help="identifier(s) of the resource(s)")
 
     pp = sub.add_parser(
-        "fetch", help="fetch downloadable resources from the registry server"
+        "fetch",
+        help="fetch downloadable resources from the registry server",
     )
     pp.set_defaults(func=fetch_resources)
     pp.add_argument("-f", "--force", help="overwrite target file", action="store_true")
-    pp.add_argument("-d", "--dest", type=Path, help="path where the downloaded resource should be stored. Default is the current directory")
+    pp.add_argument(
+        "-d",
+        "--dest",
+        type=Path,
+        help="path where the downloaded resources should be stored. Default is the current directory.",
+    )
+    pp.add_argument(
+        "-e", "--extension", help="add an extension to downloaded file names"
+    )
     pp.add_argument(
         "ids",
         nargs="+",
@@ -440,25 +449,6 @@ def set_resource_metadata(args):
         sys.stdout.write("\n")
 
 
-# def fetch_resource(args):
-#     if args.target.is_dir():
-#         target = args.target / args.id
-#     else:
-#         target = args.target
-#     if target.exists():
-#         if args.force:
-#             log.debug("removing target file %s", target)
-#             target.unlink()
-#         else:
-#             log.error("nbank fetch: error: the target file %s exists already", target)
-#             return
-#     try:
-#         core.fetch(args.registry_url, args.id, target, auth=args.auth)
-#     except ValueError as e:
-#         log.error(e)
-#         return
-
-
 def fetch_resources(args):
     dest = args.dest or Path()
     url, query = registry.get_locations_bulk(args.registry_url, args.ids)
@@ -470,7 +460,8 @@ def fetch_resources(args):
                 util.fetch_resource,
                 session,
                 resource["locations"],
-                dest,  # what to do about extension?
+                (dest / resource["name"]),
+                extension=args.extension,
             ): resource["name"]
             for resource in response
         }
@@ -478,7 +469,6 @@ def fetch_resources(args):
             resource_id = future_to_name[future]
             path = future.result() or "(no valid locations)"
             print(f"{resource_id:<20}\t-> {path}")
-
 
 
 def list_datatypes(args):
