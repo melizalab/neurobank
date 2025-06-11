@@ -70,9 +70,9 @@ def test_get_datatypes():
 
 
 def test_get_archives():
-    url, params = registry.get_archives(base_url)
+    url, params = registry.get_archives(base_url, name="test")
     assert url == registry.url_join(base_url, "archives/")
-    assert params is None
+    assert params == {"name": "test"}
 
 
 def test_find_archive():

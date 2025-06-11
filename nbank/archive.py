@@ -7,7 +7,7 @@ Copyright (C) 2013-2025 Dan Meliza <dan@meliza.org>
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, NewType, Optional, Union
+from typing import Any, Dict, Iterator, NewType, Optional, Union
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -177,6 +177,12 @@ def resolve_extension(path: Path) -> Path:
         return next(paths)
     except StopIteration as err:
         raise FileNotFoundError(f"resource '{path}' does not exist") from err
+
+
+def iter_resources(path: Path) -> Iterator[Path]:
+    base_dir = path / _resource_subdir
+    for stub_dir in base_dir.iterdir():
+        yield from stub_dir.iterdir()
 
 
 class Resource:

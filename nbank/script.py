@@ -275,6 +275,12 @@ def main(argv=None):
 
     pp = ppsub.add_parser("list", help="list archives")
     pp.set_defaults(func=list_archives)
+    pp.add_argument("--scheme", help="filter archive list by scheme")
+    pp.add_argument("-n", "--name", help="filter archive list by name")
+
+    pp = ppsub.add_parser("check", help="verify integrity of an archive")
+    pp.set_defaults(func=check_archive)
+    pp.add_argument("path", type=Path, help="path of the archive to check")
 
     args = p.parse_args(argv)
 
@@ -502,13 +508,77 @@ def add_datatype(args):
 
 
 def list_archives(args):
-    url, params = registry.get_archives(args.registry_url)
+    # parse commandline args to query dict
+    argmap = [
+        ("name", "name"),
+        ("scheme", "scheme"),
+    ]
+    params = {
+        paramname: getattr(args, argname)
+        for (paramname, argname) in argmap
+        if getattr(args, argname) is not None
+    }
+    url, params = registry.get_archives(args.registry_url, **params)
     for arch in util.query_registry_paginated(httpx, url, params):
         if arch["scheme"] == "neurobank":
             print(f"{arch['name']:<25}\t{arch['root']}")
         else:
             url = urlunparse((arch["scheme"], arch["root"], "", "", "", ""))
             print(f"{arch['name']:<25}\t{url}")
+
+
+def check_archive(args):
+    """Verify the integrity of an archive.
+
+    - every file is readable
+    - every file's hash and name matches a record in the registry
+    - every record in the registry is matched with a file
+
+    TODO support non-neurobank archives
+    """
+    import os
+
+    try:
+        archive_cfg = archive.get_config(args.path)
+    except FileNotFoundError as err:
+        raise ValueError(f"{args.path} is not a valid archive") from err
+    archive_path = archive_cfg["path"]  # this will resolve the path
+    log.info("archive: %s", archive_path)
+    registry_url = archive_cfg["registry"]
+    log.info("   registry: %s", registry_url)
+    # retrieve a list of all the resources that should be in the archive
+    with httpx.Client(auth=args.auth) as session:
+        # check that archive exists for this path
+        url, params = registry.find_archive_by_path(registry_url, archive_path)
+        try:
+            archive_name = util.query_registry_first(session, url, params)["name"]
+        except TypeError as err:
+            raise RuntimeError(
+                f"archive '{archive_path}' not in registry. did it move?"
+            ) from err
+        log.info("retrieving resources in %s", archive_name)
+        url, _ = registry.find_resource(registry_url)
+        resource_names = {
+            item["name"]: item["sha1"]
+            for item in util.query_registry_paginated(session, url, name=archive_name)
+        }
+        log.info("verifying resources:")
+        for resource_file in archive.iter_resources(archive_path):
+            resource_name = resource_file.stem
+            try:
+                sha1 = resource_names.pop(resource_name)
+            except KeyError:
+                log.error(" - %s: FAILED to find in the registry!", resource_file)
+                continue
+            msg = f" - {resource_name} : {resource_file}"
+            if not os.access(resource_file, os.R_OK):
+                log.error("%s - FAILED to read!", msg)
+            elif util.hash(resource_file) != sha1:
+                log.error("%s - FAILED to match hash!", msg)
+            else:
+                log.info("%s - OK", msg)
+        for resource_name in resource_names:
+            log.error(" - %s: FAILED to find in the archive!", resource_name)
 
 
 def verify_file_hash(args):

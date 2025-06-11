@@ -29,9 +29,10 @@ class Resource:
         except ValueError as err:
             raise ValueError("Tape resources must have the form 'name:index'") from err
         self.alt_base = alt_base
+        self.name = id
         # TODO: set local to True if alt_base is set?
 
     def __str__(self):
-        return f"tape: {self.tape_name}:{self.file_index}"
+        return f"tape://{self.tape_name}:{self.file_index}/{self.name}"
 
     # TODO: implement fetch when alt_base is set?
