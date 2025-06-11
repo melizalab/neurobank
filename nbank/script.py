@@ -270,7 +270,10 @@ def main(argv=None):
     pp.add_argument("content_type", help="the MIME content-type for the data type")
     pp.set_defaults(func=add_datatype)
 
-    pp = sub.add_parser("archives", help="list available archives (archives)")
+    pp = sub.add_parser("archive", help="list and manipulate archives")
+    ppsub = pp.add_subparsers(title="subcommands")
+
+    pp = ppsub.add_parser("list", help="list archives")
     pp.set_defaults(func=list_archives)
 
     args = p.parse_args(argv)

@@ -268,19 +268,9 @@ def fetch_resource(
             target.unlink()
         else:
             return FileExistsError(f"(target file {target} already exists)")
-    sorted_locations = sorted(
-        (
-            loc
-            for loc_input in locations
-            if (
-                loc := parse_location(
-                    loc_input, alt_base=alt_base, http_session=session
-                )
-            )
-            is not None
-        ),
-        key=lambda x: not hasattr(x, "path"),
-    )
+    loc_parsed = (parse_location(loc, alt_base=alt_base, http_session=session) for loc in locations)
+    sorted_locations = sorted((loc for loc in loc_parsed if loc is not None), key=lambda x: not hasattr(x, "path"))
+
     for location in sorted_locations:
         log.debug("trying %s", location)
         try:
