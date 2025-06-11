@@ -69,33 +69,67 @@ def delete_resources(args):
 
 
 def tar_resources(args):
-    log.info("- transferring resources to %s", args.dest)
-    resource_ids = set()
-    with open(args.resources) as fp:
-        for line in fp:
-            resource_id = line.strip()
-            if len(resource_id) == 0 or resource_id.startswith("#"):
-                continue
-            resource_ids.add(resource_id)
-
-    log.info("- looking up %d resource id(s) in %s archive", len(resource_ids), args.archive)
-    count = 0
-    with httpx.Client(auth=args.auth) as session, tarfile.open(args.dest, mode="a") as tarf:
-        url, query = registry.get_locations_bulk(args.registry_url, resource_ids, archive=args.archive)
-        for resource in util.query_registry_bulk(session, url, query):
-            for location in resource["locations"]:
-                if (loc := util.parse_location(location)) is not None:
-                    log.info("   - %s -> %s", resource["name"], loc.path)
-                    tarf.add(loc.path, arcname=loc.path.name)
-                    resource_ids.remove(resource_id)
-                    count += 1
-                    break
-    log.info("- stored %d resource(s) in %s", count, args.dest)
-    if len(resource_ids) > 0:
-        log.warning(
-            "- warning: the following resources could not be located: %s",
-            ",".join(resource_ids),
+    archive_root = f"{args.tape_name}:{args.file_number}"
+    url, params = registry.add_archive(
+        args.registry_url, name=args.archive_name, scheme="tape", root=archive_root
+    )
+    with httpx.Client(auth=args.auth) as session, tarfile.open(
+        args.tar, mode="r"
+    ) as tarf:
+        log.info(
+            "- creating '%s' archive in the registry with root '%s'",
+            args.archive_name,
+            archive_root,
         )
+        if not args.dry_run:
+            try:
+                r = session.post(url, json=params)
+                r.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                # TODO okay to proceed if args.use_existing is set
+                registry.log_error(e)
+                return
+        log.info("- scanning contents of %s", args.tar)
+        for tarinfo in tarf:
+            if not tarinfo.isreg():
+                log.info("  - %s -> not a regular file, skipping", tarinfo.name)
+                continue
+            # look up the resource
+            url, params = registry.get_resource(
+                args.registry_url, Path(tarinfo.name).stem
+            )
+            result = util.query_registry(session, url, params)
+            if result is None:
+                log.info("  - %s -> no match in registry, skipping", tarinfo.name)
+            elif args.archive_name in result["locations"]:
+                log.info(
+                    "  - %s -> already associated with '%s' location",
+                    tarinfo.name,
+                    args.archive_name,
+                )
+            elif args.dry_run:
+                log.info(
+                    "  - %s -> added location in '%s' (dry run)",
+                    tarinfo.name,
+                    args.archive_name,
+                )
+            else:
+                # TODO option to verify hash
+                url, params = registry.add_location(
+                    args.registry_url, result["name"], args.archive_name
+                )
+                try:
+                    r = session.post(url, json=params)
+                    r.raise_for_status()
+                    log.info(
+                        "  - %s -> added location in '%s'",
+                        tarinfo.name,
+                        args.archive_name,
+                    )
+                except httpx.HTTPStatusError as e:
+                    registry.log_error(e)
+                    return
+
 
 if __name__ == "__main__":
     import argparse
@@ -137,19 +171,30 @@ if __name__ == "__main__":
 
     pp = sub.add_parser(
         "tar",
-        help="transfer resources from local archives to a tar file for writing to tape",
+        help="transfer resources from local archives to a tar file",
     )
     pp.set_defaults(func=tar_resources)
     pp.add_argument(
-        "resources", type=Path, help="file with a list of resources to transfer"
+        "--use-existing",
+        action="store_true",
+        help="continue if the archive already exists in the registry",
     )
     pp.add_argument(
-        "archive", type=str, help="name of the source archive (must be local)"
+        "-y",
+        "--dry-run",
+        help="don't make any changes to the registry",
+        action="store_true",
     )
-    pp.add_argument("dest", type=Path, help="name of the destination tar file")
-    # pp.add_argument(
-    #     "archive_index", type=int, help="index of the file on the tape where the archive will be stored"
-    # )
+    pp.add_argument("archive_name", help="name of the archive")
+    pp.add_argument(
+        "tape_name", type=str, help="name of the tape where the tar file was written"
+    )
+    pp.add_argument(
+        "file_number",
+        type=int,
+        help="index of the file on the tape where the tar file was written",
+    )
+    pp.add_argument("tar", type=Path, help="tar file with the resources to transfer")
 
     args = p.parse_args()
     if not hasattr(args, "func"):

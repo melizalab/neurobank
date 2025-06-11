@@ -484,6 +484,7 @@ def fetch_resources(args):
     for resource_id in to_fetch:
         print(f"{resource_id:<20}\t-> (no locations found)")
 
+
 def list_datatypes(args):
     url, params = registry.get_datatypes(args.registry_url)
     for dtype in util.query_registry_paginated(httpx, url, params):

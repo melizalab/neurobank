@@ -1,8 +1,7 @@
 # -*- mode: python -*-
-"""functions for managing a data archive
+"""functions for managing a data archive on the local filesystem
 
-Copyright (C) 2013 Dan Meliza <dan@meliza.org>
-Created Mon Nov 25 08:52:28 2013
+Copyright (C) 2013-2025 Dan Meliza <dan@meliza.org>
 """
 
 import json

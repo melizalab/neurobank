@@ -15,47 +15,16 @@ from typing import (
     List,
     Mapping,
     Optional,
-    Protocol,
     Sequence,
     Union,
 )
 
 from httpx import Client
 
-from nbank import archive
+from nbank import archive, tape_archive
+from nbank.types import FetchableResource, NotFetchableError, Resource
 
 log = logging.getLogger("nbank")  # root logger
-
-
-class NotFetchableError(Exception):
-    pass
-
-
-class NonFetchableResource:
-    """A resource that can't be fetched (e.g., in an archive on tape)"""
-
-    pass
-
-
-class FetchableResource(Protocol):
-    """A resource that can be fetched from a local or remote location"""
-
-    def fetch(self, target: Path) -> Path:
-        """Copies or downloads the resource to target directory or file. Returns target path or raises an error"""
-        pass
-
-
-class LocalResource(FetchableResource, Protocol):
-    """A local resource that can be linked or referred to by path"""
-
-    path: Path
-
-    def link(self, target: Path) -> Path:
-        """Links the resource to a target directory or file. Returns target path or raises an error"""
-        pass
-
-
-Resource = Union[FetchableResource, NonFetchableResource]
 
 
 class HttpResource(FetchableResource):
@@ -113,6 +82,7 @@ def parse_location(
 
     """
     scheme = location["scheme"]
+    # TODO: replace hard-coded dispatch - plugin?
     if scheme == "neurobank":
         try:
             return archive.Resource(
@@ -122,6 +92,10 @@ def parse_location(
             pass
     elif scheme in ("http", "https"):
         return HttpResource(location, http_session)
+    elif scheme == "tape":
+        return tape_archive.Resource(
+            location["root"], location["resource_name"], alt_base
+        )
     else:
         log.debug("Unrecognized location scheme %s", scheme)
 
@@ -268,8 +242,14 @@ def fetch_resource(
             target.unlink()
         else:
             return FileExistsError(f"(target file {target} already exists)")
-    loc_parsed = (parse_location(loc, alt_base=alt_base, http_session=session) for loc in locations)
-    sorted_locations = sorted((loc for loc in loc_parsed if loc is not None), key=lambda x: not hasattr(x, "path"))
+    loc_parsed = (
+        parse_location(loc, alt_base=alt_base, http_session=session)
+        for loc in locations
+    )
+    sorted_locations = sorted(
+        (loc for loc in loc_parsed if loc is not None),
+        key=lambda x: not hasattr(x, "path"),
+    )
 
     for location in sorted_locations:
         log.debug("trying %s", location)
@@ -278,6 +258,7 @@ def fetch_resource(
         except NotFetchableError:
             continue
     return NotFetchableError("(no valid locations)")
+
 
 __all__ = [
     "parse_location",

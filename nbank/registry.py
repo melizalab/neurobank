@@ -104,6 +104,14 @@ def get_locations_bulk(base_url: str, ids: Sequence[str], **params) -> Tuple[str
     return (url_join(base_url, "bulk", "locations/"), {"names": list(ids), **params})
 
 
+def add_location(base_url: str, id: str, archive: str) -> Tuple[str, Dict]:
+    """Constructs URL to add a location for a resource (use post)"""
+    return (
+        url_join(base_url, "resources", id, "locations/"),
+        {"archive_name": archive},
+    )
+
+
 def add_datatype(base_url: str, name: str, content_type: str) -> Tuple[str, Dict]:
     """Constructs URL to add a datatype to the registry"""
     return (
