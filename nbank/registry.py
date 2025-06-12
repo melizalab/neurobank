@@ -66,6 +66,11 @@ def get_archives(base_url: str, **params) -> Tuple[str, None]:
     return (url_join(base_url, "archives/"), params)
 
 
+def get_archive(base_url: str, name: str) -> Tuple[str, None]:
+    """Constructs URL to get information about an archive by name"""
+    return (url_join(base_url, "archives/", f"{name}/"), None)
+
+
 def find_archive_by_path(base_url: str, path: Union[str, Path]) -> Tuple[str, Dict]:
     """Constructs URL to search for the archive associated with path"""
     return (

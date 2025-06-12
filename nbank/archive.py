@@ -6,6 +6,7 @@ Copyright (C) 2013-2025 Dan Meliza <dan@meliza.org>
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, Iterator, NewType, Optional, Union
 
@@ -198,7 +199,8 @@ class Resource:
 
     """
 
-    local: True
+    schemes = ("neurobank",)
+    local = True
 
     def __init__(self, root: str, id: str, alt_base: Optional[Path] = None):
         root = Path(root)
@@ -208,6 +210,10 @@ class Resource:
 
     def __str__(self):
         return str(self.path)
+
+    @property
+    def deletable(self) -> bool:
+        return os.access(self.path.parent, os.W_OK)
 
     def fetch(self, target: Path) -> Path:
         from shutil import copyfile

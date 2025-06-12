@@ -69,8 +69,24 @@ def delete_resources(args):
 
 
 def prune_archive(args):
-    """Remove files from an archive, but only if they're stored somewhere else"""
+    """Remove files from a neurobank archive, but only if they're stored somewhere else"""
     with open(args.resources) as fp, httpx.Client(auth=args.auth) as session:
+        # check that the archive is on the local machine
+        url, _ = registry.get_archive(args.registry_url, args.archive_name)
+        result = util.query_registry(session, url)
+        if result is None:
+            log.error("No such archive '%s' in the registry", args.archive_name)
+            return
+        if result["scheme"] not in archive.Resource.schemes:
+            log.error("'%s' is not a neurobank archive ", args.archive_name)
+            return
+        if not Path(result["root"]).is_dir():
+            log.error(
+                "The archive '%s' is not on this host (%s) ",
+                args.archive_name,
+                result["root"],
+            )
+            return
         for line in fp:
             resource_id = line.strip()
             if len(resource_id) == 0 or resource_id.startswith("#"):
@@ -88,19 +104,30 @@ def prune_archive(args):
             elif len(locations) < 2:
                 log.info("  ✗ this archive is the only location for this resource")
             else:
-                # this will throw FileNotFound if the file is missing, a fatal problem
+                # this can throw FileNotFound but that shouldn't happen unless
+                # something is really wrong
                 resource = util.parse_location(locations[args.archive_name])
+                if resource is None:
+                    log.error("  ✗ resource is not actually present in archive!")
+                    continue
+                if not args.dry_run and not resource.deletable:
+                    log.info("  ✗ insufficient permissions to delete")
+                    continue
                 url, query = registry.get_location(
                     args.registry_url, resource_id, args.archive_name
                 )
                 req = session.build_request("DELETE", url)
-                log.info("  - removed %s", req.url)
                 if not args.dry_run:
                     r = session.send(req)
-                    r.raise_for_status()
-                log.info("  - deleted %s", resource.path)
+                    if r.status_code != httpx.codes.NO_CONTENT:
+                        log.info(
+                            "  ✗ unable to remove from registry: %s", r.json()["detail"]
+                        )
+                        continue
+                log.info("  - removed %s", req.url)
                 if not args.dry_run:
                     resource.unlink()
+                log.info("  - deleted %s", resource.path)
 
 
 def tar_resources(args):

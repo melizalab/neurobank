@@ -76,6 +76,12 @@ def test_get_archives():
     assert params == {"name": "test"}
 
 
+def test_get_archive():
+    url, params = registry.get_archive(base_url, location)
+    assert url == f"{base_url}archives/{location}/"
+    assert params is None
+
+
 def test_find_archive():
     test_path = "/test/path"
     url, params = registry.find_archive_by_path(base_url, test_path)

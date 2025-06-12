@@ -30,6 +30,8 @@ log = logging.getLogger("nbank")  # root logger
 class HttpResource(FetchableResource):
     """A resource that can be fetched from an HTTP(S) endpoint"""
 
+    schemes = ("http", "https")
+
     def __init__(self, location: Mapping[str, str], session: Optional[Client] = None):
         from urllib.parse import urlunparse
 
