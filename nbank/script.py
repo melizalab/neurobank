@@ -389,35 +389,36 @@ def locate_resources(args):
             except ValueError:
                 base = args.registry_url
             if base is None:
-                print(f"{id:<25} [no registry to resolve short identifier]")
+                print(f"{id:<20} [no registry to resolve short identifier]")
                 continue
             url, params = registry.get_locations(base, id)
             try:
                 locations = util.query_registry_paginated(session, url, params)
+                for loc in locations:
+                    resource = util.parse_location(loc)
+                    if resource is None:
+                        pass
+                    elif args.link is not None:
+                        try:
+                            linkpath = resource.link(args.link)
+                            print(f"{id:<20}\t-> {linkpath}")
+                            break
+                        except AttributeError:
+                            log.info("%s doesn't support linking", resource)
+                    elif args.print0:
+                        try:
+                            print(str(resource.path), end="\0")
+                        except AttributeError:
+                            log.info("%s isn't local, skipping", resource)
+                    else:
+                        print(f"{id:<20}\t{resource}")
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
-                    log.error("%s: not found", id)
+                    print(f"{id:<20}\t(not found)")
                 else:
                     registry.log_error(e)
                 continue
-            for loc in locations:
-                resource = util.parse_location(loc)
-                if resource is None:
-                    pass
-                elif args.link is not None:
-                    try:
-                        linkpath = resource.link(args.link)
-                        print(f"{id:<20}\t-> {linkpath}")
-                        break
-                    except AttributeError:
-                        log.debug("%s doesn't support linking", resource)
-                elif args.print0:
-                    try:
-                        print(str(resource.path), end="\0")
-                    except AttributeError:
-                        log.debug("%s isn't local, skipping", resource)
-                else:
-                    print(f"{id:<20}\t{resource}")
+
 
 
 def search_resources(args):
