@@ -11,7 +11,9 @@ import datetime
 import json
 import logging
 import os
+import shutil
 import sys
+import tarfile
 from pathlib import Path
 from urllib.parse import urlunparse
 
@@ -303,6 +305,20 @@ def main(argv=None):
     pp.add_argument("archive_name", type=str, help="name of the archive to prune")
     pp.add_argument("resources", type=Path, help="file with list of resources to prune")
 
+    pp = ppsub.add_parser(
+        "import-tar",
+        help="import resources from a tar file to a neurobank archive",
+    )
+    pp.set_defaults(func=import_tar)
+    pp.add_argument(
+        "-y",
+        "--dry-run",
+        help="don't copy any files or make any changes to the registry",
+        action="store_true",
+    )
+    pp.add_argument("tar", type=Path, help="tar file with the resources to import")
+    pp.add_argument("dest", type=Path, help="path of the destination neurobank archive")
+
     args = p.parse_args(argv)
 
     if not hasattr(args, "func"):
@@ -570,13 +586,15 @@ def check_archive(args):
     with httpx.Client(auth=args.auth) as session:
         # check that archive exists for this path
         url, params = registry.find_archive_by_path(registry_url, archive_path)
-        try:
-            archive_name = util.query_registry_first(session, url, params)["name"]
-        except TypeError as err:
-            raise RuntimeError(
-                f"archive '{archive_path}' not in registry. did it move?"
-            ) from err
-        log.info("retrieving resources that should be in %s from the registry...", archive_name)
+        archive_info = util.query_registry_first(session, url, params)
+        if archive_info is None:
+            log.error("No archive associated with '%s' in the registry", archive_path)
+            return
+        archive_name = archive_info["name"]
+        log.info(
+            "retrieving resources that should be in %s from the registry...",
+            archive_name,
+        )
         url, _ = registry.find_resource(registry_url)
         resources = {
             item["name"]: item["sha1"]
@@ -586,6 +604,7 @@ def check_archive(args):
         }
         n_total = len(resources)
         n_ok = 0
+        n_err = 0
         n_extra = 0
         log.info("verifying resources:")
         for resource_file in archive.iter_resources(archive_path):
@@ -593,31 +612,38 @@ def check_archive(args):
             try:
                 sha1 = resources.pop(resource_name)
             except KeyError:
-                log.error(" - %s: FAILED to find in the registry under %s!", resource_file, archive_name)
+                log.error(
+                    " - %s: MISSING from the registry under %s!",
+                    resource_file,
+                    archive_name,
+                )
                 n_extra += 1
                 continue
             msg = f" - {resource_name} : {resource_file}"
             if not os.access(resource_file, os.R_OK):
                 log.error("%s - FAILED to read!", msg)
+                n_err += 1
             elif util.hash(resource_file) != sha1:
                 log.error("%s - FAILED to match hash!", msg)
+                n_err += 1
             else:
                 if args.verbose:
                     log.info("%s - OK", msg)
                 n_ok += 1
         for resource_name in resources:
-            log.error(" - %s: FAILED to find in the archive!", resource_name)
+            log.error(" - %s: MISSING from the archive!", resource_name)
         log.info(
             "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d",
             n_total,
             len(resources),
             n_extra,
-            n_total - n_ok,
+            n_err,
         )
 
 
 def prune_archive(args):
     """Remove files from a neurobank archive, but only if they're stored somewhere else"""
+    log.info("registry: %s", args.registry_url)
     with open(args.resources) as fp, httpx.Client(auth=args.auth) as session:
         # check that the archive is on the local machine
         url, _ = registry.get_archive(args.registry_url, args.archive_name)
@@ -635,6 +661,7 @@ def prune_archive(args):
                 result["root"],
             )
             return
+        log.info("pruning archive: %s (%s)", args.archive_name, result["root"])
         for line in fp:
             resource_id = line.strip()
             if len(resource_id) == 0 or resource_id.startswith("#"):
@@ -676,6 +703,82 @@ def prune_archive(args):
                 if not args.dry_run:
                     resource.unlink()
                 log.info("  - deleted %s", resource.path)
+
+
+def import_tar(args):
+    """Import files from a tar file into a neurobank archive"""
+    try:
+        archive_cfg = archive.get_config(args.dest)
+    except FileNotFoundError:
+        log.error(f"error: {args.dest} is not a valid neurobank archive")
+        return
+    registry_url = archive_cfg["registry"]
+    archive_path = archive_cfg["path"]  # this will resolve the path
+    log.info("registry: %s", registry_url)
+    with httpx.Client(auth=args.auth) as session, tarfile.open(args.tar) as tarf:
+        url, params = registry.find_archive_by_path(registry_url, archive_path)
+        archive_info = util.query_registry_first(session, url, params)
+        if archive_info is None:
+            log.error("No archive associated with '%s' in the registry", archive_path)
+            return
+        archive_name = archive_info["name"]
+        log.info("destination archive: %s (%s)", archive_name, archive_path)
+        log.info("source archive file: %s", args.tar)
+        for tarinfo in tarf:
+            if not tarinfo.isreg():
+                log.debug("  ✗ %s is not a regular file, skipping", tarinfo.name)
+                continue
+            file_path = Path(tarinfo.name)
+            # regardless of keep_extension policy, the resource will not have
+            # the extension
+            resource_name = file_path.stem
+            url, _ = registry.get_resource(registry_url, resource_name)
+            resource_info = util.query_registry(session, url)
+            if resource_info is None:
+                log.info("  ✗ %s -> '%s' not in the registry", file_path, resource_name)
+                continue
+            elif archive_name in resource_info["locations"]:
+                log.info(
+                    "  ✗ %s -> '%s' is already in the destination archive",
+                    file_path,
+                    resource_name,
+                )
+                continue
+            dest_dir = archive.resource_path(
+                archive_cfg, resource_name, resolve_ext=False
+            ).parent
+            if not os.access(dest_dir, os.W_OK):
+                log.info(
+                    "  ✗ %s -> unable to write to destination directory (%s)",
+                    file_path,
+                    dest_dir,
+                )
+                continue
+            url, query = registry.add_location(
+                registry_url, resource_name, archive_name
+            )
+            req = session.build_request("POST", url, json=query)
+            dest_path = dest_dir / file_path.name
+            if not args.dry_run:
+                r = session.send(req)
+                if r.status_code != httpx.codes.CREATED:
+                    log.info(
+                        "  ✗ %s -> unable to add location: ",
+                        file_path,
+                        r.json()["detail"],
+                    )
+                elif dest_path.exists():
+                    log.warn(
+                        "  - %s -> file is already there but not in registry, skipping",
+                        file_path,
+                    )
+                else:
+                    reader = tarf.extractfile(tarinfo)
+                    log.info("  - %s -> %s", file_path, dest_path)
+                    with open(dest_path, "wb") as dest_file:
+                        shutil.copyfileobj(reader, dest_file)
+            else:
+                log.info("  - %s -> %s (dry run)", file_path, dest_path)
 
 
 def verify_file_hash(args):

@@ -68,16 +68,12 @@ def delete_resources(args):
                     raise err
 
 
-
-
 def tar_resources(args):
     archive_root = f"{args.tape_name}:{args.file_number}"
     url, params = registry.add_archive(
         args.registry_url, name=args.archive_name, scheme="tape", root=archive_root
     )
-    with httpx.Client(auth=args.auth) as session, tarfile.open(
-        args.tar, mode="r"
-    ) as tarf:
+    with httpx.Client(auth=args.auth) as session, tarfile.open(args.tar) as tarf:
         log.info(
             "- creating '%s' archive in the registry with root '%s'",
             args.archive_name,
