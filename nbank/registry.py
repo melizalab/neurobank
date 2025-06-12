@@ -89,11 +89,6 @@ def get_resource_bulk(base_url: str, ids: Sequence[str]) -> Tuple[str, Dict]:
     return (url_join(base_url, "bulk", "resources/"), {"names": list(ids)})
 
 
-def fetch_resource(base_url: str, id: str) -> Tuple[str, None]:
-    """Constructs URL to download a resource from the server"""
-    return (url_join(base_url, "download", id), None)
-
-
 def get_locations(base_url: str, id: str, **params) -> Tuple[str, Dict]:
     """Constructs URL to look up the locations of a resource."""
     return (url_join(base_url, "resources", id, "locations/"), params)
@@ -110,6 +105,11 @@ def add_location(base_url: str, id: str, archive: str) -> Tuple[str, Dict]:
         url_join(base_url, "resources", id, "locations/"),
         {"archive_name": archive},
     )
+
+
+def get_location(base_url: str, id: str, archive: str) -> Tuple[str, None]:
+    """Construct URL to look up (or delete) a specific location"""
+    return (url_join(base_url, "resources", id, "locations", f"{archive}/"), None)
 
 
 def add_datatype(base_url: str, name: str, content_type: str) -> Tuple[str, Dict]:
@@ -193,7 +193,6 @@ __all__ = [
     "add_datatype",
     "add_resource",
     "default_registry",
-    "fetch_resource",
     "find_archive_by_path",
     "find_resource",
     "full_url",

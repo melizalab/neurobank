@@ -5,6 +5,7 @@ from nbank import registry
 
 base_url = "https://localhost:8000/neurobank/"
 id = "adfkj"
+location = "blahblah"
 full = "https://localhost:8000/neurobank/resources/adfkj/"
 
 resource_url = "https://localhost:8000/neurobank/resources/"
@@ -102,12 +103,6 @@ def test_get_resource_bulk():
     assert params == {"names": list(ids)}
 
 
-def test_fetch_resource():
-    url, params = registry.fetch_resource(base_url, id)
-    assert url == registry.url_join(download_url, id)
-    assert params is None
-
-
 def test_get_locations():
     url, params = registry.get_locations(base_url, id)
     assert url == registry.url_join(full, "locations/")
@@ -124,8 +119,14 @@ def test_get_locations_bulk():
 def test_get_locations_with_params():
     test_params = {"archive": "registry"}
     url, params = registry.get_locations(base_url, id, **test_params)
-    assert url == registry.url_join(full, "locations/")
+    assert url == f"{base_url}resources/{id}/locations/"
     assert params == test_params
+
+
+def test_get_location():
+    url, params = registry.get_location(base_url, id, location)
+    assert url == f"{base_url}resources/{id}/locations/{location}/"
+    assert params is None
 
 
 def test_add_datatype():

@@ -420,7 +420,6 @@ def locate_resources(args):
                 continue
 
 
-
 def search_resources(args):
     # parse commandline args to query dict
     argmap = [

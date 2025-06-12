@@ -222,6 +222,10 @@ class Resource:
         linkpath.symlink_to(self.path)
         return linkpath
 
+    def unlink(self) -> None:
+        # TODO handle directories
+        self.path.unlink()
+
 
 def check_permissions(cfg: ArchiveConfig, src: Path, id: Optional[str] = None) -> bool:
     """Check if src file can be deposited in an archive."""

@@ -68,6 +68,41 @@ def delete_resources(args):
                     raise err
 
 
+def prune_archive(args):
+    """Remove files from an archive, but only if they're stored somewhere else"""
+    with open(args.resources) as fp, httpx.Client(auth=args.auth) as session:
+        for line in fp:
+            resource_id = line.strip()
+            if len(resource_id) == 0 or resource_id.startswith("#"):
+                continue
+            log.info("%s:", resource_id)
+            url, query = registry.get_locations(args.registry_url, resource_id)
+            response = util.query_registry(session, url, query)
+            if response is None:
+                log.error("✗ %s: not in registry", resource_id)
+                continue
+            locations = {loc["archive_name"]: loc for loc in response}
+            locations.pop("registry", None)  # remove registry pseudo-location
+            if args.archive_name not in locations:
+                log.info("  ✗ not in this archive")
+            elif len(locations) < 2:
+                log.info("  ✗ this archive is the only location for this resource")
+            else:
+                # this will throw FileNotFound if the file is missing, a fatal problem
+                resource = util.parse_location(locations[args.archive_name])
+                url, query = registry.get_location(
+                    args.registry_url, resource_id, args.archive_name
+                )
+                req = session.build_request("DELETE", url)
+                log.info("  - removed %s", req.url)
+                if not args.dry_run:
+                    r = session.send(req)
+                    r.raise_for_status()
+                log.info("  - deleted %s", resource.path)
+                if not args.dry_run:
+                    resource.unlink()
+
+
 def tar_resources(args):
     archive_root = f"{args.tape_name}:{args.file_number}"
     url, params = registry.add_archive(
@@ -114,7 +149,7 @@ def tar_resources(args):
                     args.archive_name,
                 )
             else:
-                # TODO option to verify hash
+                # TODO option to verify hash?
                 url, params = registry.add_location(
                     args.registry_url, result["name"], args.archive_name
                 )
@@ -168,6 +203,20 @@ if __name__ == "__main__":
     pp.add_argument(
         "resources", type=Path, help="file with a list of resources to delete"
     )
+
+    pp = sub.add_parser(
+        "prune-archive",
+        help="remove files from a neurobank archive that are stored somewhere else",
+    )
+    pp.set_defaults(func=prune_archive)
+    pp.add_argument(
+        "-y",
+        "--dry-run",
+        help="don't delete any files or make any changes to the registry",
+        action="store_true",
+    )
+    pp.add_argument("archive_name", type=str, help="name of the archive to prune")
+    pp.add_argument("resources", type=Path, help="file with list of resources to prune")
 
     pp = sub.add_parser(
         "register-tar",
