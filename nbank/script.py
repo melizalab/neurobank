@@ -10,6 +10,7 @@ import concurrent.futures
 import datetime
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from urllib.parse import urlunparse
@@ -288,6 +289,20 @@ def main(argv=None):
     )
     pp.add_argument("path", type=Path, help="path of the archive to check")
 
+    pp = ppsub.add_parser(
+        "prune",
+        help="remove files from a neurobank archive that are stored somewhere else",
+    )
+    pp.set_defaults(func=prune_archive)
+    pp.add_argument(
+        "-y",
+        "--dry-run",
+        help="don't delete any files or make any changes to the registry",
+        action="store_true",
+    )
+    pp.add_argument("archive_name", type=str, help="name of the archive to prune")
+    pp.add_argument("resources", type=Path, help="file with list of resources to prune")
+
     args = p.parse_args(argv)
 
     if not hasattr(args, "func"):
@@ -538,12 +553,11 @@ def check_archive(args):
 
     - every file is readable
     - every file's hash and name matches a record in the registry
+    - the registry record has this archive as a location
     - every record in the registry is matched with a file
 
     TODO support non-neurobank archives
     """
-    import os
-
     try:
         archive_cfg = archive.get_config(args.path)
     except FileNotFoundError:
@@ -552,8 +566,7 @@ def check_archive(args):
     archive_path = archive_cfg["path"]  # this will resolve the path
     log.info("archive: %s", archive_path)
     registry_url = archive_cfg["registry"]
-    log.info("   registry: %s", registry_url)
-    # retrieve a list of all the resources that should be in the archive
+    log.info("registry: %s", registry_url)
     with httpx.Client(auth=args.auth) as session:
         # check that archive exists for this path
         url, params = registry.find_archive_by_path(registry_url, archive_path)
@@ -563,24 +576,24 @@ def check_archive(args):
             raise RuntimeError(
                 f"archive '{archive_path}' not in registry. did it move?"
             ) from err
-        log.info("retrieving resources in %s", archive_name)
+        log.info("retrieving resources that should be in %s from the registry...", archive_name)
         url, _ = registry.find_resource(registry_url)
-        resource_names = {
+        resources = {
             item["name"]: item["sha1"]
             for item in util.query_registry_paginated(
                 session, url, {"location": archive_name}
             )
         }
-        n_total = len(resource_names)
+        n_total = len(resources)
         n_ok = 0
         n_extra = 0
         log.info("verifying resources:")
         for resource_file in archive.iter_resources(archive_path):
             resource_name = resource_file.stem
             try:
-                sha1 = resource_names.pop(resource_name)
+                sha1 = resources.pop(resource_name)
             except KeyError:
-                log.error(" - %s: FAILED to find in the registry!", resource_file)
+                log.error(" - %s: FAILED to find in the registry under %s!", resource_file, archive_name)
                 n_extra += 1
                 continue
             msg = f" - {resource_name} : {resource_file}"
@@ -592,15 +605,77 @@ def check_archive(args):
                 if args.verbose:
                     log.info("%s - OK", msg)
                 n_ok += 1
-        for resource_name in resource_names:
+        for resource_name in resources:
             log.error(" - %s: FAILED to find in the archive!", resource_name)
         log.info(
             "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d",
             n_total,
-            len(resource_names),
+            len(resources),
             n_extra,
             n_total - n_ok,
         )
+
+
+def prune_archive(args):
+    """Remove files from a neurobank archive, but only if they're stored somewhere else"""
+    with open(args.resources) as fp, httpx.Client(auth=args.auth) as session:
+        # check that the archive is on the local machine
+        url, _ = registry.get_archive(args.registry_url, args.archive_name)
+        result = util.query_registry(session, url)
+        if result is None:
+            log.error("No such archive '%s' in the registry", args.archive_name)
+            return
+        if result["scheme"] not in archive.Resource.schemes:
+            log.error("'%s' is not a neurobank archive ", args.archive_name)
+            return
+        if not Path(result["root"]).is_dir():
+            log.error(
+                "The archive '%s' is not on this host (%s) ",
+                args.archive_name,
+                result["root"],
+            )
+            return
+        for line in fp:
+            resource_id = line.strip()
+            if len(resource_id) == 0 or resource_id.startswith("#"):
+                continue
+            log.info("%s:", resource_id)
+            url, query = registry.get_locations(args.registry_url, resource_id)
+            response = util.query_registry(session, url, query)
+            if response is None:
+                log.error("✗ %s: not in registry", resource_id)
+                continue
+            locations = {loc["archive_name"]: loc for loc in response}
+            locations.pop("registry", None)  # remove registry pseudo-location
+            if args.archive_name not in locations:
+                log.info("  ✗ not in this archive")
+            elif len(locations) < 2:
+                log.info("  ✗ this archive is the only location for this resource")
+            else:
+                # this can throw FileNotFound but that shouldn't happen unless
+                # something is really wrong
+                resource = util.parse_location(locations[args.archive_name])
+                if resource is None:
+                    log.error("  ✗ resource is not actually present in archive!")
+                    continue
+                if not args.dry_run and not resource.deletable:
+                    log.info("  ✗ insufficient permissions to delete")
+                    continue
+                url, query = registry.get_location(
+                    args.registry_url, resource_id, args.archive_name
+                )
+                req = session.build_request("DELETE", url)
+                if not args.dry_run:
+                    r = session.send(req)
+                    if r.status_code != httpx.codes.NO_CONTENT:
+                        log.info(
+                            "  ✗ unable to remove from registry: %s", r.json()["detail"]
+                        )
+                        continue
+                log.info("  - removed %s", req.url)
+                if not args.dry_run:
+                    resource.unlink()
+                log.info("  - deleted %s", resource.path)
 
 
 def verify_file_hash(args):
