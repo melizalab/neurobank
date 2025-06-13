@@ -1,5 +1,0 @@
-{
-    "$id": "https://melizalab.github.io/neurobank/catalog.json",
-    "$schema": "http://json-schema.org/schema#",
-    "title": "catalog of identifiers for a neurobank archive",
-}

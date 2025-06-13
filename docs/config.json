@@ -1,5 +1,0 @@
-{
-    "$id": "https://melizalab.github.io/neurobank/config.json",
-    "$schema": "http://json-schema.org/schema#",
-    "title": "configuration file for neurobank archive",
-}

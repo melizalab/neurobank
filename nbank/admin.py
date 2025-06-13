@@ -68,67 +68,6 @@ def delete_resources(args):
                     raise err
 
 
-def tar_resources(args):
-    archive_root = f"{args.tape_name}:{args.file_number}"
-    url, params = registry.add_archive(
-        args.registry_url, name=args.archive_name, scheme="tape", root=archive_root
-    )
-    with httpx.Client(auth=args.auth) as session, tarfile.open(args.tar) as tarf:
-        log.info(
-            "- creating '%s' archive in the registry with root '%s'",
-            args.archive_name,
-            archive_root,
-        )
-        if not args.dry_run:
-            try:
-                r = session.post(url, json=params)
-                r.raise_for_status()
-            except httpx.HTTPStatusError as e:
-                # TODO okay to proceed if args.use_existing is set
-                registry.log_error(e)
-                return
-        log.info("- scanning contents of %s", args.tar)
-        for tarinfo in tarf:
-            if not tarinfo.isreg():
-                log.info("  - %s -> not a regular file, skipping", tarinfo.name)
-                continue
-            # look up the resource
-            url, params = registry.get_resource(
-                args.registry_url, Path(tarinfo.name).stem
-            )
-            result = util.query_registry(session, url, params)
-            if result is None:
-                log.info("  - %s -> no match in registry, skipping", tarinfo.name)
-            elif args.archive_name in result["locations"]:
-                log.info(
-                    "  - %s -> already associated with '%s' location",
-                    tarinfo.name,
-                    args.archive_name,
-                )
-            elif args.dry_run:
-                log.info(
-                    "  - %s -> added location in '%s' (dry run)",
-                    tarinfo.name,
-                    args.archive_name,
-                )
-            else:
-                # TODO option to verify hash?
-                url, params = registry.add_location(
-                    args.registry_url, result["name"], args.archive_name
-                )
-                try:
-                    r = session.post(url, json=params)
-                    r.raise_for_status()
-                    log.info(
-                        "  - %s -> added location in '%s'",
-                        tarinfo.name,
-                        args.archive_name,
-                    )
-                except httpx.HTTPStatusError as e:
-                    registry.log_error(e)
-                    return
-
-
 if __name__ == "__main__":
     import argparse
 
@@ -166,33 +105,6 @@ if __name__ == "__main__":
     pp.add_argument(
         "resources", type=Path, help="file with a list of resources to delete"
     )
-
-    pp = sub.add_parser(
-        "register-tar",
-        help="register a tar file as a tape location in the registry",
-    )
-    pp.set_defaults(func=tar_resources)
-    pp.add_argument(
-        "--use-existing",
-        action="store_true",
-        help="continue if the archive already exists in the registry",
-    )
-    pp.add_argument(
-        "-y",
-        "--dry-run",
-        help="don't make any changes to the registry",
-        action="store_true",
-    )
-    pp.add_argument("archive_name", help="name of the archive")
-    pp.add_argument(
-        "tape_name", type=str, help="name of the tape where the tar file was written"
-    )
-    pp.add_argument(
-        "file_number",
-        type=int,
-        help="index of the file on the tape where the tar file was written",
-    )
-    pp.add_argument("tar", type=Path, help="tar file with the resources to transfer")
 
     args = p.parse_args()
     if not hasattr(args, "func"):
