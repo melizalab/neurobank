@@ -261,9 +261,7 @@ Some resources, like raw extracellular data, can be moved to cold storage when t
 
 - Identify the resources to archive, using lists of identifiers from project
    directories or ``nbank search``.
-- Copy the resource files to a tar file. For example, ``cat
-   <list_of_identifiers> | xargs nbank locate -0 | xargs -0 tar -cvf
-   <name_of_tar_file>``
+- Copy the resource files to a tar file. For example, ``cat <list_of_identifiers> | xargs nbank locate -0 | xargs -0 tar -cvf <name_of_tar_file>``
 - Write the tar file to tape (or some other media)
 - Register the tar file with neurobank using ``nbank archive register-tar <name_of_archive> <name_of_tape> <tape_index> <tar_file>``. This will create a record for the tape archive and update the records for the resources in the tar file.
 - To remove the tape-archived resources from live storage, run ``nbank archive prune <live_archive_name> <list_of_identifiers>``. This command will delete files from the local filesystem archive and update records for the resources. It will only do this for resources that have another location.
