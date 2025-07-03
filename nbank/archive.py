@@ -7,6 +7,7 @@ Copyright (C) 2013-2025 Dan Meliza <dan@meliza.org>
 import json
 import logging
 import os
+import shutil
 from pathlib import Path
 from typing import Any, Dict, Iterator, NewType, Optional, Union
 
@@ -216,11 +217,9 @@ class Resource:
         return os.access(self.path.parent, os.W_OK)
 
     def fetch(self, target: Path) -> Path:
-        from shutil import copyfile
-
         if target.is_dir():
             target = target / self.path.name
-        copyfile(self.path, target)
+        shutil.copyfile(self.path, target)
         return target
 
     def link(self, target_dir: Path) -> Path:
@@ -229,8 +228,10 @@ class Resource:
         return linkpath
 
     def unlink(self) -> None:
-        # TODO handle directories
-        self.path.unlink()
+        if self.path.is_dir():
+            shutil.rmtree(self.path)
+        else:
+            self.path.unlink()
 
 
 def check_permissions(cfg: ArchiveConfig, src: Path, id: Optional[str] = None) -> bool:

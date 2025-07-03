@@ -732,6 +732,8 @@ def register_tar(args):
 
 def prune_archive(args):
     """Remove files from a neurobank archive, but only if they're stored somewhere else"""
+    if args.dry_run:
+        log.info("DRY RUN")
     log.info("registry: %s", args.registry_url)
     with open(args.resources) as fp, httpx.Client(auth=args.auth) as session:
         # check that the archive is on the local machine

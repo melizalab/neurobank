@@ -198,8 +198,7 @@ files in one directory. For example, if the identifier is
 ``nbank`` also acts as a command-line interface to the registry. You can
 perform the following operations:
 
-- ``nbank locate [options] id-1 [id-2 [id-3] ...]``: look up the location(s) of the resources associated with each identifier. You can supply full URL-based identifiers, or short ids. If short ids are used, the default registry (specified with ``-r`` argument or ``NBANK_REGISTRY`` environment variable) is used to resolve the full URL. Use the ``-L`` flag to create symbolic links
-   or the ``-0`` flag to pipe the paths to another program.
+- ``nbank locate [options] id-1 [id-2 [id-3] ...]``: look up the location(s) of the resources associated with each identifier. You can supply full URL-based identifiers, or short ids. If short ids are used, the default registry (specified with ``-r`` argument or ``NBANK_REGISTRY`` environment variable) is used to resolve the full URL. Use the ``-L`` flag to create symbolic links or the ``-0`` flag to pipe the paths to another program.
 -  ``nbank info id``: returns the registry information on the resource in json format.
 -  ``nbank search [options] query``: searches the database for resources that match ``query``. The default is to search by identifier, but you can also search by hash, dtype, archive, or any metadata fields. The default is to return only the identifiers of the resources, but you can use the ``-j`` flag to output json instead, which is useful if you want to distribute the metadata with the archive.
 -  ``nbank verify [options] files``: computes a SHA1 hash for each file and searches the registry for a match. Running this is a good idea before starting an experiment, as you’ll be able to tell if any of your stimulus files have changed. It’s also useful if the same identifier is used in more than one domain or if you have a data file that was inadvertently renamed.
