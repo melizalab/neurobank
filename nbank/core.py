@@ -213,6 +213,7 @@ def verify(
         log.debug("  searching by id (%s)", id)
         resource = describe(registry_url, id=id)
         try:
+            log.debug("  registry: %s; file: %s", resource["sha1"], file_hash)
             return resource["sha1"] == file_hash
         except TypeError as err:
             raise ValueError(f"{id} does not exist") from err

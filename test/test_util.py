@@ -33,7 +33,29 @@ def test_id_from_invalid_fname():
         _ = util.id_from_fname(test)
 
 
-def test_hash_directory(tmp_path):
+def test_hash_directory_with_multiple_files(tmp_path):
+    d = tmp_path / "sub"
+    d.mkdir()
+    (d / "hello.txt").write_text("blarg1")
+    (d / "hello2.txt").write_text("blarg2")
+    hash1 = util.hash_directory(d)
+    hash2 = util.hash_directory(d)
+    assert hash1 == hash2
+
+
+def test_hash_directory_after_moving(tmp_path):
+    d = tmp_path / "sub"
+    d.mkdir()
+    (d / "hello.txt").write_text("blarg1")
+    (d / "hello2.txt").write_text("blarg2")
+    hash1 = util.hash_directory(d)
+    # rename the directory to simulate depositing it
+    new_d = d.rename(tmp_path / "new_sub")
+    hash2 = util.hash_directory(new_d)
+    assert hash1 == hash2
+
+
+def test_hash_directory_detects_extra_file(tmp_path):
     d = tmp_path / "sub"
     d.mkdir()
     p = d / "hello.txt"
@@ -41,6 +63,32 @@ def test_hash_directory(tmp_path):
     hash1 = util.hash_directory(d)
     p = d / "hello2.txt"
     p.write_text("blarg2")
+    hash2 = util.hash_directory(d)
+    assert hash1 != hash2
+
+
+def test_hash_directory_detects_missing_file(tmp_path):
+    d = tmp_path / "sub"
+    d.mkdir()
+    p = d / "hello.txt"
+    p.write_text("blarg1")
+    p = d / "hello2.txt"
+    p.write_text("blarg2")
+    hash1 = util.hash_directory(d)
+    p.unlink()
+    hash2 = util.hash_directory(d)
+    assert hash1 != hash2
+
+
+def test_hash_directory_detects_modified_file(tmp_path):
+    d = tmp_path / "sub"
+    d.mkdir()
+    p = d / "hello.txt"
+    p.write_text("blarg1")
+    p = d / "hello2.txt"
+    p.write_text("blarg2")
+    hash1 = util.hash_directory(d)
+    p.write_text("abcedf")
     hash2 = util.hash_directory(d)
     assert hash1 != hash2
 

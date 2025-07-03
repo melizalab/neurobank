@@ -628,6 +628,7 @@ def check_archive(args):
         n_ok = 0
         n_err = 0
         n_extra = 0
+        log.info(" - resources in the registry: %d", n_total)
         log.info("verifying resources:")
         for resource_file in archive.iter_resources(archive_path):
             resource_name = resource_file.stem

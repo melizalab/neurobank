@@ -6,7 +6,6 @@ example, if a lot of files were deposited erroneously.
 """
 
 import logging
-import tarfile
 from pathlib import Path
 
 import httpx

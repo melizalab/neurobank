@@ -144,8 +144,8 @@ def hash(fname: Path, method: str = "sha1") -> str:
 def hash_directory(path: Path, method: str = "sha1") -> str:
     """Return hash of the contents of the directory at path using method.
 
-    Any secure hash method supported by python's hashlib library is supported.
-    Raises errors for invalid files or methods.
+    Any secure hash method supported by python's hashlib
+    library is supported. Raises errors for invalid files or methods.
 
     """
     import hashlib
@@ -153,8 +153,12 @@ def hash_directory(path: Path, method: str = "sha1") -> str:
     p = path.resolve(strict=True)
     hashes = []
     for fn in sorted(p.rglob("*")):
+        if not fn.is_file():
+            continue
+        fn_rel = fn.relative_to(p)
         with open(fn, "rb") as fp:
-            hashes.append(f"{fn}={hashlib.new(method, fp.read()).hexdigest()}")
+            hashes.append(f"{fn_rel}={hashlib.new(method, fp.read()).hexdigest()}")
+    # log.debug("directory hashes of %s: %s", path, hashes)
     return hashlib.new(method, "\n".join(hashes).encode("utf-8")).hexdigest()
 
 
