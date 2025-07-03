@@ -537,7 +537,8 @@ def fetch_resources(args):
                 util.fetch_resource,
                 session,
                 resource["locations"],
-                (dest / resource["name"]),
+                # try filename if the server returns it
+                (dest / resource.get("filename", resource["name"])),
                 extension=args.extension,
                 force=args.force,
             ): resource["name"]
@@ -837,7 +838,11 @@ def import_tar(args):
                 archive_cfg, resource_name, resolve_ext=False
             ).parent
             if not tarinfo.isreg():
-                log.info("  ✗ %s: '%s' is a directory resource; import is not implemented yet", tarinfo.name, resource_name)
+                log.info(
+                    "  ✗ %s: '%s' is a directory resource; import is not implemented yet",
+                    tarinfo.name,
+                    resource_name,
+                )
                 continue
             if not args.dry_run:
                 # make the target directory if it doesn't exist and set permissions
