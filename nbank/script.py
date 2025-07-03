@@ -817,9 +817,6 @@ def import_tar(args):
         log.info("destination archive: %s (%s)", archive_name, archive_path)
         log.info("source archive file: %s", args.tar)
         for tarinfo in tarf:
-            if not tarinfo.isreg():
-                log.debug("  ✗ %s is not a regular file, skipping", tarinfo.name)
-                continue
             file_path = Path(tarinfo.name)
             # regardless of keep_extension policy, the resource will not have
             # the extension
@@ -839,6 +836,9 @@ def import_tar(args):
             dest_dir = archive.resource_path(
                 archive_cfg, resource_name, resolve_ext=False
             ).parent
+            if not tarinfo.isreg():
+                log.info("  ✗ %s: '%s' is a directory resource; import is not implemented yet", tarinfo.name, resource_name)
+                continue
             if not args.dry_run:
                 # make the target directory if it doesn't exist and set permissions
                 try:
