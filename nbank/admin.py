@@ -67,6 +67,48 @@ def delete_resources(args):
                     raise err
 
 
+def update_hashes(args):
+    if args.dry_run:
+        log.info("DRY RUN")
+    to_update = []
+    with open(args.resources) as fp:
+        for line in fp:
+            resource_id = line.strip()
+            if len(resource_id) > 0 and not resource_id.startswith("#"):
+                to_update.append(resource_id)
+    n_to_update = len(to_update)
+    url, query = registry.get_locations_bulk(args.registry_url, to_update)
+    with httpx.Client(auth=args.auth) as session:
+        for i, resource in enumerate(util.query_registry_bulk(session, url, query)):
+            log.info(
+                "- [%d/%d] %s (current hash: %s)",
+                i,
+                n_to_update,
+                resource["name"],
+                resource["sha1"],
+            )
+            for loc in resource["locations"]:
+                try:
+                    location = util.parse_location(loc)
+                    hash = util.hash(location.path)
+                    if hash == resource["sha1"]:
+                        log.info("    - already has the right hash")
+                    elif args.dry_run:
+                        log.info("    - would update hash to %s", hash)
+                    else:
+                        url, params = registry.get_resource(
+                            args.registry_url, resource["name"]
+                        )
+                        r = session.patch(url, json={"sha1": hash})
+                        r.raise_for_status()
+                        log.info("    - updated hash to %s", hash)
+                    break
+                except FileNotFoundError:
+                    log.debug("    - %s is not local, skipping", loc)
+                except httpx.HTTPStatusError as err:
+                    registry.log_error(err)
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -103,6 +145,18 @@ if __name__ == "__main__":
     )
     pp.add_argument(
         "resources", type=Path, help="file with a list of resources to delete"
+    )
+
+    pp = sub.add_parser("update-hash", help="update hashes in the registry")
+    pp.set_defaults(func=update_hashes)
+    pp.add_argument(
+        "-y",
+        "--dry-run",
+        help="if set, don't actually update anything",
+        action="store_true",
+    )
+    pp.add_argument(
+        "resources", type=Path, help="file with a list of resources to update"
     )
 
     args = p.parse_args()

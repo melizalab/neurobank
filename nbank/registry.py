@@ -177,14 +177,18 @@ def strip_nulls(d: Dict) -> Dict:
 
 
 def log_error(err):
-    """Writes error message from server to log. Reraises errors where code != 400"""
+    """Writes error message from server to log. Reraises errors where code is not in 400, 403, 415"""
     if err.response.status_code == 400:
         data = err.response.json()
         for k, v in data.items():
             for vv in v:
                 log.error("   registry error: %s: %s", k, vv)
+    elif err.response.status_code == 403:
+        data = err.response.json()
+        for _k, v in data.items():
+            log.error("   registry error: %s", v)
     elif err.response.status_code == 415:
-        log.error("    registry error: %s", err.response.reason)
+        log.error("    registry error: %s", err.response.reason_phrase)
     else:
         raise err
 
