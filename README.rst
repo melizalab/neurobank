@@ -112,39 +112,12 @@ directory to describe your project. The ``nbank.json`` file is also
 where you’ll need to set some key variables and policies. These are the
 settings you may want to modify:
 
--  ``auto_identifiers``: If set to false (the default), when files are
-   deposited, their names are used as identifiers unless the user asks
-   for an automatically generated id. If set to true, every resource is
-   given an automatic id.
-
-- ``auto_id_type``: If set to ``null`` (or not set at all), automatic ids are
-   assigned by the registry. This is usually a short, random base-36 string. If
-   set to ``"uuid"``, the ``nbank`` script will generate 128-bit UUIDs as
-   identifiers, which are guaranteed to work everywhere but a little painful to
-   manipulate by hand.
-
--  ``require_hash``: If set to true (the default), every resource will
-   have a hash value calculated and stored in the registry. The registry
-   will then be able to prevent duplicate files from being deposited
-   under multiple identifiers.
-
-   - ``keep_extensions``: If set to true (the default), files keep their
-      extensions when deposited. Only one file with a given base identifier can
-      be deposited, so if you have a ``st32_1_2_1.wav``, the identifier is
-      ``st32_1_2_1``, and therefore you can’t also have an ``st32_1_2_1.json``
-      file. If set to false, the extension is stripped, so ``st32_1_2_1.wav``
-      would be deposited as ``st32_1_2_1``. Usually you want this to be true,
-      unless your archive only contains one kind of file.
-
-   -  ``allow_directories``: If set to true, directories and their
-      contents can be deposited as resources. The identifier is given to
-      the directory, and the user is responsible for knowing how to
-      interpret the contents. If set to false (the default), only
-      regular files can be deposited.
-
-   -  ``access``: Specify the ``user`` and ``group`` who will own
-      deposited files, and the ``umask`` to modify access mode. If these
-      are not set, files will be owned by the user who deposited them.
+-  ``auto_identifiers``: If set to false (the default), when files are deposited, their names are used as identifiers unless the user asks for an automatically generated id. If set to true, every resource is given an automatic id.
+- ``auto_id_type``: If set to ``null`` (or not set at all), automatic ids are assigned by the registry. This is usually a short, random base-36 string. If set to ``"uuid"``, the ``nbank`` script will generate 128-bit UUIDs as identifiers, which are guaranteed to work everywhere but a little painful to manipulate by hand.
+-  ``require_hash``: If set to true (the default), every resource will have a hash value calculated and stored in the registry. The registry will then be able to prevent duplicate files from being deposited under multiple identifiers.
+   - ``keep_extensions``: If set to true (the default), files keep their extensions when deposited. Only one file with a given base identifier can be deposited, so if you have a ``st32_1_2_1.wav``, the identifier is ``st32_1_2_1``, and therefore you can’t also have an ``st32_1_2_1.json`` file. If set to false, the extension is stripped, so ``st32_1_2_1.wav`` would be deposited as ``st32_1_2_1``. Usually you want this to be true, unless your archive only contains one kind of file.
+   -  ``allow_directories``: If set to true, directories and their contents can be deposited as resources. The identifier is given to the directory, and the user is responsible for knowing how to interpret the contents. If set to false (the default), only regular files can be deposited.
+   -  ``access``: Specify the ``user`` and ``group`` who will own deposited files, and the ``umask`` to modify access mode. If these are not set, files will be owned by the user who deposited them.
 
 Registering and storing resources
 ---------------------------------
@@ -225,32 +198,12 @@ files in one directory. For example, if the identifier is
 ``nbank`` also acts as a command-line interface to the registry. You can
 perform the following operations:
 
-- ``nbank locate [options] id-1 [id-2 [id-3] ...]``: look up the location(s) of
-   the resources associated with each identifier. You can supply full URL-based
-   identifiers, or short ids. If short ids are used, the default registry
-   (specified with ``-r`` argument or ``NBANK_REGISTRY`` environment variable)
-   is used to resolve the full URL. Use the ``-L`` flag to create symbolic links
+- ``nbank locate [options] id-1 [id-2 [id-3] ...]``: look up the location(s) of the resources associated with each identifier. You can supply full URL-based identifiers, or short ids. If short ids are used, the default registry (specified with ``-r`` argument or ``NBANK_REGISTRY`` environment variable) is used to resolve the full URL. Use the ``-L`` flag to create symbolic links
    or the ``-0`` flag to pipe the paths to another program.
-
--  ``nbank info id``: returns the registry information on the resource
-   in json format.
-
--  ``nbank search [options] query``: searches the database for resources
-   that match ``query``. The default is to search by identifier, but you
-   can also search by hash, dtype, archive, or any metadata fields. The
-   default is to return only the identifiers of the resources, but you
-   can use the ``-j`` flag to output json instead, which is useful if
-   you want to distribute the metadata with the archive.
-
--  ``nbank verify [options] files``: computes a SHA1 hash for each file
-   and searches the registry for a match. Running this is a good idea
-   before starting an experiment, as you’ll be able to tell if any of
-   your stimulus files have changed. It’s also useful if the same
-   identifier is used in more than one domain or if you have a data file
-   that was inadvertently renamed.
-
--  ``nbank modify [-k key=value] id``: update the metadata for ``id``.
-   Multiple ``-k`` flags can be used.
+-  ``nbank info id``: returns the registry information on the resource in json format.
+-  ``nbank search [options] query``: searches the database for resources that match ``query``. The default is to search by identifier, but you can also search by hash, dtype, archive, or any metadata fields. The default is to return only the identifiers of the resources, but you can use the ``-j`` flag to output json instead, which is useful if you want to distribute the metadata with the archive.
+-  ``nbank verify [options] files``: computes a SHA1 hash for each file and searches the registry for a match. Running this is a good idea before starting an experiment, as you’ll be able to tell if any of your stimulus files have changed. It’s also useful if the same identifier is used in more than one domain or if you have a data file that was inadvertently renamed.
+-  ``nbank modify [-k key=value] id``: update the metadata for ``id``. Multiple ``-k`` flags can be used.
 
 Managing archives
 -----------------
@@ -259,11 +212,10 @@ You can check whether an archive contains all the files it's supposed to by runn
 
 Some resources, like raw extracellular data, can be moved to cold storage when they are no longer needed. The Meliza lab uses tape for this because of its long shelf life, low cost, and low environmental impact (no need for power). Moving resources to cold storage is a multi-step process:
 
-- Identify the resources to archive, using lists of identifiers from project
-   directories or ``nbank search``.
+- Identify the resources to archive, using lists of identifiers from project directories or ``nbank search``.
 - Copy the resource files to a tar file. For example, ``cat <list_of_identifiers> | xargs nbank locate -0 | xargs -0 tar -cvf <name_of_tar_file>``
 - Write the tar file to tape (or some other media)
-- Register the tar file with neurobank using ``nbank archive register-tar <name_of_archive> <name_of_tape> <tape_index> <tar_file>``. This will create a record for the tape archive and update the records for the resources in the tar file.
+- Register the tar file with neurobank using ``nbank archive register-tar -n <name_of_archive> <name_of_tape> <tape_index> <tar_file>``. This will create a record for the tape archive and update the records for the resources in the tar file.
 - To remove the tape-archived resources from live storage, run ``nbank archive prune <live_archive_name> <list_of_identifiers>``. This command will delete files from the local filesystem archive and update records for the resources. It will only do this for resources that have another location.
 - To copy data back to live storage, extract the tar file from the tape and run ``nbank archive import-tar <tar_file> <path_of_archive>``
 

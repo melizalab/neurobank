@@ -302,7 +302,7 @@ def main(argv=None):
         help="don't make any changes to the registry",
         action="store_true",
     )
-    pp.add_argument("archive_name", help="name of the archive")
+    pp.add_argument("--archive-name", "-n", help="name of the archive")
     pp.add_argument(
         "tape_name", type=str, help="name of the tape where the tar file was written"
     )
@@ -666,13 +666,14 @@ def check_archive(args):
 
 def register_tar(args):
     archive_root = f"{args.tape_name}:{args.file_number}"
+    archive_name = args.archive_name or f"{args.tape_name}-{args.file_number}"
     url, params = registry.add_archive(
-        args.registry_url, name=args.archive_name, scheme="tape", root=archive_root
+        args.registry_url, name=archive_name, scheme="tape", root=archive_root
     )
     with httpx.Client(auth=args.auth) as session, tarfile.open(args.tar) as tarf:
         log.info(
             "- creating '%s' archive in the registry with root '%s'",
-            args.archive_name,
+            archive_name,
             archive_root,
         )
         if not args.dry_run:
@@ -680,13 +681,15 @@ def register_tar(args):
                 r = session.post(url, json=params)
                 r.raise_for_status()
             except httpx.HTTPStatusError as e:
-                # TODO okay to proceed if args.use_existing is set
                 registry.log_error(e)
                 return
         log.info("- scanning contents of %s", args.tar)
+        last_path = None
         for tarinfo in tarf:
-            if not tarinfo.isreg():
-                log.info("  - %s -> not a regular file, skipping", tarinfo.name)
+            path = Path(tarinfo.name)
+            # don't check contents in directories that are resources
+            if last_path and path.is_relative_to(last_path):
+                log.debug("  - %s -> in a directory resource, skipping", tarinfo.name)
                 continue
             # look up the resource
             url, params = registry.get_resource(
@@ -694,23 +697,24 @@ def register_tar(args):
             )
             result = util.query_registry(session, url, params)
             if result is None:
-                log.info("  - %s -> no match in registry, skipping", tarinfo.name)
-            elif args.archive_name in result["locations"]:
+                if tarinfo.isreg():
+                    log.info("  - %s -> no match in registry, skipping", tarinfo.name)
+                continue
+            if archive_name in result["locations"]:
                 log.info(
                     "  - %s -> already associated with '%s' location",
                     tarinfo.name,
-                    args.archive_name,
+                    archive_name,
                 )
             elif args.dry_run:
                 log.info(
                     "  - %s -> added location in '%s' (dry run)",
                     tarinfo.name,
-                    args.archive_name,
+                    archive_name,
                 )
             else:
-                # TODO option to verify hash?
                 url, params = registry.add_location(
-                    args.registry_url, result["name"], args.archive_name
+                    args.registry_url, result["name"], archive_name
                 )
                 try:
                     r = session.post(url, json=params)
@@ -718,11 +722,12 @@ def register_tar(args):
                     log.info(
                         "  - %s -> added location in '%s'",
                         tarinfo.name,
-                        args.archive_name,
+                        archive_name,
                     )
                 except httpx.HTTPStatusError as e:
                     registry.log_error(e)
                     return
+            last_path = path
 
 
 def prune_archive(args):
