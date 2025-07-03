@@ -803,8 +803,9 @@ def import_tar(args):
     except FileNotFoundError:
         log.error(f"error: {args.dest} is not a valid neurobank archive")
         return
-    registry_url = archive_cfg["registry"]
+    registry_url = args.registry_url or archive_cfg["registry"]
     archive_path = archive_cfg["path"]  # this will resolve the path
+    pfix = archive.permission_fixer(archive_cfg)  # used to fix permissions
     log.info("registry: %s", registry_url)
     with httpx.Client(auth=args.auth) as session, tarfile.open(args.tar) as tarf:
         url, params = registry.find_archive_by_path(registry_url, archive_path)
@@ -838,13 +839,21 @@ def import_tar(args):
             dest_dir = archive.resource_path(
                 archive_cfg, resource_name, resolve_ext=False
             ).parent
-            if not os.access(dest_dir, os.W_OK):
-                log.info(
-                    "  ✗ %s -> unable to write to destination directory (%s)",
-                    file_path,
-                    dest_dir,
-                )
-                continue
+            if not args.dry_run:
+                # make the target directory if it doesn't exist and set permissions
+                try:
+                    dest_dir.mkdir()
+                    pfix(dest_dir)
+                    log.debug("  - (created destination directory %s)", dest_dir)
+                except FileExistsError:
+                    pass
+                if not os.access(dest_dir, os.W_OK):
+                    log.info(
+                        "  ✗ %s -> unable to write to destination directory (%s)",
+                        file_path,
+                        dest_dir,
+                    )
+                    continue
             url, query = registry.add_location(
                 registry_url, resource_name, archive_name
             )
@@ -868,6 +877,7 @@ def import_tar(args):
                     log.info("  - %s -> %s", file_path, dest_path)
                     with open(dest_path, "wb") as dest_file:
                         shutil.copyfileobj(reader, dest_file)
+                    pfix(dest_path)
             else:
                 log.info("  - %s -> %s (dry run)", file_path, dest_path)
 
