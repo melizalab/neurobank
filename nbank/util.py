@@ -44,7 +44,8 @@ class HttpResource(FetchableResource):
         # the root contains the netloc and the base path
         netloc = root.parts[0]
         # this will strip off any trailing slash
-        path = Path(*root.parts[1:], location["resource_name"])
+        self.id = location["resource_name"]
+        path = Path(*root.parts[1:], self.id)
         self.url = urlunparse(
             (
                 location["scheme"],
@@ -58,6 +59,9 @@ class HttpResource(FetchableResource):
 
     def __str__(self):
         return self.url
+
+    def __repr__(self):
+        return f"<remote resource: {self.id} @ {self.path}>"
 
     def fetch(self, target: Path) -> Path:
         if self.session is None:

@@ -207,10 +207,14 @@ class Resource:
         root = Path(root)
         if alt_base is not None:
             root = Path(alt_base) / root.name
+        self.id = id
         self.path = resource_path(root, id, resolve_ext=True)
 
     def __str__(self):
         return str(self.path)
+
+    def __repr__(self):
+        return f"<local resource: {self.id} @ {self.path}>"
 
     @property
     def deletable(self) -> bool:
