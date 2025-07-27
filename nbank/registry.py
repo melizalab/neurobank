@@ -126,12 +126,13 @@ def add_datatype(base_url: str, name: str, content_type: str) -> Tuple[str, Dict
 
 
 def add_archive(
-    base_url: str, name: str, scheme: str, root: Union[Path, str]
+    base_url: str, name: str, scheme: str, root: Union[Path, str], **kwargs: str
 ) -> Tuple[str, Dict]:
     """Constructs URL to add an archive to the registry"""
+
     return (
         url_join(base_url, "archives/"),
-        {"name": name, "scheme": scheme, "root": str(root)},
+        dict(name=name, scheme=scheme, root=str(root), **kwargs),
     )
 
 

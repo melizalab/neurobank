@@ -669,7 +669,11 @@ def register_tar(args):
     archive_root = f"{args.tape_name}:{args.file_number}"
     archive_name = args.archive_name or f"{args.tape_name}-{args.file_number}"
     url, params = registry.add_archive(
-        args.registry_url, name=archive_name, scheme="tape", root=archive_root
+        args.registry_url,
+        name=archive_name,
+        scheme="tape",
+        root=archive_root,
+        accessibility="offline",
     )
     with httpx.Client(auth=args.auth) as session, tarfile.open(args.tar) as tarf:
         log.info(

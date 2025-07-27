@@ -37,6 +37,5 @@ class Resource:
 
     def __repr__(self):
         return f"<tape-archive resource: {self.id} @ {self}>"
-        
 
     # TODO: implement fetch when alt_base is set?
