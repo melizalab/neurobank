@@ -22,20 +22,16 @@ def delete_resource(
     log.info("%s:", resource_id)
     url, params = registry.get_locations(registry_url, resource_id)
     for loc in util.query_registry_paginated(session, url, params):
-        partial = util.parse_location(loc)
-        if not isinstance(partial, Path):
-            continue
-        try:
-            path = archive.resolve_extension(partial)
-        except FileNotFoundError:
-            log.info("  - %s has already been deleted", partial)
-            continue
-        log.info("  ✗ deleted %s", path)
-        if not dry_run:
-            if path.is_dir():
-                path.rmdir()
-            else:
-                path.unlink()
+        log.debug("   - attempting to delete %s from %s", resource_id, loc)
+        location = util.parse_location(loc)
+        if location is None:
+            log.info("  - %s has already been deleted from %s", resource_id, loc["archive_name"])
+        elif not dry_run:
+            try:
+                location.unlink()
+                log.info("  ✗ deleted %s", location.path)
+            except AttributeError:
+                log.debug("   - %s is not deletable, skipping", location)
     url, params = registry.get_resource(args.registry_url, resource_id)
     req = session.build_request("DELETE", url)
     log.info("  ✗ purged %s", req.url)
