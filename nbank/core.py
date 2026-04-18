@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from httpx import HTTPStatusError
 
 from nbank.util import FetchableResource
 
