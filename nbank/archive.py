@@ -8,12 +8,13 @@ import json
 import logging
 import os
 import shutil
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Dict, Iterator, NewType, Optional, Union
+from typing import Any, NewType
 
 log = logging.getLogger("nbank")  # root logger
 
-ArchiveConfig = NewType("ArchiveConfig", Dict)
+ArchiveConfig = NewType("ArchiveConfig", dict)
 _README_fname = "README.md"
 _config_fname = "nbank.json"
 _config_schema = "https://melizalab.github.io/neurobank/config.json#"
@@ -149,7 +150,7 @@ def id_stub(id: str) -> str:
 
 
 def resource_path(
-    cfg: Union[ArchiveConfig, Path, str], id: str, resolve_ext: bool = False
+    cfg: ArchiveConfig | Path | str, id: str, resolve_ext: bool = False
 ) -> Path:
     """Returns path of the resource specified by id"""
     try:
@@ -203,7 +204,7 @@ class Resource:
     schemes = ("neurobank",)
     local = True
 
-    def __init__(self, root: str, id: str, alt_base: Optional[Path] = None):
+    def __init__(self, root: str, id: str, alt_base: Path | None = None):
         root = Path(root)
         if alt_base is not None:
             root = Path(alt_base) / root.name
@@ -238,7 +239,7 @@ class Resource:
             self.path.unlink()
 
 
-def check_permissions(cfg: ArchiveConfig, src: Path, id: Optional[str] = None) -> bool:
+def check_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> bool:
     """Check if src file can be deposited in an archive."""
     import os
 
@@ -257,7 +258,7 @@ def check_permissions(cfg: ArchiveConfig, src: Path, id: Optional[str] = None) -
         return True
 
 
-def store_resource(cfg: ArchiveConfig, src: Path, id: Optional[str] = None) -> Path:
+def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path:
     """Stores resource (src) in the repository under a unique identifier.
 
     cfg - the configuration dict for the archive

@@ -6,7 +6,6 @@ Copyright (C) 2025 Dan Meliza <dan@meliza.org>
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -22,7 +21,7 @@ class Resource:
 
     local: False
 
-    def __init__(self, root: str, id: str, alt_base: Optional[Path] = None):
+    def __init__(self, root: str, id: str, alt_base: Path | None = None):
         try:
             self.tape_name, file_index = root.split(":")
             self.file_index = int(file_index)

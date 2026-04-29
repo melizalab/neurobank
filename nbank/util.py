@@ -7,16 +7,10 @@ Created Tue Jul  8 14:23:35 2014
 
 import json
 import logging
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import (
     Any,
-    Dict,
-    Iterator,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Union,
 )
 
 from httpx import Client
@@ -32,7 +26,7 @@ class HttpResource(FetchableResource):
 
     schemes = ("http", "https")
 
-    def __init__(self, location: Mapping[str, str], session: Optional[Client] = None):
+    def __init__(self, location: Mapping[str, str], session: Client | None = None):
         from urllib.parse import urlunparse
 
         assert location["scheme"] in (
@@ -79,9 +73,9 @@ class HttpResource(FetchableResource):
 def parse_location(
     location: Mapping[str, str],
     *,
-    alt_base: Optional[Path] = None,
-    http_session: Optional[Client] = None,
-) -> Optional[Resource]:
+    alt_base: Path | None = None,
+    http_session: Client | None = None,
+) -> Resource | None:
     """Parse a location dict and return a Resource or None if the location is invalid.
 
     location is a dict with 'scheme', 'root', and 'resource_name'.
@@ -106,7 +100,7 @@ def parse_location(
         log.debug("Unrecognized location scheme %s", scheme)
 
 
-def id_from_fname(fname: Union[Path, str]) -> str:
+def id_from_fname(fname: Path | str) -> str:
     """Generates an ID from the basename of fname, stripped of any extensions.
 
     Raises ValueError unless the resulting id only contains URL-unreserved characters
@@ -169,9 +163,9 @@ def hash_directory(path: Path, method: str = "sha1") -> str:
 def query_registry(
     session: Client,
     url: str,
-    params: Optional[Mapping[str, Any]] = None,
-    auth: Optional[str] = None,
-) -> Optional[Dict]:
+    params: Mapping[str, Any] | None = None,
+    auth: str | None = None,
+) -> dict | None:
     """Perform a GET request to url with params. Returns None for 404 HTTP errors"""
     r = session.get(
         url,
@@ -186,8 +180,8 @@ def query_registry(
 
 
 def query_registry_paginated(
-    session: Client, url: str, params: Optional[Mapping[str, Any]] = None
-) -> Iterator[Dict]:
+    session: Client, url: str, params: Mapping[str, Any] | None = None
+) -> Iterator[dict]:
     """Perform GET request(s) to yield records from a paginated endpoint"""
     r = session.get(url, params=params, headers={"Accept": "application/json"})
     r.raise_for_status()
@@ -203,8 +197,8 @@ def query_registry_paginated(
 
 
 def query_registry_first(
-    session: Client, url: str, params: Optional[Mapping[str, Any]] = None
-) -> Dict:
+    session: Client, url: str, params: Mapping[str, Any] | None = None
+) -> dict:
     """Perform a GET response to a url and return the first result or None"""
     try:
         return next(query_registry_paginated(session, url, params))
@@ -213,8 +207,8 @@ def query_registry_first(
 
 
 def query_registry_bulk(
-    session: Client, url: str, query: Mapping[str, Any], auth: Optional[str] = None
-) -> List[Dict]:
+    session: Client, url: str, query: Mapping[str, Any], auth: str | None = None
+) -> list[dict]:
     """Perform a POST request to a bulk query url. These endpoints all stream line-delimited json"""
     with session.stream("POST", url, json=query, auth=auth) as r:
         r.raise_for_status()
@@ -228,9 +222,9 @@ def fetch_resource(
     target: Path,
     *,
     force: bool = False,
-    extension: Optional[str] = None,
-    alt_base: Optional[Path] = None,
-) -> Union[Path, NotFetchableError, FileExistsError]:
+    extension: str | None = None,
+    alt_base: Path | None = None,
+) -> Path | NotFetchableError | FileExistsError:
     """Fetch a resource from an archive.
 
     Relies on the registry returning local locations before remote ones. Stops

@@ -6,20 +6,21 @@ Created Mon Nov 25 08:52:28 2013
 """
 
 import logging
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, Optional, Tuple, Union
+from typing import Any
 
 import httpx
 
 from nbank.util import FetchableResource
 
 # types that can be turned into authentication for httpx
-RegistryAuth = Union[Tuple[str, str], httpx.Auth, None]
+RegistryAuth = tuple[str, str] | httpx.Auth | None
 
 log = logging.getLogger("nbank")  # root logger
 
 
-def make_auth(auth: RegistryAuth) -> Optional[httpx.Auth]:
+def make_auth(auth: RegistryAuth) -> httpx.Auth | None:
     """Convert a RegistryAuth to an actual httpx Auth. If auth is None, tries to use netrc"""
     if isinstance(auth, httpx.Auth):
         return auth
@@ -34,12 +35,12 @@ def make_auth(auth: RegistryAuth) -> Optional[httpx.Auth]:
 def deposit(
     archive_path: Path,
     files: Iterable[Path],
-    dtype: Optional[str] = None,
+    dtype: str | None = None,
     hash: bool = False,
     auto_id: bool = False,
     auth: RegistryAuth = None,
     **metadata: Any,
-) -> Iterator[Dict]:
+) -> Iterator[dict]:
     """Main entry point to deposit resources into an archive
 
     Yields the short IDs for each deposited item in files
@@ -126,7 +127,7 @@ def deposit(
             yield {"source": src, "id": result["name"]}
 
 
-def search(registry_url: str, **params) -> Iterator[Dict]:
+def search(registry_url: str, **params) -> Iterator[dict]:
     """Searches the registry for resources that match query params, yielding a sequence of hits"""
     from nbank.registry import find_resource
     from nbank.util import query_registry_paginated
@@ -136,7 +137,7 @@ def search(registry_url: str, **params) -> Iterator[Dict]:
         yield from query_registry_paginated(session, url, params)
 
 
-def describe(registry_url: str, id: str) -> Optional[Dict]:
+def describe(registry_url: str, id: str) -> dict | None:
     """Returns the database record for a resource, or None if it does not exist in the registry"""
     from nbank.registry import get_resource
     from nbank.util import query_registry
@@ -146,7 +147,7 @@ def describe(registry_url: str, id: str) -> Optional[Dict]:
         return query_registry(session, url, params)
 
 
-def describe_many(registry_url: str, *ids: str) -> Iterator[Dict]:
+def describe_many(registry_url: str, *ids: str) -> Iterator[dict]:
     """Returns the database record(s) for one or more resources.
 
     Yields one record for each resource that was located in the registry.
@@ -161,7 +162,7 @@ def describe_many(registry_url: str, *ids: str) -> Iterator[Dict]:
 
 
 def find(
-    registry_url: str, id: str, alt_base: Optional[Path] = None
+    registry_url: str, id: str, alt_base: Path | None = None
 ) -> Iterator[FetchableResource]:
     """Generates a sequence of Fetchables where id can be located
 
@@ -179,8 +180,8 @@ def find(
 
 
 def get(
-    registry_url: str, id: str, alt_base: Optional[Path] = None
-) -> Optional[FetchableResource]:
+    registry_url: str, id: str, alt_base: Path | None = None
+) -> FetchableResource | None:
     """Returns the first path or URL where id can be found, or None if no match.
 
     Set alt_base to replace the dirname of any local resources. This is intended
@@ -194,8 +195,8 @@ def get(
 
 
 def verify(
-    registry_url: str, file: Union[str, Path], id: Optional[str] = None
-) -> Union[Iterator[Dict], bool]:
+    registry_url: str, file: str | Path, id: str | None = None
+) -> Iterator[dict] | bool:
     """Compute the hash for file and search the registry for any resource(s) associated with it.
 
     Returns a sequence of matching records. If id is not None, search instead by id
@@ -250,7 +251,7 @@ def fetch(
 
 def update(
     base_url: str, *ids: str, auth: RegistryAuth = None, **metadata: Any
-) -> Iterator[Dict]:
+) -> Iterator[dict]:
     """Update metadata for one or more resources. Set a key to None to delete."""
     from nbank.registry import update_resource_metadata
 

@@ -3,7 +3,7 @@
 
 from abc import abstractmethod
 from pathlib import Path
-from typing import Protocol, Union
+from typing import Protocol
 
 
 class NotFetchableError(Exception):
@@ -36,4 +36,4 @@ class LocalResource(FetchableResource, Protocol):
         pass
 
 
-Resource = Union[FetchableResource, NonFetchableResource]
+Resource = FetchableResource | NonFetchableResource

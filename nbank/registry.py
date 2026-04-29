@@ -11,8 +11,9 @@ URLs with the POST method; and `update_` URLs with the PATCH method.
 """
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from typing import Any
 
 _env_registry = "NBANK_REGISTRY"
 _neurobank_scheme = "neurobank"
@@ -20,7 +21,7 @@ _local_schemes = (_neurobank_scheme,)
 log = logging.getLogger("nbank")
 
 
-def default_registry() -> Optional[str]:
+def default_registry() -> str | None:
     """Return the registry URL associated with the default registry environment
     variable, or None if the environment variable is not defined.
     """
@@ -29,10 +30,10 @@ def default_registry() -> Optional[str]:
     return os.environ.get(_env_registry)
 
 
-def parse_resource_url(url: str) -> Tuple[str, str]:
+def parse_resource_url(url: str) -> tuple[str, str]:
     ""
 
-    "Parse a full resource identifier into base url and id." ""
+    "Parse a full resource identifier into base url and id."
     import re
     from urllib.parse import urlparse, urlunparse
 
@@ -51,27 +52,27 @@ def full_url(base_url: str, id: str) -> str:
     return f"{base_url.rstrip('/')}/resources/{id}/"
 
 
-def get_info(base_url: str) -> Tuple[str, None]:
+def get_info(base_url: str) -> tuple[str, None]:
     """Constructs URL to get registry information"""
     return (url_join(base_url, "info/"), None)
 
 
-def get_datatypes(base_url: str) -> Tuple[str, None]:
+def get_datatypes(base_url: str) -> tuple[str, None]:
     """Constructs URL to get known content type names"""
     return (url_join(base_url, "datatypes/"), None)
 
 
-def get_archives(base_url: str, **params) -> Tuple[str, None]:
+def get_archives(base_url: str, **params) -> tuple[str, None]:
     """Constructs URL to get known archive names"""
     return (url_join(base_url, "archives/"), params)
 
 
-def get_archive(base_url: str, name: str) -> Tuple[str, None]:
+def get_archive(base_url: str, name: str) -> tuple[str, None]:
     """Constructs URL to get information about an archive by name"""
     return (url_join(base_url, "archives/", f"{name}/"), None)
 
 
-def find_archive_by_path(base_url: str, path: Union[str, Path]) -> Tuple[str, Dict]:
+def find_archive_by_path(base_url: str, path: str | Path) -> tuple[str, dict]:
     """Constructs URL to search for the archive associated with path"""
     return (
         url_join(base_url, "archives/"),
@@ -79,32 +80,32 @@ def find_archive_by_path(base_url: str, path: Union[str, Path]) -> Tuple[str, Di
     )
 
 
-def find_resource(base_url: str, **params) -> Tuple[str, Dict]:
+def find_resource(base_url: str, **params) -> tuple[str, dict]:
     """Constructs URL to find resources that match params"""
     return (url_join(base_url, "resources/"), params)
 
 
-def get_resource(base_url: str, id: str) -> Tuple[str, None]:
+def get_resource(base_url: str, id: str) -> tuple[str, None]:
     """Constructs URL to retrieve registry record for id"""
     return (full_url(base_url, id), None)
 
 
-def get_resource_bulk(base_url: str, ids: Sequence[str]) -> Tuple[str, Dict]:
+def get_resource_bulk(base_url: str, ids: Sequence[str]) -> tuple[str, dict]:
     """Constructs URL to bulk retrieve registry records for ids"""
     return (url_join(base_url, "bulk", "resources/"), {"names": list(ids)})
 
 
-def get_locations(base_url: str, id: str, **params) -> Tuple[str, Dict]:
+def get_locations(base_url: str, id: str, **params) -> tuple[str, dict]:
     """Constructs URL to look up the locations of a resource."""
     return (url_join(base_url, "resources", id, "locations/"), params)
 
 
-def get_locations_bulk(base_url: str, ids: Sequence[str], **params) -> Tuple[str, Dict]:
+def get_locations_bulk(base_url: str, ids: Sequence[str], **params) -> tuple[str, dict]:
     """Constructs URL to bulk retrieve locations for multiple ids"""
     return (url_join(base_url, "bulk", "locations/"), {"names": list(ids), **params})
 
 
-def add_location(base_url: str, id: str, archive: str) -> Tuple[str, Dict]:
+def add_location(base_url: str, id: str, archive: str) -> tuple[str, dict]:
     """Constructs URL to add a location for a resource (use post)"""
     return (
         url_join(base_url, "resources", id, "locations/"),
@@ -112,12 +113,12 @@ def add_location(base_url: str, id: str, archive: str) -> Tuple[str, Dict]:
     )
 
 
-def get_location(base_url: str, id: str, archive: str) -> Tuple[str, None]:
+def get_location(base_url: str, id: str, archive: str) -> tuple[str, None]:
     """Construct URL to look up (or delete) a specific location"""
     return (url_join(base_url, "resources", id, "locations", f"{archive}/"), None)
 
 
-def add_datatype(base_url: str, name: str, content_type: str) -> Tuple[str, Dict]:
+def add_datatype(base_url: str, name: str, content_type: str) -> tuple[str, dict]:
     """Constructs URL to add a datatype to the registry"""
     return (
         url_join(base_url, "datatypes/"),
@@ -126,8 +127,8 @@ def add_datatype(base_url: str, name: str, content_type: str) -> Tuple[str, Dict
 
 
 def add_archive(
-    base_url: str, name: str, scheme: str, root: Union[Path, str], **kwargs: str
-) -> Tuple[str, Dict]:
+    base_url: str, name: str, scheme: str, root: Path | str, **kwargs: str
+) -> tuple[str, dict]:
     """Constructs URL to add an archive to the registry"""
 
     return (
@@ -138,12 +139,12 @@ def add_archive(
 
 def add_resource(
     base_url: str,
-    id: Optional[str],
-    dtype: Optional[str],
-    archive: Optional[str],
-    sha1: Optional[str] = None,
+    id: str | None,
+    dtype: str | None,
+    archive: str | None,
+    sha1: str | None = None,
     **metadata: Any,
-) -> Tuple[str, Dict]:
+) -> tuple[str, dict]:
     """Constructs URL to add a resource to the registry"""
     url = url_join(base_url, "resources/")
     data = {
@@ -156,7 +157,7 @@ def add_resource(
     return (url, strip_nulls(data))
 
 
-def update_resource_metadata(base_url: str, id: str, **metadata) -> Tuple[str, Dict]:
+def update_resource_metadata(base_url: str, id: str, **metadata) -> tuple[str, dict]:
     """Constructs URL to update metadata in the registry. Set a key to None to delete"""
     return (full_url(base_url, id), {"metadata": metadata})
 
@@ -172,7 +173,7 @@ def url_join(base: str, *path: str) -> str:
     return urlunparse(parts._replace(path=pp.join(parts.path, *path)))
 
 
-def strip_nulls(d: Dict) -> Dict:
+def strip_nulls(d: dict) -> dict:
     """Removes all keys from a dict that are equal to None"""
     return {k: v for k, v in d.items() if v is not None}
 
@@ -194,7 +195,7 @@ def log_error(err):
         raise err
 
 
-def local_schemes() -> Tuple[str]:
+def local_schemes() -> tuple[str]:
     return _local_schemes
 
 

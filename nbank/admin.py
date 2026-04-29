@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 
-from nbank import __version__, archive, registry, util
+from nbank import __version__, registry, util
 from nbank.script import setup_log, userpwd
 
 log = logging.getLogger("nbank")  # root logger
@@ -25,7 +25,11 @@ def delete_resource(
         log.debug("   - attempting to delete %s from %s", resource_id, loc)
         location = util.parse_location(loc)
         if location is None:
-            log.info("  - %s has already been deleted from %s", resource_id, loc["archive_name"])
+            log.info(
+                "  - %s has already been deleted from %s",
+                resource_id,
+                loc["archive_name"],
+            )
         elif not dry_run:
             try:
                 location.unlink()
@@ -92,7 +96,7 @@ def update_hashes(args):
                     elif args.dry_run:
                         log.info("    - would update hash to %s", hash)
                     else:
-                        url, params = registry.get_resource(
+                        url, _params = registry.get_resource(
                             args.registry_url, resource["name"]
                         )
                         r = session.patch(url, json={"sha1": hash})
