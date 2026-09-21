@@ -8,7 +8,7 @@ Created Tue Jul  8 14:23:35 2014
 import json
 import logging
 from collections.abc import Iterator, Mapping, Sequence
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import (
     Any,
 )
@@ -253,6 +253,14 @@ def fetch_resource(
         except (AttributeError, NotFetchableError):
             continue
     return NotFetchableError("(no valid locations)")
+
+
+class JSONEncoder(json.JSONEncoder):
+    """JSON encoder that serializes pathlib objects as strings."""
+    def default(self, o):
+        if isinstance(o, PurePath):
+            return str(o)
+        return super().default(o)
 
 
 __all__ = [

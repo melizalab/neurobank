@@ -427,7 +427,7 @@ def store_resources(args):
             **args.metadata,
         ):
             if args.json_out:
-                json.dump(res, fp=sys.stdout)
+                json.dump(res, fp=sys.stdout, cls=util.JSONEncoder)
                 sys.stdout.write("\n")
     except ValueError as e:
         log.error("error: %s", e)
