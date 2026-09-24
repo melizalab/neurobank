@@ -11,6 +11,7 @@ and NBANK_TEST_AUTH to "user:password" for an account that can write.
 """
 
 import importlib.util
+import logging
 import os
 import socket
 import subprocess
@@ -25,6 +26,7 @@ import pytest
 
 from nbank import archive as nbank_archive
 from nbank import registry as reg
+from nbank import script
 
 ROOT = Path(__file__).parents[2]
 SETTINGS_MODULE = "test.integration.server.settings"
@@ -202,3 +204,22 @@ def register(client, registry, unique, dtype):
         return r.json()
 
     return make
+
+
+@pytest.fixture
+def cli(registry):
+    """Returns a function that runs the nbank command line against the registry.
+
+    Arguments are what follows the global `-r` option (e.g., `-a user:pw`, then
+    the subcommand). The logger is restored afterward because each run adds a
+    handler to it.
+    """
+    log = logging.getLogger("nbank")
+    handlers, level = list(log.handlers), log.level
+
+    def run(*args: str):
+        return script.main(["-r", registry.url, *args])
+
+    yield run
+    log.handlers[:] = handlers
+    log.setLevel(level)
