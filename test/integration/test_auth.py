@@ -145,10 +145,35 @@ def test_cli_credentials_override_netrc(cli, registry, client, unique, caplog):
     assert client.get(url).status_code == 404
 
 
-@pytest.mark.xfail(strict=True, reason="the parser requires ~/.netrc to exist")
 def test_cli_credentials_without_netrc(cli, registry, client, unique, empty_home):
     name = unique("dtype")
     user, password = registry.auth
     cli("-a", f"{user}:{password}", "dtype", "add", name, "text/plain")
     url = reg.url_join(registry.url, "datatypes", f"{name}/")
     assert client.get(url).status_code == 200
+
+
+@pytest.fixture
+def unusable_netrc_home(tmp_path, monkeypatch):
+    """A home directory whose .netrc is rejected because others can read it."""
+    home = tmp_path / "unusable_home"
+    home.mkdir()
+    netrc = home / ".netrc"
+    netrc.write_text("machine example.org\nlogin user\npassword pw\n")
+    netrc.chmod(0o644)
+    monkeypatch.setenv("HOME", str(home))
+
+
+def test_cli_unusable_netrc(cli, unusable_netrc_home, caplog):
+    cli("registry-info")
+    assert "unable to use netrc file" in caplog.text
+    assert "registry info:" not in caplog.text
+
+
+def test_cli_credentials_ignore_unusable_netrc(
+    cli, registry, unusable_netrc_home, caplog
+):
+    user, password = registry.auth
+    cli("-a", f"{user}:{password}", "registry-info")
+    assert "unable to use netrc file" not in caplog.text
+    assert f"address: {registry.url}" in caplog.text

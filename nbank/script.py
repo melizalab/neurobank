@@ -14,6 +14,7 @@ import os
 import shutil
 import sys
 import tarfile
+from netrc import NetrcParseError
 from pathlib import Path
 from urllib.parse import urlunparse
 
@@ -84,7 +85,7 @@ def main(argv=None):
         help="username:password to authenticate with registry. "
         "If not supplied, will attempt to use .netrc file",
         type=userpwd,
-        default=httpx.NetRCAuth(None),
+        default=None,
     )
     p.add_argument("--debug", help="show verbose log messages", action="store_true")
 
@@ -350,6 +351,13 @@ def main(argv=None):
     setup_log(log, args.debug)
     log.debug("version: %s", __version__)
     log.debug("run time: %s", datetime.datetime.now())
+
+    # resolved after parsing so that a missing ~/.netrc doesn't break the parser
+    try:
+        args.auth = core.make_auth(args.auth)
+    except NetrcParseError as err:
+        log.error("error: unable to use netrc file: %s", err.msg)
+        return
 
     # most commands requre a registry, so check it here once
     if args.registry_url is None and args.func not in (

@@ -242,10 +242,9 @@ def cli(registry, netrc_home):
     """Returns a function that runs the nbank command line against the registry.
 
     Arguments are what follows the global `-r` option (e.g., `-a user:pw`, then
-    the subcommand). The command line parser needs ~/.netrc to exist, so the
-    home directory has one with the registry credentials, which also serves as
-    the default login. The logger is restored afterward because each run adds a
-    handler to it.
+    the subcommand). The home directory has a .netrc with the registry
+    credentials, which serves as the default login. The logger is restored
+    afterward because each run adds a handler to it.
     """
     log = logging.getLogger("nbank")
     handlers, level = list(log.handlers), log.level

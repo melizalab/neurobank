@@ -6,11 +6,12 @@ example, if a lot of files were deposited erroneously.
 """
 
 import logging
+from netrc import NetrcParseError
 from pathlib import Path
 
 import httpx
 
-from nbank import __version__, registry, util
+from nbank import __version__, core, registry, util
 from nbank.script import setup_log, userpwd
 
 log = logging.getLogger("nbank")  # root logger
@@ -129,7 +130,7 @@ if __name__ == "__main__":
         help="username:password to authenticate with registry. "
         "If not supplied, will attempt to use .netrc file",
         type=userpwd,
-        default=httpx.NetRCAuth(None),
+        default=None,
     )
     sub = p.add_subparsers(title="subcommands")
 
@@ -165,4 +166,9 @@ if __name__ == "__main__":
         p.exit(0)
     setup_log(log, args.debug)
     log.info("nbank admin version: %s", __version__)
+    try:
+        args.auth = core.make_auth(args.auth)
+    except NetrcParseError as err:
+        log.error("error: unable to use netrc file: %s", err.msg)
+        raise SystemExit(1) from err
     args.func(args)
