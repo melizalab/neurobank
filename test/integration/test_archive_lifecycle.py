@@ -73,6 +73,13 @@ def test_check_unregistered_archive(cli, registry, tmp_path, caplog):
     assert "No archive associated with" in caplog.text
 
 
+def test_check_resource_without_hash(cli, archive, dtype, deposit_file, caplog):
+    deposit_file(archive, dtype)
+    cli("archive", "check", "-v", str(archive.path))
+    assert "OK (no hash to verify)" in caplog.text
+    check_summary(caplog, 1, 0, 0, 0)
+
+
 @pytest.fixture
 def two_archives(archive, make_archive):
     return archive, make_archive(require_hash=False)
@@ -191,3 +198,33 @@ def test_import_tar_dry_run(cli, registry, two_archives, dtype, deposit_file, tm
     assert core.describe(registry.url, name)["locations"] == [a.name]
     with pytest.raises(FileNotFoundError):
         stored_path(b, name)
+
+
+def test_import_tar_refused(
+    cli, two_archives, dtype, deposit_file, tmp_path, monkeypatch, caplog
+):
+    a, b = two_archives
+    name = deposit_file(a, dtype)
+    tar = make_tar(tmp_path / "archive.tar", stored_path(a, name))
+    # without credentials the registry can be read but not changed
+    home = tmp_path / "no_netrc"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    cli("archive", "import-tar", str(tar), str(b.path))
+    assert "unable to add location" in caplog.text
+    assert "Authentication credentials were not provided." in caplog.text
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, name)
+
+
+def test_import_tar_file_already_there(
+    cli, registry, two_archives, dtype, deposit_file, replicate, tmp_path, caplog
+):
+    a, b = two_archives
+    name = deposit_file(a, dtype)
+    tar = make_tar(tmp_path / "archive.tar", stored_path(a, name))
+    copy = tmp_path / "copy.txt"
+    copy.write_text(name)
+    nbank_archive.store_resource(b.config, copy, id=name)
+    cli("archive", "import-tar", str(tar), str(b.path))
+    assert "file is already there but not in registry" in caplog.text
