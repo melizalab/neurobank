@@ -4,8 +4,6 @@
 import io
 import json
 
-import pytest
-
 from nbank import archive as nbank_archive
 from nbank import core, util
 from nbank import registry as reg
@@ -76,7 +74,6 @@ def test_deposit(cli, registry, archive, dtype, tmp_path, unique, capsys):
         assert record["metadata"] == {"experimenter": "dmeliza", "n": 3}
 
 
-@pytest.mark.xfail(strict=True, reason="names read from stdin are str, not Path")
 def test_deposit_names_from_stdin(
     cli, registry, archive, dtype, tmp_path, unique, monkeypatch
 ):
@@ -88,6 +85,20 @@ def test_deposit_names_from_stdin(
     cli("deposit", "-d", dtype, "-@", str(archive.path), str(files[0]))
     found = core.describe_many(registry.url, *names)
     assert {r["name"] for r in found} == set(names)
+
+
+def test_deposit_stdin_blank_lines_and_hashes(
+    cli, registry, archive, dtype, tmp_path, unique, monkeypatch, caplog
+):
+    src = tmp_path / f"{unique('res')}.txt"
+    src.write_text("contents")
+    lines = f"\n\n{src}\n  \n#missing.txt\n"
+    monkeypatch.setattr("sys.stdin", io.StringIO(lines))
+    cli("deposit", "-d", dtype, "-@", str(archive.path), str(src.with_suffix(".x")))
+    assert core.describe(registry.url, src.stem) is not None
+    # blank lines are not file names, but lines that start with '#' are
+    assert "processing '.'" not in caplog.text
+    assert "processing '#missing.txt'" in caplog.text
 
 
 def test_deposit_invalid_name(cli, registry, archive, dtype, tmp_path, caplog):
