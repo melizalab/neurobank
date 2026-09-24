@@ -42,6 +42,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
 ]
 
+# a small page size so that tests can exercise pagination cheaply
+REST_FRAMEWORK = {"PAGE_SIZE": 5}
+
 SECRET_KEY = "not-a-secret-test-server-only"
 ROOT_URLCONF = "test.integration.server.urls"
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"

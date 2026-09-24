@@ -16,11 +16,15 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import NamedTuple
 
 import httpx
 import pytest
+
+from nbank import archive as nbank_archive
+from nbank import registry as reg
 
 ROOT = Path(__file__).parents[2]
 SETTINGS_MODULE = "test.integration.server.settings"
@@ -32,6 +36,12 @@ STARTUP_TIMEOUT = 30
 class Registry(NamedTuple):
     url: str
     auth: tuple[str, str]
+
+
+class Archive(NamedTuple):
+    name: str
+    path: Path
+    config: dict
 
 
 def pytest_collection_modifyitems(items):
@@ -122,3 +132,73 @@ def registry(tmp_path_factory):
         finally:
             proc.terminate()
             proc.wait(timeout=10)
+
+
+@pytest.fixture
+def unique():
+    """Returns a function that makes names that are unique within the registry."""
+
+    def make(prefix: str = "t") -> str:
+        return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+    return make
+
+
+@pytest.fixture
+def client(registry):
+    """An HTTP client that is authenticated to the registry."""
+    with httpx.Client(auth=registry.auth) as session:
+        yield session
+
+
+@pytest.fixture
+def dtype(client, registry, unique):
+    """The name of a new datatype."""
+    name = unique("dtype")
+    url, body = reg.add_datatype(registry.url, name, "application/octet-stream")
+    client.post(url, json=body).raise_for_status()
+    return name
+
+
+@pytest.fixture
+def make_archive(client, registry, unique, tmp_path):
+    """Returns a function that creates an archive and registers it.
+
+    Keyword arguments set archive policies (e.g., require_hash).
+    """
+
+    def make(**policies) -> Archive:
+        name = unique("arch")
+        config = nbank_archive.create(tmp_path / name, registry.url, **policies)
+        url, body = reg.add_archive(registry.url, name, "neurobank", config["path"])
+        client.post(url, json=body).raise_for_status()
+        return Archive(name, config["path"], config)
+
+    return make
+
+
+@pytest.fixture
+def archive(make_archive):
+    """A registered archive that does not require hashes."""
+    return make_archive(require_hash=False)
+
+
+@pytest.fixture
+def register(client, registry, unique, dtype):
+    """Returns a function that adds a resource record directly, without a file.
+
+    Returns the record from the registry.
+    """
+
+    def make(name=None, *, dtype=dtype, archive=None, sha1=None, **metadata) -> dict:
+        name = name or unique("res")
+        url, body = reg.add_resource(
+            registry.url, name, dtype, archive, sha1, **metadata
+        )
+        if archive is None:
+            body["locations"] = []
+        r = client.post(url, json=body)
+        r.raise_for_status()
+        return r.json()
+
+    return make

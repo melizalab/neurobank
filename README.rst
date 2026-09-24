@@ -226,12 +226,12 @@ Recommend using `uv <https://docs.astral.sh/uv/>`__ for development.
 Run ``uv sync`` to create a virtual environment and install
 dependencies. ``uv sync --no-dev --frozen`` for deployment.
 
-Testing: ``uv run pytest`` runs the unit tests, which mock the registry.
+Testing: ``uv run pytest`` runs the unit tests against a mock registry.
 
 Integration tests run against a live registry (django-neurobank) that the tests
-start themselves, using a temporary sqlite database. They are skipped by default
-and need the ``integration`` dependency group, which ``uv sync`` does not
-install::
+start themselves, using a temporary sqlite database. They are skipped by default, and
+you need to install the ``integration`` dependency group, which ``uv sync`` doesn't do
+by default::
 
   uv run --group integration pytest -m integration
 
