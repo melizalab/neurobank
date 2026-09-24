@@ -99,7 +99,6 @@ def test_log_error_validation(registry, client, dtype, caplog):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="log_error logs each character of a string")
 def test_log_error_detail(registry, client, caplog):
     url, body = reg.get_resource_bulk(registry.url, [])
     with pytest.raises(httpx.HTTPStatusError) as err:
@@ -110,6 +109,30 @@ def test_log_error_detail(registry, client, caplog):
     assert [r.getMessage() for r in caplog.records] == [
         "   registry error: detail: must supply at least one name"
     ]
+
+
+def test_log_error_several_fields(registry, client, caplog):
+    url, _ = reg.get_archives(registry.url)
+    with pytest.raises(httpx.HTTPStatusError) as err:
+        client.post(url, json={}).raise_for_status()
+    with caplog.at_level(logging.ERROR, logger="nbank"):
+        reg.log_error(err.value)
+    assert sorted(r.getMessage() for r in caplog.records) == [
+        "   registry error: name: This field is required.",
+        "   registry error: root: This field is required.",
+        "   registry error: scheme: This field is required.",
+    ]
+
+
+def test_log_error_malformed_request(registry, client, caplog):
+    url, _ = reg.find_resource(registry.url)
+    headers = {"Content-Type": "application/json"}
+    with pytest.raises(httpx.HTTPStatusError) as err:
+        client.post(url, content=b"{bad", headers=headers).raise_for_status()
+    with caplog.at_level(logging.ERROR, logger="nbank"):
+        reg.log_error(err.value)
+    [record] = caplog.records
+    assert record.getMessage().startswith("   registry error: detail: JSON parse error")
 
 
 @pytest.mark.xfail(strict=True, reason="errors from streamed requests are unread")

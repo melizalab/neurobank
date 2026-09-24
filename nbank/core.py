@@ -264,7 +264,11 @@ def fetch(
 def update(
     base_url: str, *ids: str, auth: RegistryAuth = None, **metadata: Any
 ) -> Iterator[dict]:
-    """Update metadata for one or more resources. Set a key to None to delete."""
+    """Update metadata for one or more resources. Set a key to None to delete.
+
+    Yields the updated record for each resource. A resource that is not in the
+    registry yields {"name": id, "error": "not found"}.
+    """
     from nbank.registry import update_resource_metadata
 
     with httpx.Client(headers={"Accept": "application/json"}) as session:
@@ -274,6 +278,7 @@ def update(
             r = session.patch(url, json=params)
             if r.status_code == 404:
                 yield {"name": id, "error": "not found"}
+                continue
             r.raise_for_status()
             yield r.json()
 

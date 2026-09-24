@@ -210,6 +210,14 @@ def test_modify(cli, registry, register, capsys):
     assert core.describe(registry.url, name)["metadata"] == result["metadata"]
 
 
+def test_modify_missing(cli, register, unique, capsys):
+    missing, name = unique("missing"), register()["name"]
+    cli("modify", "-k", "k=v", missing, name)
+    error, result = json_objects(capsys.readouterr().out)
+    assert error == {"name": missing, "error": "not found"}
+    assert result["name"] == name
+
+
 def test_verify_matching_id(cli, register, tmp_path, unique, capsys):
     name = unique("res")
     src = tmp_path / f"{name}.txt"

@@ -306,7 +306,6 @@ def test_update_several(registry, register):
     assert all(r["metadata"] == {"k": "v"} for r in results)
 
 
-@pytest.mark.xfail(strict=True, reason="update raises after reporting a 404")
 def test_update_missing(registry, register, unique):
     missing = unique("missing")
     name = register()["name"]

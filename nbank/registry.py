@@ -183,8 +183,9 @@ def log_error(err):
     if err.response.status_code == 400:
         data = err.response.json()
         for k, v in data.items():
-            for vv in v:
-                log.error("   registry error: %s: %s", k, vv)
+            # a field has a list of messages; "detail" has a single string
+            for message in [v] if isinstance(v, str) else v:
+                log.error("   registry error: %s: %s", k, message)
     elif err.response.status_code == 403:
         data = err.response.json()
         for _k, v in data.items():
