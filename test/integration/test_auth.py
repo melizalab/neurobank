@@ -2,7 +2,6 @@
 """Tests of how the client authenticates to the registry and reports failures."""
 
 import logging
-from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -11,28 +10,10 @@ from nbank import core
 from nbank import registry as reg
 
 
-def write_netrc(path, registry, password=None):
-    host = urlparse(registry.url).hostname
-    user, correct = registry.auth
-    path.write_text(f"machine {host}\nlogin {user}\npassword {password or correct}\n")
-    # the default netrc file is ignored if others can read it
-    path.chmod(0o600)
-    return path
-
-
-@pytest.fixture
-def netrc_home(registry, tmp_path, monkeypatch):
-    """A home directory with a .netrc that has the registry credentials."""
-    home = tmp_path / "home"
-    home.mkdir()
-    write_netrc(home / ".netrc", registry)
-    monkeypatch.setenv("HOME", str(home))
-
-
 @pytest.fixture
 def empty_home(tmp_path, monkeypatch):
     """A home directory with no .netrc."""
-    home = tmp_path / "home"
+    home = tmp_path / "empty_home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
 
@@ -65,9 +46,9 @@ def test_auth_object(registry, register):
     assert update(registry, name, auth)[0]["metadata"] == {"k": "v"}
 
 
-def test_netrc_file(registry, register, tmp_path):
+def test_netrc_file(registry, register, make_netrc, tmp_path):
     name = register()["name"]
-    auth = httpx.NetRCAuth(write_netrc(tmp_path / "netrc", registry))
+    auth = httpx.NetRCAuth(make_netrc(tmp_path / "netrc"))
     assert update(registry, name, auth)[0]["metadata"] == {"k": "v"}
 
 
@@ -140,7 +121,7 @@ def test_log_error_streamed(registry, caplog):
     assert "must supply at least one name" in caplog.text
 
 
-def test_cli_credentials_option(cli, registry, client, unique, netrc_home):
+def test_cli_credentials_option(cli, registry, client, unique):
     name = unique("dtype")
     user, password = registry.auth
     cli("-a", f"{user}:{password}", "dtype", "add", name, "text/plain")
@@ -148,16 +129,14 @@ def test_cli_credentials_option(cli, registry, client, unique, netrc_home):
     assert client.get(url).status_code == 200
 
 
-def test_cli_default_netrc(cli, registry, client, unique, netrc_home):
+def test_cli_default_netrc(cli, registry, client, unique):
     name = unique("dtype")
     cli("dtype", "add", name, "text/plain")
     url = reg.url_join(registry.url, "datatypes", f"{name}/")
     assert client.get(url).status_code == 200
 
 
-def test_cli_credentials_override_netrc(
-    cli, registry, client, unique, netrc_home, caplog
-):
+def test_cli_credentials_override_netrc(cli, registry, client, unique, caplog):
     name = unique("dtype")
     user, _ = registry.auth
     cli("-a", f"{user}:wrong-password", "dtype", "add", name, "text/plain")

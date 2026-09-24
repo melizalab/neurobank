@@ -13,6 +13,7 @@ and NBANK_TEST_AUTH to "user:password" for an account that can write.
 import importlib.util
 import logging
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -20,13 +21,14 @@ import time
 import uuid
 from pathlib import Path
 from typing import NamedTuple
+from urllib.parse import urlparse
 
 import httpx
 import pytest
 
 from nbank import archive as nbank_archive
+from nbank import core, script
 from nbank import registry as reg
-from nbank import script
 
 ROOT = Path(__file__).parents[2]
 SETTINGS_MODULE = "test.integration.server.settings"
@@ -207,11 +209,39 @@ def register(client, registry, unique, dtype):
 
 
 @pytest.fixture
-def cli(registry):
+def make_netrc(registry):
+    """Returns a function that writes a netrc file with the registry credentials."""
+
+    def make(path: Path, password: str | None = None) -> Path:
+        host = urlparse(registry.url).hostname
+        user, correct = registry.auth
+        path.write_text(
+            f"machine {host}\nlogin {user}\npassword {password or correct}\n"
+        )
+        # the default netrc file is ignored if others can read it
+        path.chmod(0o600)
+        return path
+
+    return make
+
+
+@pytest.fixture
+def netrc_home(make_netrc, tmp_path, monkeypatch):
+    """A home directory with a .netrc that has the registry credentials."""
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    make_netrc(home / ".netrc")
+    monkeypatch.setenv("HOME", str(home))
+
+
+@pytest.fixture
+def cli(registry, netrc_home):
     """Returns a function that runs the nbank command line against the registry.
 
     Arguments are what follows the global `-r` option (e.g., `-a user:pw`, then
-    the subcommand). The logger is restored afterward because each run adds a
+    the subcommand). The command line parser needs ~/.netrc to exist, so the
+    home directory has one with the registry credentials, which also serves as
+    the default login. The logger is restored afterward because each run adds a
     handler to it.
     """
     log = logging.getLogger("nbank")
@@ -223,3 +253,34 @@ def cli(registry):
     yield run
     log.handlers[:] = handlers
     log.setLevel(level)
+
+
+@pytest.fixture
+def deposit_file(registry, tmp_path, unique):
+    """Returns a function that makes a file and deposits it. Returns the id."""
+
+    def deposit(archive: Archive, dtype: str, contents: str | None = None, **kwargs):
+        name = unique("res")
+        src = tmp_path / f"{name}.txt"
+        src.write_text(contents or name)
+        [item] = core.deposit(
+            archive.path, [src], dtype=dtype, auth=registry.auth, **kwargs
+        )
+        return item["id"]
+
+    return deposit
+
+
+@pytest.fixture
+def replicate(registry, client, tmp_path):
+    """Returns a function that copies a resource to another archive."""
+
+    def copy(name: str, src: Archive, dst: Archive) -> None:
+        stored = nbank_archive.resource_path(src.config, name, resolve_ext=True)
+        tmp = tmp_path / f"copy-{stored.name}"
+        shutil.copy(stored, tmp)
+        nbank_archive.store_resource(dst.config, tmp, id=name)
+        url, body = reg.add_location(registry.url, name, dst.name)
+        client.post(url, json=body).raise_for_status()
+
+    return copy
