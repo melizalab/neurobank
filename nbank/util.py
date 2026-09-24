@@ -63,6 +63,8 @@ class HttpResource(FetchableResource):
                 "No mechanism provided to fetch a resource over http(s)"
             )
         with self.session.stream("GET", self.url) as r:
+            if r.is_error:
+                r.read()  # the body can't be read once the stream is closed
             r.raise_for_status()
             with open(target, "wb") as fp:
                 for chunk in r.iter_bytes(chunk_size=1024):
@@ -211,6 +213,8 @@ def query_registry_bulk(
 ) -> list[dict]:
     """Perform a POST request to a bulk query url. These endpoints all stream line-delimited json"""
     with session.stream("POST", url, json=query, auth=auth) as r:
+        if r.is_error:
+            r.read()  # the body can't be read once the stream is closed
         r.raise_for_status()
         for line in r.iter_lines():
             yield json.loads(line)

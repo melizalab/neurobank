@@ -135,13 +135,14 @@ def test_log_error_malformed_request(registry, client, caplog):
     assert record.getMessage().startswith("   registry error: detail: JSON parse error")
 
 
-@pytest.mark.xfail(strict=True, reason="errors from streamed requests are unread")
 def test_log_error_streamed(registry, caplog):
     with pytest.raises(httpx.HTTPStatusError) as err:
         list(core.describe_many(registry.url))
     with caplog.at_level(logging.ERROR, logger="nbank"):
         reg.log_error(err.value)
-    assert "must supply at least one name" in caplog.text
+    assert [r.getMessage() for r in caplog.records] == [
+        "   registry error: detail: must supply at least one name"
+    ]
 
 
 def test_cli_credentials_option(cli, registry, client, unique):

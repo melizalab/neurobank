@@ -170,6 +170,15 @@ def test_query_bulk(mocked_api):
     assert result == data
 
 
+def test_query_bulk_error_body_is_readable(mocked_api):
+    url = "https://meliza.org/neurobank/bulk/resources"
+    body = {"detail": "must supply at least one name"}
+    mocked_api.post(url).respond(400, stream=[json.dumps(body).encode()])
+    with pytest.raises(httpx.HTTPStatusError) as err:
+        list(util.query_registry_bulk(httpx, url, {"names": []}))
+    assert err.value.response.json() == body
+
+
 def test_query_first_empty(mocked_api):
     url = "https://meliza.org/neurobank/resources/"
     data = []
@@ -201,3 +210,22 @@ def test_fetch(mocked_api, tmp_path):
     mocked_api.get(url).respond(content=content)
     resource.fetch(p)
     assert p.read_text() == content
+
+
+def test_fetch_error_body_is_readable(mocked_api, tmp_path):
+    url = "https://meliza.org/neurobank/download/dummy/"
+    body = {"detail": "not found"}
+    p = tmp_path / "output"
+    resource = util.HttpResource(
+        {
+            "scheme": "https",
+            "root": "meliza.org/neurobank/download",
+            "resource_name": "dummy",
+        },
+        httpx,
+    )
+    mocked_api.get(url).respond(404, stream=[json.dumps(body).encode()])
+    with pytest.raises(httpx.HTTPStatusError) as err:
+        resource.fetch(p)
+    assert err.value.response.json() == body
+    assert not p.exists()
