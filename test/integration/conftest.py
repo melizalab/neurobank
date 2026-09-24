@@ -171,13 +171,18 @@ def dtype(client, registry, unique):
 def make_archive(client, registry, unique, tmp_path):
     """Returns a function that creates an archive and registers it.
 
-    Keyword arguments set archive policies (e.g., require_hash).
+    Keyword arguments set archive policies (e.g., require_hash). The registry
+    lists local archives before remote ones; set accessibility to "remote" to
+    change where an archive is listed.
     """
 
-    def make(**policies) -> Archive:
+    def make(accessibility: str | None = None, **policies) -> Archive:
         name = unique("arch")
         config = nbank_archive.create(tmp_path / name, registry.url, **policies)
-        url, body = reg.add_archive(registry.url, name, "neurobank", config["path"])
+        extra = {"accessibility": accessibility} if accessibility else {}
+        url, body = reg.add_archive(
+            registry.url, name, "neurobank", config["path"], **extra
+        )
         client.post(url, json=body).raise_for_status()
         return Archive(name, config["path"], config)
 

@@ -161,16 +161,22 @@ def describe_many(registry_url: str, *ids: str) -> Iterator[dict]:
     with httpx.Client() as session:
         yield from query_registry_bulk(session, url, query)
 
-
 def find(
     registry_url: str, id: str, alt_base: Path | None = None
-) -> Iterator[FetchableResource]:
+) -> Iterator[FetchableResource | None]:
     """Generates a sequence of Fetchables where id can be located
 
-    Set alt_base to replace the dirname of any local resources. This is intended
-    to be used with temporary copies of archives on other hosts.
+    Yields None for locations that can't be reached from this host (e.g., an
+    archive on a filesystem that isn't mounted here), so an empty sequence means
+    that the resource has no locations. Raises HTTPStatusError (with status 404)
+    if the resource is not in the registry.
+
+    Set alt_base to set an alternate path to search for resources in neurobank
+    archives. This is intended to be used with temporary copies of archives on
+    other hosts.
 
     """
+    # TODO: consider a more transparent readout for unreachable/nonexistent conditions
     from nbank.registry import get_locations
     from nbank.util import parse_location, query_registry_paginated
 
@@ -183,16 +189,21 @@ def find(
 def get(
     registry_url: str, id: str, alt_base: Path | None = None
 ) -> FetchableResource | None:
-    """Returns the first path or URL where id can be found, or None if no match.
+    """Returns the first path or URL where id can be found from this host, or None.
 
-    Set alt_base to replace the dirname of any local resources. This is intended
-    to be used with temporary copies of archives on other hosts.
+    None means that no location for the resource can be reached from this host.
+    Raises HTTPStatusError (with status 404) if the resource is not in the
+    registry.
+
+    Set alt_base to set an alternate path to search for resources in neurobank
+    archives. This is intended to be used with temporary copies of archives on
+    other hosts.
 
     """
-    try:
-        return next(find(registry_url, id, alt_base))
-    except StopIteration:
-        pass
+    # TODO: consider a more transparent readout for unreachable/nonexistent conditions
+    for resource in find(registry_url, id, alt_base):
+        if resource is not None:
+            return resource
 
 
 def verify(

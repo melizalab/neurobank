@@ -228,26 +228,44 @@ def test_find_all_locations(
     }
 
 
-@pytest.mark.xfail(
-    strict=True, reason="find yields None for locations whose file is missing"
-)
-def test_find_skips_missing_files(
-    registry, client, archive, make_archive, dtype, tmp_path, unique
+def test_find_unreachable_location(
+    registry, client, register, make_archive, tmp_path, unique
 ):
-    other = make_archive(require_hash=False)
-    src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
-    name = deposit_one(registry, archive, dtype, src)
-    url, body = reg.add_location(registry.url, name, other.name)
+    # the registry lists local archives first, so the unreachable one is first
+    unreachable = make_archive()
+    reachable = make_archive(accessibility="remote")
+    name = register(archive=unreachable.name)["name"]
+    url, body = reg.add_location(registry.url, name, reachable.name)
     client.post(url, json=body).raise_for_status()
+    src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
+    stored = nbank_archive.store_resource(reachable.config, src, id=name)
 
     resources = list(core.find(registry.url, name))
-    assert len(resources) == 1
-    assert resources[0] is not None
+    assert resources[0] is None
+    assert [r.path for r in resources[1:]] == [stored]
+    assert core.get(registry.url, name).path == stored
 
 
-@pytest.mark.xfail(strict=True, reason="get raises on a 404 instead of returning None")
-def test_get_missing(registry, unique):
-    assert core.get(registry.url, unique("missing")) is None
+def test_find_only_unreachable_locations(registry, register, archive):
+    name = register(archive=archive.name)["name"]
+    assert list(core.find(registry.url, name)) == [None]
+    assert core.get(registry.url, name) is None
+
+
+def test_find_and_get_unknown_resource(registry, unique):
+    missing = unique("missing")
+    with pytest.raises(httpx.HTTPStatusError) as err:
+        core.get(registry.url, missing)
+    assert err.value.response.status_code == 404
+    with pytest.raises(httpx.HTTPStatusError) as err:
+        list(core.find(registry.url, missing))
+    assert err.value.response.status_code == 404
+
+
+def test_find_and_get_resource_without_locations(registry, register):
+    name = register()["name"]
+    assert list(core.find(registry.url, name)) == []
+    assert core.get(registry.url, name) is None
 
 
 def test_verify_by_hash(registry, register, tmp_path, unique):
