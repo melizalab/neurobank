@@ -235,7 +235,9 @@ by default::
 
   uv run --group integration pytest -m integration
 
-To use Postgres instead, set ``NBANK_TEST_DB=postgres`` and, if the defaults
+The integration tests also run on GitHub against Postgres (see
+``.github/workflows/integration_tests.yml``). To use Postgres locally, add
+``--group postgres`` and set ``NBANK_TEST_DB=postgres`` and, if the defaults
 don't apply, ``POSTGRES_DB``, ``POSTGRES_USER``, ``POSTGRES_PASSWORD``,
 ``POSTGRES_HOST`` and ``POSTGRES_PORT``. To use an existing registry, set
 ``NBANK_TEST_REGISTRY`` to its base URL and ``NBANK_TEST_AUTH`` to

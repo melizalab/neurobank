@@ -2,7 +2,8 @@
 """Fixtures for running tests against a live registry.
 
 By default a registry server is started in a subprocess with a fresh database.
-This needs the `integration` dependency group:
+This needs the `integration` dependency group (and `postgres` if the tests use
+Postgres):
 
     uv run --group integration pytest -m integration
 
@@ -109,14 +110,16 @@ def registry(tmp_path_factory):
         "PYTHONPATH": str(ROOT),
         "NBANK_TEST_SQLITE": str(tmp / "registry.sqlite3"),
     }
-    manage(env, "migrate", "--noinput", "-v", "0")
+    manage(env, "migrate", "--noinput", "--run-syncdb", "-v", "0")
     manage(
         env,
         "shell",
         "-c",
         "from django.contrib.auth.models import User;"
-        f"User.objects.filter(username='{USERNAME}').delete();"
-        f"User.objects.create_superuser('{USERNAME}', password='{PASSWORD}')",
+        f"user, _ = User.objects.get_or_create(username='{USERNAME}');"
+        "user.is_staff = user.is_superuser = True;"
+        f"user.set_password('{PASSWORD}');"
+        "user.save()",
     )
     port = free_port()
     addr = f"127.0.0.1:{port}"

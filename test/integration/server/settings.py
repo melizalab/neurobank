@@ -4,6 +4,10 @@ The database is selected by environment: Postgres if NBANK_TEST_DB=postgres
 (connection details from the POSTGRES_* variables), otherwise a sqlite file at
 NBANK_TEST_SQLITE. The server runs in a separate process, so an in-memory
 database won't work.
+
+With Postgres the registry's migrations are run. With sqlite they are skipped
+and the tables are created from the models, because the migrations import
+django.contrib.postgres, which needs psycopg.
 """
 
 import os
@@ -26,6 +30,7 @@ else:
             "NAME": os.environ["NBANK_TEST_SQLITE"],
         }
     }
+    MIGRATION_MODULES = {"nbank_registry": None}
 
 INSTALLED_APPS = [
     "django.contrib.auth",
@@ -42,8 +47,10 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
 ]
 
-# a small page size so that tests can exercise pagination cheaply
+# a small page size so that tests can exercise pagination cheaply. The registry
+# sets its pagination class on the views that need it.
 REST_FRAMEWORK = {"PAGE_SIZE": 5}
+SILENCED_SYSTEM_CHECKS = ["rest_framework.W001"]
 
 SECRET_KEY = "not-a-secret-test-server-only"
 ROOT_URLCONF = "test.integration.server.urls"

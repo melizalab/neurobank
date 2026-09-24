@@ -1,0 +1,64 @@
+# Runs the tests in test/integration against a live django-neurobank registry
+# backed by Postgres. The registry is started by the tests themselves.
+#
+# Each Python version is tested against the registry release in uv.lock and
+# against the registry's master branch. The master runs can fail without
+# failing the workflow; they are an early warning of changes to the registry.
+#
+# The registry changes independently of this repository, so its workflow can
+# start these tests (e.g., after its own tests pass on master) with
+#   gh workflow run integration_tests.yml --repo melizalab/neurobank
+# using a token that has write access to this repository's actions.
+
+name: Integration tests
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: ${{ matrix.registry == 'master' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.14"]
+        registry: [release, master]
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: uv sync --frozen --group integration --group postgres
+    - name: Install the registry from its master branch
+      if: matrix.registry == 'master'
+      run: >-
+        uv pip install --reinstall-package django-neurobank
+        "django-neurobank @ git+https://github.com/melizalab/django-neurobank"
+    - name: Run integration tests
+      # the connection settings in test/integration/server/settings.py default
+      # to the values of the postgres service above
+      env:
+        NBANK_TEST_DB: postgres
+      run: uv run --no-sync pytest -m integration

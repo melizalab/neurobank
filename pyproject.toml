@@ -44,6 +44,8 @@ dev = [
 ]
 integration = [
     "django-neurobank>=0.10.14",
+]
+postgres = [
     "psycopg[binary]>=3.1",
 ]
 
