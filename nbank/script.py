@@ -36,9 +36,12 @@ def setup_log(log, debug=False):
 
 
 def userpwd(arg):
-    """If arg is of the form username:password, returns them as a tuple. Otherwise None."""
-    ret = arg.split(":")
-    return tuple(ret) if len(ret) == 2 else None
+    """If arg is of the form username:password, returns them as a tuple. Otherwise None.
+
+    The password can contain colons.
+    """
+    user, sep, password = arg.partition(":")
+    return (user, password) if sep else None
 
 
 def octalint(arg):
@@ -599,7 +602,8 @@ def check_archive(args):
     """Verify the integrity of an archive.
 
     - every file is readable
-    - every file's hash and name matches a record in the registry
+    - every file's name matches a record in the registry, and its hash matches
+      if the record has one
     - the registry record has this archive as a location
     - every record in the registry is matched with a file
 
@@ -655,12 +659,13 @@ def check_archive(args):
             if not os.access(resource_file, os.R_OK):
                 log.error("%s - FAILED to read!", msg)
                 n_err += 1
-            elif util.hash(resource_file) != sha1:
+            elif sha1 is not None and util.hash(resource_file) != sha1:
                 log.error("%s - FAILED to match hash!", msg)
                 n_err += 1
             else:
                 if args.verbose:
-                    log.info("%s - OK", msg)
+                    note = "" if sha1 is not None else " (no hash to verify)"
+                    log.info("%s - OK%s", msg, note)
                 n_ok += 1
         for resource_name in resources:
             log.error(" - %s: MISSING from the archive!", resource_name)
