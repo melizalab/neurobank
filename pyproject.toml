@@ -42,6 +42,10 @@ dev = [
     "respx>=0.20",
     "ruff>=0.7.0"
 ]
+integration = [
+    "django-neurobank>=0.10.14",
+    "psycopg[binary]>=3.1",
+]
 
 [project.urls]
 Homepage = "https://github.com/melizalab/neurobank"
@@ -59,8 +63,11 @@ include = '\.pyi?$'
 
 [tool.pytest.ini_options]
 python_files = ["test_*.py", "*_test.py"]
-addopts = "-v"
+addopts = "-v -m 'not integration'"
 testpaths = ["test"]
+markers = [
+    "integration: tests that run against a live registry (deselected by default)",
+]
 
 [tool.ruff]
 line-length = 88

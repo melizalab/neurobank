@@ -226,7 +226,20 @@ Recommend using `uv <https://docs.astral.sh/uv/>`__ for development.
 Run ``uv sync`` to create a virtual environment and install
 dependencies. ``uv sync --no-dev --frozen`` for deployment.
 
-Testing: ``uv run pytest``
+Testing: ``uv run pytest`` runs the unit tests, which mock the registry.
+
+Integration tests run against a live registry (django-neurobank) that the tests
+start themselves, using a temporary sqlite database. They are skipped by default
+and need the ``integration`` dependency group, which ``uv sync`` does not
+install::
+
+  uv run --group integration pytest -m integration
+
+To use Postgres instead, set ``NBANK_TEST_DB=postgres`` and, if the defaults
+don't apply, ``POSTGRES_DB``, ``POSTGRES_USER``, ``POSTGRES_PASSWORD``,
+``POSTGRES_HOST`` and ``POSTGRES_PORT``. To use an existing registry, set
+``NBANK_TEST_REGISTRY`` to its base URL and ``NBANK_TEST_AUTH`` to
+``user:password`` for an account that can write.
 
 Python interface
 ----------------
