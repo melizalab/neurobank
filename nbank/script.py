@@ -879,13 +879,9 @@ def import_tar(args):
             if not args.dry_run:
                 r = session.send(req)
                 if r.status_code != httpx.codes.CREATED:
-                    log.info(
-                        "  ✗ %s -> unable to add location: ",
-                        file_path,
-                        r.json()["detail"],
-                    )
+                    log.info("  ✗ %s -> unable to add location: %s", file_path, r.text)
                 elif dest_path.exists():
-                    log.warn(
+                    log.warning(
                         "  - %s -> file is already there but not in registry, skipping",
                         file_path,
                     )
