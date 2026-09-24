@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from httpx import HTTPStatusError
 
 from nbank.util import FetchableResource
 
@@ -160,6 +159,7 @@ def describe_many(registry_url: str, *ids: str) -> Iterator[dict]:
     url, query = get_resource_bulk(registry_url, ids)
     with httpx.Client() as session:
         yield from query_registry_bulk(session, url, query)
+
 
 def find(
     registry_url: str, id: str, alt_base: Path | None = None
