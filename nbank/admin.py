@@ -37,7 +37,7 @@ def delete_resource(
                 log.info("  ✗ deleted %s", location.path)
             except AttributeError:
                 log.debug("   - %s is not deletable, skipping", location)
-    url, params = registry.get_resource(args.registry_url, resource_id)
+    url, params = registry.get_resource(registry_url, resource_id)
     req = session.build_request("DELETE", url)
     log.info("  ✗ purged %s", req.url)
     if not dry_run:
@@ -80,7 +80,8 @@ def update_hashes(args):
     n_to_update = len(to_update)
     url, query = registry.get_locations_bulk(args.registry_url, to_update)
     with httpx.Client(auth=args.auth) as session:
-        for i, resource in enumerate(util.query_registry_bulk(session, url, query)):
+        resources = util.query_registry_bulk(session, url, query)
+        for i, resource in enumerate(resources, start=1):
             log.info(
                 "- [%d/%d] %s (current hash: %s)",
                 i,
@@ -91,6 +92,9 @@ def update_hashes(args):
             for loc in resource["locations"]:
                 try:
                     location = util.parse_location(loc)
+                    if not hasattr(location, "path"):
+                        log.debug("    - %s is not local, skipping", loc)
+                        continue
                     hash = util.hash(location.path)
                     if hash == resource["sha1"]:
                         log.info("    - already has the right hash")
@@ -164,6 +168,11 @@ if __name__ == "__main__":
     if not hasattr(args, "func"):
         p.print_usage()
         p.exit(0)
+    if args.registry_url is None:
+        p.error(
+            f"supply a registry url with '-r' or {registry._env_registry} "
+            "environment variable"
+        )
     setup_log(log, args.debug)
     log.info("nbank admin version: %s", __version__)
     try:
