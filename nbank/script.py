@@ -14,13 +14,14 @@ import os
 import shutil
 import sys
 import tarfile
+from collections import Counter
 from netrc import NetrcParseError
 from pathlib import Path
 from urllib.parse import urlunparse
 
 import httpx
 
-from nbank import __version__, archive, core, registry, util
+from nbank import __version__, archive, check, core, registry, util
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -641,52 +642,37 @@ def check_archive(args):
             "retrieving resources that should be in %s from the registry...",
             archive_name,
         )
-        url, _ = registry.find_resource(registry_url)
-        resources = {
-            item["name"]: item["sha1"]
-            for item in util.query_registry_paginated(
-                session, url, {"location": archive_name}
-            )
-        }
-        n_total = len(resources)
-        n_ok = 0
-        n_err = 0
-        n_extra = 0
-        log.info(" - resources in the registry: %d", n_total)
-        log.info("verifying resources:")
-        for resource_file in archive.iter_resources(archive_path):
-            resource_name = resource_file.stem
-            try:
-                sha1 = resources.pop(resource_name)
-            except KeyError:
-                log.error(
-                    " - %s: MISSING from the registry under %s!",
-                    resource_file,
-                    archive_name,
-                )
-                n_extra += 1
-                continue
-            msg = f" - {resource_name} : {resource_file}"
-            if not os.access(resource_file, os.R_OK):
-                log.error("%s - FAILED to read!", msg)
-                n_err += 1
-            elif sha1 is not None and util.hash(resource_file) != sha1:
-                log.error("%s - FAILED to match hash!", msg)
-                n_err += 1
-            else:
-                if args.verbose:
-                    note = "" if sha1 is not None else " (no hash to verify)"
-                    log.info("%s - OK%s", msg, note)
-                n_ok += 1
-        for resource_name in resources:
-            log.error(" - %s: MISSING from the archive!", resource_name)
-        log.info(
-            "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d",
-            n_total,
-            len(resources),
-            n_extra,
-            n_err,
+        expected = check.registry_resources_in_archive(
+            session, registry_url, archive_name
         )
+    log.info(" - resources in the registry: %d", len(expected))
+    log.info("verifying resources:")
+    counts = Counter()
+    for finding in check.check_archive_contents(archive_path, expected):
+        counts[finding.status] += 1
+        if finding.status == check.Status.MISSING_FROM_REGISTRY:
+            log.error(
+                " - %s: MISSING from the registry under %s!",
+                finding.path,
+                archive_name,
+            )
+        elif finding.status == check.Status.MISSING_FROM_ARCHIVE:
+            log.error(" - %s: MISSING from the archive!", finding.resource)
+        elif not finding.ok:
+            log.error(
+                " - %s : %s - %s!", finding.resource, finding.path, finding.status.value
+            )
+        elif args.verbose:
+            log.info(
+                " - %s : %s - %s", finding.resource, finding.path, finding.status.value
+            )
+    log.info(
+        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d",
+        len(expected),
+        counts[check.Status.MISSING_FROM_ARCHIVE],
+        counts[check.Status.MISSING_FROM_REGISTRY],
+        counts[check.Status.UNREADABLE] + counts[check.Status.HASH_MISMATCH],
+    )
 
 
 def register_tar(args):
