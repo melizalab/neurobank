@@ -171,6 +171,11 @@ def find(
     that the resource has no locations. Raises HTTPStatusError (with status 404)
     if the resource is not in the registry.
 
+    The fetch method of a resource at an http(s) location doesn't work, because
+    the session used to look it up is closed. This is deprecated: in a future
+    release the method will raise NotFetchableError. Use the `nbank fetch`
+    command to download resources.
+
     Set alt_base to set an alternate path to search for resources in neurobank
     archives. This is intended to be used with temporary copies of archives on
     other hosts.
@@ -193,7 +198,7 @@ def get(
 
     None means that no location for the resource can be reached from this host.
     Raises HTTPStatusError (with status 404) if the resource is not in the
-    registry.
+    registry. See find about resources at http(s) locations.
 
     Set alt_base to set an alternate path to search for resources in neurobank
     archives. This is intended to be used with temporary copies of archives on
@@ -232,35 +237,6 @@ def verify(
             raise ValueError(f"{id} does not exist") from err
 
 
-def fetch(
-    base_url: str,
-    id: str,
-    target: Path,
-    *,
-    auth: RegistryAuth = None,
-) -> None:
-    """Download the resource from the server and save as `target`.
-
-    Raises ValueError if the resource does not exist or is not downloadable.
-    Raises HTTPError on an error in the actual download.
-    Raises FileExistsError if `target` already exists.
-
-    """
-    from nbank.registry import get_locations
-    from nbank.util import download_to_file, parse_location, query_registry
-
-    # query the database for the URL
-    url, _ = get_locations(base_url, id)
-    with httpx.Client() as session:
-        session.auth = make_auth(auth)
-        for loc in query_registry(session, url):
-            if loc["scheme"] in ("https", "http"):
-                res_url = parse_location(loc)
-                log.info("fetching %s → %s", res_url, target)
-                return download_to_file(session, res_url, target)
-        raise ValueError(f"resource '{id}' does not exist or is not downloadable")
-
-
 def update(
     base_url: str, *ids: str, auth: RegistryAuth = None, **metadata: Any
 ) -> Iterator[dict]:
@@ -287,7 +263,6 @@ __all__ = [
     "deposit",
     "describe",
     "describe_many",
-    "fetch",
     "find",
     "get",
     "search",

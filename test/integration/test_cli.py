@@ -4,6 +4,8 @@
 import io
 import json
 
+import pytest
+
 from nbank import archive as nbank_archive
 from nbank import core, util
 from nbank import registry as reg
@@ -273,3 +275,67 @@ def test_archive_list(cli, archive, capsys):
     assert capsys.readouterr().out == f"{archive.name:<25}\t{archive.path}\n"
     cli("archive", "list", "-n", archive.name, "--scheme", "tape")
     assert capsys.readouterr().out == ""
+
+
+@pytest.fixture
+def dest(tmp_path):
+    path = tmp_path / "fetched"
+    path.mkdir()
+    return path
+
+
+def test_fetch_from_local_archive(cli, archive, dtype, deposit_file, dest, capsys):
+    names = [deposit_file(archive, dtype) for _ in range(2)]
+    cli("fetch", "-d", str(dest), *names)
+    out = capsys.readouterr().out
+    for name in names:
+        assert f"{name:<20}\t-> {dest / name}" in out
+        assert (dest / name).read_text() == name
+        # the resource is copied, not moved
+        assert nbank_archive.resource_path(archive.config, name, True).exists()
+
+
+def test_fetch_uses_extension_of_dtype(
+    cli, registry, client, archive, deposit_file, dest, unique
+):
+    dtype = unique("dtype")
+    body = {"name": dtype, "content_type": "text/plain", "extension": "txt"}
+    client.post(f"{registry.url}datatypes/", json=body).raise_for_status()
+    name = deposit_file(archive, dtype)
+    cli("fetch", "-d", str(dest), name)
+    assert (dest / f"{name}.txt").read_text() == name
+
+
+def test_fetch_extension_option(cli, archive, dtype, deposit_file, dest):
+    name = deposit_file(archive, dtype)
+    cli("fetch", "-e", "dat", "-d", str(dest), name)
+    assert (dest / f"{name}.dat").read_text() == name
+
+
+def test_fetch_existing_target(cli, archive, dtype, deposit_file, dest, capsys):
+    name = deposit_file(archive, dtype, contents="new")
+    target = dest / name
+    target.write_text("old")
+    cli("fetch", "-d", str(dest), name)
+    assert "already exists" in capsys.readouterr().out
+    assert target.read_text() == "old"
+    cli("fetch", "-f", "-d", str(dest), name)
+    assert target.read_text() == "new"
+
+
+def test_fetch_unknown_and_unreachable(cli, archive, register, dest, unique, capsys):
+    missing = unique("missing")
+    no_locations = register()["name"]
+    # registered in the archive, but the file is not on this host
+    unreachable = register(archive=archive.name)["name"]
+    cli("fetch", "-d", str(dest), missing, no_locations, unreachable)
+    out = capsys.readouterr().out
+    assert f"{missing:<20}\t-> (no locations found)" in out
+    assert f"{no_locations:<20}\t-> (no locations found)" in out
+    assert f"{unreachable:<20}\t-> (no valid locations)" in out
+    assert list(dest.iterdir()) == []
+
+
+@pytest.mark.skip(reason="downloading over http requires a web server with sendfile")
+def test_fetch_over_http():
+    pass

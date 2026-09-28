@@ -312,8 +312,3 @@ def test_update_missing(registry, register, unique):
     results = list(core.update(registry.url, missing, name, auth=registry.auth, k="v"))
     assert results[0] == {"name": missing, "error": "not found"}
     assert results[1]["name"] == name
-
-
-@pytest.mark.skip(reason="downloads require a web server (e.g., nginx) with sendfile")
-def test_fetch():
-    pass
