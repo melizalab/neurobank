@@ -48,6 +48,23 @@ def test_check_contents_hash_mismatch(tmp_archive, tmp_path):
     assert not findings[0].ok
 
 
+def test_check_contents_skip_hash(tmp_archive, tmp_path, monkeypatch):
+    path, sha1 = store(tmp_archive, tmp_path, "res_1")
+    path.write_text("changed")
+
+    def no_hashing(*args, **kwargs):
+        raise AssertionError("contents should not be read")
+
+    monkeypatch.setattr(util, "hash", no_hashing)
+    findings = list(
+        check.check_archive_contents(
+            tmp_archive["path"], {"res_1": sha1}, check_hash=False
+        )
+    )
+    assert findings == [check.Finding(Status.HASH_SKIPPED, "res_1", path)]
+    assert findings[0].ok
+
+
 def test_check_contents_unreadable(tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
     path.chmod(0o000)

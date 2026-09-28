@@ -22,6 +22,7 @@ from nbank import archive, registry, util
 class Status(enum.Enum):
     OK = "OK"
     NOT_HASHED = "OK (no hash to verify)"
+    HASH_SKIPPED = "OK (hash not checked)"
     UNREADABLE = "FAILED to read"
     HASH_MISMATCH = "FAILED to match hash"
     MISSING_FROM_ARCHIVE = "MISSING from the archive"
@@ -51,7 +52,11 @@ class Finding:
 
     @property
     def ok(self) -> bool:
-        return self.fixed or self.status in (Status.OK, Status.NOT_HASHED)
+        return self.fixed or self.status in (
+            Status.OK,
+            Status.NOT_HASHED,
+            Status.HASH_SKIPPED,
+        )
 
 
 def registry_resources_in_archive(
@@ -98,15 +103,16 @@ def _symlinks_in(path: Path) -> Iterator[Path]:
 
 
 def check_archive_contents(
-    archive_path: Path, expected: Mapping[str, str | None]
+    archive_path: Path, expected: Mapping[str, str | None], check_hash: bool = True
 ) -> Iterator[Finding]:
     """Compares the files in a local archive against expected resources.
 
     expected maps resource names to sha1 hashes (or None if the registry has no
     hash). Yields one Finding for each expected resource, indicating whether
     everything is okay or if there is a problem (see Status enum). May yield
-    more than one Finding per resource in cases of multiple errors. Doesn't
-    contact the registry.
+    more than one Finding per resource in cases of multiple errors. Set
+    check_hash to False to skip reading file contents, which is much faster for
+    a large archive. Doesn't contact the registry.
 
     """
     remaining = dict(expected)
@@ -131,6 +137,8 @@ def check_archive_contents(
             status = Status.UNREADABLE
         elif sha1 is None:
             status = Status.NOT_HASHED
+        elif not check_hash:
+            status = Status.HASH_SKIPPED
         elif util.hash(path) != sha1:
             status = Status.HASH_MISMATCH
         else:

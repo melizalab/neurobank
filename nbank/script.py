@@ -309,6 +309,11 @@ def main(argv=None):
         action="store_true",
         help="fix ownership and permissions (changing ownership requires root)",
     )
+    pp.add_argument(
+        "--no-hash",
+        action="store_true",
+        help="don't verify file hashes (much faster for large archives)",
+    )
     pp.add_argument("path", type=Path, help="path of the archive to check")
 
     pp = ppsub.add_parser(
@@ -391,7 +396,7 @@ def main(argv=None):
 
     # some of the error handling is common; sub-funcs should only catch specific errors
     try:
-        args.func(args)
+        return args.func(args)
     except httpx.RequestError:
         log.error("registry error: unable to contact server")
     except httpx.HTTPStatusError as e:
@@ -626,13 +631,16 @@ def check_archive(args):
     - ownership and permissions match the archive's policy (and fixes them
       if requested)
 
+    Returns 1 if there are any errors that weren't fixed or the check couldn't
+    be run, 0 otherwise.
+
     TODO support non-neurobank archives
     """
     try:
         archive_cfg = archive.get_config(args.path)
     except FileNotFoundError:
         log.error(f"error: {args.path} is not a valid neurobank archive")
-        return
+        return 1
     archive_path = archive_cfg["path"]  # this will resolve the path
     log.info("archive: %s", archive_path)
     registry_url = archive_cfg["registry"]
@@ -643,7 +651,7 @@ def check_archive(args):
         archive_info = util.query_registry_first(session, url, params)
         if archive_info is None:
             log.error("No archive associated with '%s' in the registry", archive_path)
-            return
+            return 1
         archive_name = archive_info["name"]
         log.info(
             "retrieving resources that should be in %s from the registry...",
@@ -655,6 +663,7 @@ def check_archive(args):
     log.info(" - resources in the registry: %d", len(expected))
     log.info("checking ownership and permissions:")
     perm_counts = Counter()
+    unable_to_check = False
     try:
         for finding in check.check_archive_permissions(archive_cfg, fix=args.fix):
             perm_counts[finding.status, finding.fixed] += 1
@@ -667,6 +676,7 @@ def check_archive(args):
                 log.error("%s!", msg)
     except ValueError as err:
         log.error(" - unable to check: %s", err)
+        unable_to_check = True
     if not args.verbose:
         for (status, fixed), count in perm_counts.items():
             if fixed:
@@ -680,8 +690,12 @@ def check_archive(args):
     n_fixed = sum(n for (_, fixed), n in perm_counts.items() if fixed)
     log.info("verifying resources:")
     counts = Counter()
-    for finding in check.check_archive_contents(archive_path, expected):
+    n_errors = 0
+    for finding in check.check_archive_contents(
+        archive_path, expected, check_hash=not args.no_hash
+    ):
         counts[finding.status] += 1
+        n_errors += not finding.ok
         if finding.status == check.Status.MISSING_FROM_REGISTRY:
             log.error(
                 " - %s: MISSING from the registry under %s!",
@@ -716,6 +730,8 @@ def check_archive(args):
     )
     if args.fix:
         log.info("Permission errors fixed: %d", n_fixed)
+    n_errors += perm_counts.total() - n_fixed
+    return 1 if n_errors or unable_to_check else 0
 
 
 def register_tar(args):
