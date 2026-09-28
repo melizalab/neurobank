@@ -366,6 +366,17 @@ def main(argv=None):
     pp.add_argument("tar", type=Path, help="tar file with the resources to import")
     pp.add_argument("dest", type=Path, help="path of the destination neurobank archive")
 
+    pp = sub.add_parser(
+        "check", help="check the integrity of the registry and archives"
+    )
+    ppsub = pp.add_subparsers(title="subcommands")
+
+    pp = ppsub.add_parser(
+        "registry",
+        help="check the registry for resources without locations and empty archives",
+    )
+    pp.set_defaults(func=check_registry)
+
     args = p.parse_args(argv)
 
     if not hasattr(args, "func"):
@@ -732,6 +743,35 @@ def check_archive(args):
         log.info("Permission errors fixed: %d", n_fixed)
     n_errors += perm_counts.total() - n_fixed
     return 1 if n_errors or unable_to_check else 0
+
+
+def check_registry(args):
+    """Check the registry for resources without locations and empty archives.
+
+    Returns 1 if any resource has no locations or the check couldn't be run, 0
+    otherwise.
+    """
+    log.info("registry: %s", args.registry_url)
+    counts = Counter()
+    with httpx.Client(auth=args.auth) as session:
+        try:
+            for finding in check.check_registry(session, args.registry_url):
+                counts[finding.status] += 1
+                if finding.status == check.Status.NO_LOCATION:
+                    log.error(" - %s: %s!", finding.resource, finding.status.value)
+                else:
+                    log.warning(
+                        " - archive %s: %s", finding.archive, finding.status.value
+                    )
+        except RuntimeError as err:
+            log.error("error: %s", err)
+            return 1
+    log.info(
+        "\nResources without locations: %d; empty archives: %d",
+        counts[check.Status.NO_LOCATION],
+        counts[check.Status.EMPTY_ARCHIVE],
+    )
+    return 1 if counts[check.Status.NO_LOCATION] else 0
 
 
 def register_tar(args):

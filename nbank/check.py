@@ -34,14 +34,19 @@ class Status(enum.Enum):
     WRONG_OWNER = "WRONG owner"
     WRONG_GROUP = "WRONG group"
     WRONG_MODE = "WRONG permissions"
+    NO_LOCATION = "has NO locations"
+    EMPTY_ARCHIVE = "has no resources"
 
 
 @dataclass(frozen=True)
 class Finding:
-    """The result of checking one resource or file.
+    """The result of checking one resource, file, or archive.
 
     resource is None for directories that belong to the archive layout rather
-    than to a resource. fixed is True if the problem was found and then fixed.
+    than to a resource, and for findings about a whole archive. fixed is True
+    if the problem was found and then fixed. ok is True unless the finding is
+    an error; some findings that are ok are still worth reporting, like an
+    archive with no resources.
     """
 
     status: Status
@@ -49,6 +54,7 @@ class Finding:
     path: Path | None = None
     detail: str = ""
     fixed: bool = False
+    archive: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -56,7 +62,58 @@ class Finding:
             Status.OK,
             Status.NOT_HASHED,
             Status.HASH_SKIPPED,
+            Status.EMPTY_ARCHIVE,
         )
+
+
+def resources_without_locations(session: Client, registry_url: str) -> Iterator[str]:
+    """Yields the names of resources in the registry that have no locations.
+
+    Relies on the registry's has_location filter. Older registries ignore the
+    filter and return every resource, so this raises RuntimeError as soon as it
+    sees a resource with a location.
+    """
+    url, params = registry.find_resource(registry_url, has_location="false")
+    for item in util.query_registry_paginated(session, url, params):
+        if item["locations"]:
+            raise RuntimeError(
+                "the registry doesn't support the has_location filter; "
+                "upgrade django-neurobank"
+            )
+        yield item["name"]
+
+
+def archive_has_resources(
+    session: Client, registry_url: str, archive_name: str
+) -> bool:
+    """True if the registry has any resources in archive_name.
+
+    Stops at the first match, so this is fast unless the archive is empty and
+    its name is part of the name of a larger archive (the registry's location
+    filter matches substrings).
+    """
+    url, _ = registry.find_resource(registry_url)
+    return any(
+        archive_name in item["locations"]
+        for item in util.query_registry_paginated(
+            session, url, {"location": archive_name}
+        )
+    )
+
+
+def check_registry(session: Client, registry_url: str) -> Iterator[Finding]:
+    """Checks the registry for resources without locations and empty archives.
+
+    Yields a Finding for each resource with no locations (an error) and each
+    archive with no resources. Raises RuntimeError if the registry doesn't
+    support the has_location filter.
+    """
+    for name in resources_without_locations(session, registry_url):
+        yield Finding(Status.NO_LOCATION, name)
+    url, params = registry.get_archives(registry_url)
+    for item in util.query_registry_paginated(session, url, params):
+        if not archive_has_resources(session, registry_url, item["name"]):
+            yield Finding(Status.EMPTY_ARCHIVE, None, archive=item["name"])
 
 
 def registry_resources_in_archive(
@@ -268,7 +325,10 @@ def check_archive_permissions(
 __all__ = [
     "Finding",
     "Status",
+    "archive_has_resources",
     "check_archive_contents",
     "check_archive_permissions",
+    "check_registry",
     "registry_resources_in_archive",
+    "resources_without_locations",
 ]

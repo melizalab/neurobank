@@ -8,7 +8,7 @@ import respx
 
 from nbank import archive, check, util
 from nbank.check import Status
-from test.test_registry import base_url, resource_url
+from test.test_registry import archives_url, base_url, resource_url
 
 
 @pytest.fixture
@@ -297,3 +297,80 @@ def test_fix_permissions_without_root(tmp_archive, tmp_path):
     assert (Status.WRONG_MODE, True) in findings
     if os.getgid() != 0 and 0 not in os.getgroups():
         assert (Status.WRONG_GROUP, False) in findings
+
+
+def resource_record(name, locations, sha1=None):
+    return {"name": name, "sha1": sha1, "locations": locations}
+
+
+@pytest.fixture
+def mocked_api():
+    with respx.mock(assert_all_called=True, assert_all_mocked=True) as respx_mock:
+        yield respx_mock
+
+
+def test_resources_without_locations(mocked_api):
+    import httpx
+
+    mocked_api.get(resource_url, params={"has_location": "false"}).respond(
+        json=[resource_record("res_1", []), resource_record("res_2", [])]
+    )
+    with httpx.Client() as session:
+        names = list(check.resources_without_locations(session, base_url))
+    assert names == ["res_1", "res_2"]
+
+
+def test_resources_without_locations_unsupported(mocked_api):
+    import httpx
+
+    # an older registry ignores the filter and returns everything
+    mocked_api.get(resource_url, params={"has_location": "false"}).respond(
+        json=[resource_record("res_1", []), resource_record("res_2", ["archive"])]
+    )
+    with httpx.Client() as session, pytest.raises(RuntimeError, match="has_location"):
+        list(check.resources_without_locations(session, base_url))
+
+
+@respx.mock(assert_all_called=False, assert_all_mocked=True)
+def test_archive_has_resources_stops_at_first_match(respx_mock):
+    import httpx
+
+    page_2 = respx_mock.get(resource_url, params={"location": "arch", "page": "2"})
+    respx_mock.get(resource_url, params={"location": "arch"}).respond(
+        json=[resource_record("res_1", ["arch"])],
+        headers={"Link": f'<{resource_url}?location=arch&page=2>; rel="next"'},
+    )
+    with httpx.Client() as session:
+        assert check.archive_has_resources(session, base_url, "arch")
+    assert not page_2.called
+
+
+def test_archive_has_resources_exact_match(mocked_api):
+    import httpx
+
+    # the registry's location filter matches substrings
+    mocked_api.get(resource_url, params={"location": "arch"}).respond(
+        json=[resource_record("res_1", ["arch-copy"])]
+    )
+    with httpx.Client() as session:
+        assert not check.archive_has_resources(session, base_url, "arch")
+
+
+def test_check_registry(mocked_api):
+    import httpx
+
+    mocked_api.get(resource_url, params={"has_location": "false"}).respond(
+        json=[resource_record("orphan", [])]
+    )
+    mocked_api.get(archives_url).respond(json=[{"name": "full"}, {"name": "empty"}])
+    mocked_api.get(resource_url, params={"location": "full"}).respond(
+        json=[resource_record("res_1", ["full"])]
+    )
+    mocked_api.get(resource_url, params={"location": "empty"}).respond(json=[])
+    with httpx.Client() as session:
+        findings = list(check.check_registry(session, base_url))
+    assert findings == [
+        check.Finding(Status.NO_LOCATION, "orphan"),
+        check.Finding(Status.EMPTY_ARCHIVE, None, archive="empty"),
+    ]
+    assert [f.ok for f in findings] == [False, True]
