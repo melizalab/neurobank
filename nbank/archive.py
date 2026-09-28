@@ -183,9 +183,21 @@ def resolve_extension(path: Path) -> Path:
 
 
 def iter_resources(path: Path) -> Iterator[Path]:
+    """Yields the files in the archive at path.
+
+    Deprecated and will be removed in a future release. Raises
+    NotADirectoryError if the resources directory contains a file. Use
+    nbank.check.check_archive_contents to inspect an archive's contents.
+    """
+    import warnings
+
+    warnings.warn(
+        "iter_resources is deprecated; use nbank.check.check_archive_contents",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     base_dir = path / _resource_subdir
-    for stub_dir in base_dir.iterdir():
-        yield from stub_dir.iterdir()
+    return (f for stub_dir in base_dir.iterdir() for f in stub_dir.iterdir())
 
 
 class Resource:

@@ -7,6 +7,7 @@ import pytest
 
 from nbank import archive as nbank_archive
 from nbank import core
+from nbank import registry as nbank_registry
 
 
 def stored_path(archive, name):
@@ -71,6 +72,21 @@ def test_check_unregistered_archive(cli, registry, tmp_path, caplog):
     config = nbank_archive.create(tmp_path / "unregistered", registry.url)
     cli("archive", "check", str(config["path"]))
     assert "No archive associated with" in caplog.text
+
+
+def test_check_ignores_archive_with_similar_name(
+    cli, client, registry, register, archive, tmp_path, caplog
+):
+    # the registry's location filter matches substrings of archive names
+    other = f"{archive.name}-copy"
+    url, body = nbank_registry.add_archive(
+        registry.url, other, "neurobank", tmp_path / other
+    )
+    client.post(url, json=body).raise_for_status()
+    register(archive=other)
+    cli("archive", "check", str(archive.path))
+    assert "MISSING from the archive" not in caplog.text
+    check_summary(caplog, 0, 0, 0, 0)
 
 
 def test_check_resource_without_hash(cli, archive, dtype, deposit_file, caplog):

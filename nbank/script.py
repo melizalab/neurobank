@@ -667,11 +667,14 @@ def check_archive(args):
                 " - %s : %s - %s", finding.resource, finding.path, finding.status.value
             )
     log.info(
-        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d",
+        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d",
         len(expected),
         counts[check.Status.MISSING_FROM_ARCHIVE],
         counts[check.Status.MISSING_FROM_REGISTRY],
         counts[check.Status.UNREADABLE] + counts[check.Status.HASH_MISMATCH],
+        counts[check.Status.MISPLACED]
+        + counts[check.Status.DUPLICATE]
+        + counts[check.Status.UNEXPECTED],
     )
 
 
