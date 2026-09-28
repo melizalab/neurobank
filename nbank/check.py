@@ -1,5 +1,5 @@
 # -*- mode: python -*-
-"""Integrity checks for archives and the registry
+"""Integrity checks for archives and the registry.
 
 Copyright (C) 2026 Dan Meliza <dan@meliza.org>
 """
@@ -11,7 +11,7 @@ import pwd
 import stat
 from collections import defaultdict
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from httpx import Client
@@ -40,17 +40,18 @@ class Finding:
     """The result of checking one resource or file.
 
     resource is None for directories that belong to the archive layout rather
-    than to a resource.
+    than to a resource. fixed is True if the problem was found and then fixed.
     """
 
     status: Status
     resource: str | None
     path: Path | None = None
     detail: str = ""
+    fixed: bool = False
 
     @property
     def ok(self) -> bool:
-        return self.status in (Status.OK, Status.NOT_HASHED)
+        return self.fixed or self.status in (Status.OK, Status.NOT_HASHED)
 
 
 def registry_resources_in_archive(
@@ -102,13 +103,11 @@ def check_archive_contents(
     """Compares the files in a local archive against expected resources.
 
     expected maps resource names to sha1 hashes (or None if the registry has no
-    hash). Yields one Finding for each expected resource, and one for each of
-    these problems: a file in the archive that isn't expected, a file that
-    shares a resource name with another file, a file sitting directly in the
-    resources directory, a subdirectory that can't be listed (whose resources
-    are then reported missing), and a symbolic link anywhere under the
-    resources directory. The archive is canonical storage, so it should hold
-    only real files. Doesn't contact the registry.
+    hash). Yields one Finding for each expected resource, indicating whether
+    everything is okay or if there is a problem (see Status enum). May yield
+    more than one Finding per resource in cases of multiple errors. Doesn't
+    contact the registry.
+
     """
     remaining = dict(expected)
     files, problems = _scan_archive(archive_path)
@@ -183,13 +182,59 @@ def _check_path(
         yield Finding(Status.WRONG_MODE, resource, path, detail)
 
 
-def check_archive_permissions(cfg: archive.ArchiveConfig) -> Iterator[Finding]:
+def _listdir(path: Path) -> list[Path]:
+    """Returns the sorted contents of path, or [] if it can't be listed."""
+    try:
+        return sorted(path.iterdir())
+    except PermissionError:
+        return []
+
+
+def _resource_tree(path: Path, name: str) -> Iterator[tuple[Path, str]]:
+    """Yields (path, name) for a resource and, for a directory, everything in it.
+
+    Each directory is listed only after it has been yielded, so a caller can
+    fix its permissions first. Symbolic links are skipped.
+    """
+    yield path, name
+    if path.is_dir():
+        for child in _listdir(path):
+            if not child.is_symlink():
+                yield from _resource_tree(child, name)
+
+
+def _archive_tree(base: Path) -> Iterator[tuple[Path, str | None]]:
+    """Yields (path, resource name) for the resources directory and everything in it.
+
+    The resource name is None for the resources directory and its
+    subdirectories. Directories are listed only after they have been yielded.
+    Symbolic links and files directly under base are skipped.
+    """
+    yield base, None
+    for stub_dir in _listdir(base):
+        if not stub_dir.is_dir() or stub_dir.is_symlink():
+            continue
+        yield stub_dir, None
+        for resource_path in _listdir(stub_dir):
+            if not resource_path.is_symlink():
+                yield from _resource_tree(resource_path, resource_path.stem)
+
+
+def check_archive_permissions(
+    cfg: archive.ArchiveConfig, fix: bool = False
+) -> Iterator[Finding]:
     """Checks ownership and permissions in a local archive against its policy.
 
     Every file and directory under resources/ must be owned by the policy's
     user and group and have the mode bits given by archive.mode_policy.
     Symbolic links and files directly under resources/ are skipped, because
-    check_archive_contents reports them.
+    check_archive_contents reports them. Directories that can't be listed are
+    skipped too.
+
+    If fix is True, tries to fix each problem with archive.permission_fixer
+    and sets fixed on the findings that it resolved. A directory is fixed
+    before it's listed, so the fix can make its contents reachable. Changing
+    ownership requires running as root.
 
     Raises ValueError if the policy's user or group doesn't exist on this host.
     """
@@ -202,27 +247,14 @@ def check_archive_permissions(cfg: archive.ArchiveConfig) -> Iterator[Finding]:
         gid = grp.getgrnam(access["group"]).gr_gid
     except KeyError as err:
         raise ValueError(f"archive group '{access['group']}' does not exist") from err
-    base = cfg["path"] / archive._resource_subdir
-    yield from _check_path(cfg, base, None, uid, gid)
-    for stub_dir in sorted(base.iterdir()):
-        if not stub_dir.is_dir() or stub_dir.is_symlink():
-            continue
-        yield from _check_path(cfg, stub_dir, None, uid, gid)
-        try:
-            contents = sorted(stub_dir.iterdir())
-        except PermissionError:
-            continue  # reported by check_archive_contents
-        for resource_path in contents:
-            name = resource_path.stem
-            if resource_path.is_symlink():
-                continue
-            yield from _check_path(cfg, resource_path, name, uid, gid)
-            if not resource_path.is_dir():
-                continue
-            for path in sorted(resource_path.rglob("*")):
-                if path.is_symlink():
-                    continue
-                yield from _check_path(cfg, path, name, uid, gid)
+    pfix = archive.permission_fixer(cfg, quiet=True) if fix else None
+    for path, name in _archive_tree(cfg["path"] / archive._resource_subdir):
+        findings = list(_check_path(cfg, path, name, uid, gid))
+        if findings and pfix is not None:
+            pfix(path)
+            remaining = {f.status for f in _check_path(cfg, path, name, uid, gid)}
+            findings = [replace(f, fixed=f.status not in remaining) for f in findings]
+        yield from findings
 
 
 __all__ = [

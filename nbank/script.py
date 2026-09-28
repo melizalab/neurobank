@@ -304,6 +304,11 @@ def main(argv=None):
         action="store_true",
         help="show results for all resources, not just errors",
     )
+    pp.add_argument(
+        "--fix",
+        action="store_true",
+        help="fix ownership and permissions (changing ownership requires root)",
+    )
     pp.add_argument("path", type=Path, help="path of the archive to check")
 
     pp = ppsub.add_parser(
@@ -618,7 +623,8 @@ def check_archive(args):
       if the record has one
     - the registry record has this archive as a location
     - every record in the registry is matched with a file
-    - ownership and permissions match the archive's policy
+    - ownership and permissions match the archive's policy (and fixes them
+      if requested)
 
     TODO support non-neurobank archives
     """
@@ -647,6 +653,31 @@ def check_archive(args):
             session, registry_url, archive_name
         )
     log.info(" - resources in the registry: %d", len(expected))
+    log.info("checking ownership and permissions:")
+    perm_counts = Counter()
+    try:
+        for finding in check.check_archive_permissions(archive_cfg, fix=args.fix):
+            perm_counts[finding.status, finding.fixed] += 1
+            if not args.verbose:
+                continue
+            msg = f" - {finding.path} - {finding.status.value} ({finding.detail})"
+            if finding.fixed:
+                log.info("%s - fixed", msg)
+            else:
+                log.error("%s!", msg)
+    except ValueError as err:
+        log.error(" - unable to check: %s", err)
+    if not args.verbose:
+        for (status, fixed), count in perm_counts.items():
+            if fixed:
+                log.info(" - %s: fixed %d files or directories", status.value, count)
+            else:
+                log.error(
+                    " - %s: %d files or directories (use -v to list)",
+                    status.value,
+                    count,
+                )
+    n_fixed = sum(n for (_, fixed), n in perm_counts.items() if fixed)
     log.info("verifying resources:")
     counts = Counter()
     for finding in check.check_archive_contents(archive_path, expected):
@@ -671,25 +702,6 @@ def check_archive(args):
             log.info(
                 " - %s : %s - %s", finding.resource, finding.path, finding.status.value
             )
-    log.info("checking ownership and permissions:")
-    perm_counts = Counter()
-    try:
-        for finding in check.check_archive_permissions(archive_cfg):
-            perm_counts[finding.status] += 1
-            if args.verbose:
-                log.error(
-                    " - %s - %s (%s)!",
-                    finding.path,
-                    finding.status.value,
-                    finding.detail,
-                )
-    except ValueError as err:
-        log.error(" - unable to check: %s", err)
-    if not args.verbose:
-        for status, count in perm_counts.items():
-            log.error(
-                " - %s: %d files or directories (use -v to list)", status.value, count
-            )
     log.info(
         "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d; permission errors: %d",
         len(expected),
@@ -700,8 +712,10 @@ def check_archive(args):
         + counts[check.Status.DUPLICATE]
         + counts[check.Status.UNEXPECTED]
         + counts[check.Status.SYMLINK],
-        perm_counts.total(),
+        perm_counts.total() - n_fixed,
     )
+    if args.fix:
+        log.info("Permission errors fixed: %d", n_fixed)
 
 
 def register_tar(args):

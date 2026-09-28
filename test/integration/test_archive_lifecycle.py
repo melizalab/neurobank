@@ -90,6 +90,22 @@ def test_check_ignores_archive_with_similar_name(
     check_summary(caplog, 0, 0, 0, 0)
 
 
+def test_check_fix_permissions(cli, archive, dtype, deposit_file, caplog):
+    name = deposit_file(archive, dtype, hash=True)
+    path = stored_path(archive, name)
+    path.chmod(0o600)
+    path.parent.chmod(0o700)
+    cli("archive", "check", str(archive.path))
+    assert "permission errors: 2" in caplog.text
+    caplog.clear()
+    cli("archive", "check", "--fix", str(archive.path))
+    assert "permission errors: 0" in caplog.text
+    assert "Permission errors fixed: 2" in caplog.text
+    caplog.clear()
+    cli("archive", "check", str(archive.path))
+    assert "permission errors: 0" in caplog.text
+
+
 def test_check_resource_without_hash(cli, archive, dtype, deposit_file, caplog):
     deposit_file(archive, dtype)
     cli("archive", "check", "-v", str(archive.path))

@@ -227,3 +227,56 @@ def test_check_contents_symlink_in_directory_resource(tmp_path):
         check.Finding(Status.SYMLINK, "res_1", path / "dirlink"),
         check.Finding(Status.SYMLINK, "res_1", path / "sub" / "link"),
     ]
+
+
+def test_fix_permissions(tmp_archive, tmp_path):
+    path, _ = store(tmp_archive, tmp_path, "res_1")
+    path.chmod(0o604)
+    path.parent.chmod(0o700)
+    findings = list(check.check_archive_permissions(tmp_archive, fix=True))
+    assert [(f.status, f.path, f.fixed) for f in findings] == [
+        (Status.WRONG_MODE, path.parent, True),
+        (Status.WRONG_MODE, path, True),
+    ]
+    assert all(f.ok for f in findings)
+    assert permission_findings(tmp_archive) == []
+
+
+def test_fix_permissions_reaches_unlistable_directories(tmp_path):
+    cfg = archive.create(
+        tmp_path / "archive", base_url, umask=0o027, allow_directories=True
+    )
+    src = tmp_path / "res_1"
+    (src / "sub").mkdir(parents=True)
+    (src / "sub" / "data").write_text("contents")
+    path = archive.store_resource(cfg, src)
+    (path / "sub" / "data").chmod(0o600)
+    (path / "sub").chmod(0o000)
+    try:
+        # without fixing, the unlistable directory hides its contents
+        assert permission_findings(cfg) == [(Status.WRONG_MODE, path / "sub")]
+        findings = list(check.check_archive_permissions(cfg, fix=True))
+    finally:
+        (path / "sub").chmod(0o750)
+    assert [(f.status, f.path, f.fixed) for f in findings] == [
+        (Status.WRONG_MODE, path / "sub", True),
+        (Status.WRONG_MODE, path / "sub" / "data", True),
+    ]
+
+
+@pytest.mark.skipif(os.getuid() == 0, reason="root can change ownership")
+def test_fix_permissions_without_root(tmp_archive, tmp_path):
+    path, _ = store(tmp_archive, tmp_path, "res_1")
+    path.chmod(0o604)
+    tmp_archive["policy"]["access"]["user"] = pwd.getpwuid(0).pw_name
+    tmp_archive["policy"]["access"]["group"] = grp.getgrgid(0).gr_name
+    findings = [
+        (f.status, f.fixed)
+        for f in check.check_archive_permissions(tmp_archive, fix=True)
+        if f.path == path
+    ]
+    # ownership can't be changed, but the mode still can
+    assert (Status.WRONG_OWNER, False) in findings
+    assert (Status.WRONG_MODE, True) in findings
+    if os.getgid() != 0 and 0 not in os.getgroups():
+        assert (Status.WRONG_GROUP, False) in findings

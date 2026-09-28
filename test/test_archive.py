@@ -351,3 +351,24 @@ def test_verify_no_symlinks(tmp_path):
     dir_link.symlink_to(src / "sub")
     with pytest.raises(ValueError, match=str(dir_link)):
         archive.verify_no_symlinks(src)
+
+
+@pytest.mark.skipif(os.getuid() == 0, reason="root can change ownership")
+def test_permission_fixer_changes_mode_when_chown_fails(tmp_archive, tmp_path, caplog):
+    import grp
+
+    if os.getgid() == 0 or 0 in os.getgroups():
+        pytest.skip("need a group this user doesn't belong to")
+    src = tmp_path / "res_1"
+    src.write_text("contents")
+    path = archive.store_resource(tmp_archive, src)
+    path.chmod(0o600)
+    tmp_archive["policy"]["access"]["group"] = grp.getgrgid(0).gr_name
+    with caplog.at_level(logging.WARNING, logger="nbank"):
+        archive.permission_fixer(tmp_archive)(path)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o644
+    assert "unable to change uid/gid" in caplog.text
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="nbank"):
+        archive.permission_fixer(tmp_archive, quiet=True)(path)
+    assert caplog.text == ""

@@ -190,9 +190,9 @@ def resolve_extension(path: Path) -> Path:
 def iter_resources(path: Path) -> Iterator[Path]:
     """Yields the files in the archive at path.
 
-    Deprecated and will be removed in a future release. Raises
+    Deprecated. Has some bad behaviors like raises
     NotADirectoryError if the resources directory contains a file. Use
-    nbank.check.check_archive_contents to inspect an archive's contents.
+    nbank.check.check_archive_contents instead
     """
     import warnings
 
@@ -264,17 +264,16 @@ def _same_filesystem(a: Path, b: Path) -> bool:
 def verify_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> None:
     """Check whether src can be deposited in an archive.
 
-    Raises PermissionError naming the specific path and problem if not:
-    src is unreadable, the archive's resource directory doesn't exist or
-    isn't readable/writable/searchable, or (if id already has a
+    Raises PermissionError with the specific path and problem if not. Error
+    conditions include: src is unreadable, the archive's resource directory
+    doesn't exist or isn't readable/writable/searchable, or (if id already has a
     subdirectory) that subdirectory isn't readable/writable/searchable.
 
     If src is a directory being deposited onto a different filesystem, also
-    checks that every file and subdirectory inside it is readable: crossing
-    filesystems copies the contents file by file, so a single unreadable file
-    deep inside would otherwise only surface mid-deposit. A same-filesystem
-    deposit is a plain rename and never touches the contents, so this deeper
-    (and slower, for a large directory) check is skipped when it isn't needed.
+    checks that every file and subdirectory inside it is readable, because
+    crossing filesystems copies the contents file by file, and we need to ensure
+    all files are readable.
+
     """
     if not os.access(src, os.R_OK):
         raise PermissionError(f"'{src}' is not readable")
@@ -304,8 +303,7 @@ def verify_no_symlinks(src: Path) -> None:
     """Raises ValueError if src is or contains a symbolic link.
 
     An archive is canonical storage, so it should hold only real files. For a
-    directory, this checks every entry inside it, which reads metadata but not
-    contents.
+    directory, this walks the tree and checks each item.
     """
     if src.is_symlink():
         raise ValueError(f"'{src}' is a symbolic link")
@@ -328,10 +326,9 @@ def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path
     violates the archive policies on directories. Extensions are stripped or
     added to filenames according to policy.
 
-    If src's parent directory isn't writable, src can't be removed after
-    being deposited (removing a file or directory requires write access to
-    its parent, not to the file itself). In that case the resource is copied
-    instead of moved, a warning is logged, and src is left in place.
+    Tries to move the file, but if src's parent directory isn't writable, src
+    can't be removed after being deposited, which case the resource is copied, a
+    warning is logged, and src is left in place.
 
     NB: the policy on disk can always be overridden by modifying the config
     dictionary. This avoids reading and parsing the file repeatedly, but could be
@@ -406,12 +403,15 @@ def mode_policy(cfg: ArchiveConfig, path: Path) -> tuple[int, int]:
     return 0o444 & ~umask, umask
 
 
-def permission_fixer(cfg: ArchiveConfig):
+def permission_fixer(cfg: ArchiveConfig, quiet: bool = False):
     """Returns a function that fixes ownership and permissions of a path in the archive.
 
     The path is given the policy's group, and the policy's user if running as
-    root. Mode bits are set according to mode_policy. Symbolic links are left
-    alone, so that their targets aren't changed.
+    root. Mode bits are set according to mode_policy. Ownership and mode are
+    changed independently, so a failure to change one doesn't prevent changing
+    the other. Failures are logged as warnings unless quiet is True. Symbolic
+    links are left alone, so that their targets aren't changed.
+
     """
     import grp
     import pwd
@@ -429,10 +429,15 @@ def permission_fixer(cfg: ArchiveConfig):
             return
         try:
             chown(p, uid, gid)
-            required, forbidden = mode_policy(cfg, p)
+        except PermissionError:
+            if not quiet:
+                log.warning("unable to change uid/gid of %s", p)
+        required, forbidden = mode_policy(cfg, p)
+        try:
             p.chmod((stat.S_IMODE(p.stat().st_mode) | required) & ~forbidden)
         except PermissionError:
-            log.warning("unable to change uid/gid or permissions of %s", p)
+            if not quiet:
+                log.warning("unable to change permissions of %s", p)
 
     return fix
 
