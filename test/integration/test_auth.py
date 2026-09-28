@@ -145,6 +145,13 @@ def test_log_error_streamed(registry, caplog):
     ]
 
 
+def test_cli_malformed_auth(cli, capsys):
+    with pytest.raises(SystemExit) as err:
+        cli("-a", "justauser", "registry-info")
+    assert err.value.code == 2
+    assert "not of the form username:password" in capsys.readouterr().err
+
+
 def test_cli_credentials_option(cli, registry, client, unique):
     name = unique("dtype")
     user, password = registry.auth

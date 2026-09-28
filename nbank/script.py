@@ -36,12 +36,16 @@ def setup_log(log, debug=False):
 
 
 def userpwd(arg):
-    """If arg is of the form username:password, returns them as a tuple. Otherwise None.
+    """Parses arg of the form username:password into a tuple.
 
-    The password can contain colons.
+    The password can contain colons. Raises ArgumentTypeError if arg has no colon.
     """
     user, sep, password = arg.partition(":")
-    return (user, password) if sep else None
+    if not sep:
+        raise argparse.ArgumentTypeError(
+            f"'{arg}' is not of the form username:password"
+        )
+    return (user, password)
 
 
 def octalint(arg):
