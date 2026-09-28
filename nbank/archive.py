@@ -300,6 +300,21 @@ def verify_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> 
                 raise PermissionError(f"'{item}' is not readable")
 
 
+def verify_no_symlinks(src: Path) -> None:
+    """Raises ValueError if src is or contains a symbolic link.
+
+    An archive is canonical storage, so it should hold only real files. For a
+    directory, this checks every entry inside it, which reads metadata but not
+    contents.
+    """
+    if src.is_symlink():
+        raise ValueError(f"'{src}' is a symbolic link")
+    if src.is_dir():
+        for path in src.rglob("*"):
+            if path.is_symlink():
+                raise ValueError(f"'{path}' is a symbolic link")
+
+
 def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path:
     """Stores resource (src) in the repository under a unique identifier.
 
@@ -429,5 +444,6 @@ __all__ = [
     "mode_policy",
     "resolve_extension",
     "store_resource",
+    "verify_no_symlinks",
     "verify_permissions",
 ]

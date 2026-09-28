@@ -58,6 +58,7 @@ def deposit(
     - attempt to add unallowed directory: skip the directory
     - unable to read the source file or write to the target directory:
       PermissionError, naming the specific path and problem
+    - source is or contains a symbolic link: ValueError, naming the link
     - requested dtype is not registered: RuntimeError
     - failed to register resource for any reason: HTTPError, usually 400 error code
     - unable to match archive path to archive in registry: RuntimeError
@@ -73,7 +74,12 @@ def deposit(
     import uuid
 
     from nbank import util
-    from nbank.archive import get_config, store_resource, verify_permissions
+    from nbank.archive import (
+        get_config,
+        store_resource,
+        verify_no_symlinks,
+        verify_permissions,
+    )
     from nbank.registry import (
         add_resource,
         find_archive_by_path,
@@ -132,6 +138,7 @@ def deposit(
                     id = None
             else:
                 id = util.id_from_fname(src)
+            verify_no_symlinks(src)
             verify_permissions(archive_cfg, src, id)
             if hash or archive_cfg["policy"]["require_hash"]:
                 sha1 = util.hash(src)

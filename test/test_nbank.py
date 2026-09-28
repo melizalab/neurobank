@@ -185,6 +185,28 @@ def test_deposit_resource_source_errors(mocked_api, tmp_archive, tmp_path):
         _ = list(core.deposit(root, files=[src], dtype=dtype))
 
 
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_deposit_rejects_symlinks(mocked_api, tmp_path, dry_run):
+    root = tmp_path / "archive"
+    archive.create(root, base_url, require_hash=False, allow_directories=True)
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    real = tmp_path / "real"
+    real.write_text("contents")
+    link = tmp_path / "dummy_1"
+    link.symlink_to(real)
+    src_dir = tmp_path / "dummy_2"
+    src_dir.mkdir()
+    (src_dir / "link").symlink_to(real)
+    # no resource POST is mocked: nothing may be registered
+    for src, bad in ((link, link), (src_dir, src_dir / "link")):
+        with pytest.raises(ValueError, match=str(bad)):
+            _ = list(core.deposit(root, files=[src], dry_run=dry_run))
+        assert src.exists()
+    assert list((root / "resources").iterdir()) == []
+
+
 def test_store_resources_reports_clean_error(monkeypatch, caplog):
     # deposit errors (PermissionError, RuntimeError, ValueError) should produce
     # a log message, not an uncaught traceback, at the CLI level

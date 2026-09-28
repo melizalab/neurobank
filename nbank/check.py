@@ -92,12 +92,8 @@ def _scan_archive(archive_path: Path) -> tuple[dict[str, list[Path]], list[Findi
 
 
 def _symlinks_in(path: Path) -> Iterator[Path]:
-    """Yields the symbolic links inside the directory at path."""
-    for root, dirs, filenames in os.walk(path):
-        dirs.sort()
-        for name in sorted(dirs + filenames):
-            if (Path(root) / name).is_symlink():
-                yield Path(root) / name
+    """Returns the symbolic links inside the directory at path, in sorted order."""
+    return (p for p in sorted(path.rglob("*")) if p.is_symlink())
 
 
 def check_archive_contents(

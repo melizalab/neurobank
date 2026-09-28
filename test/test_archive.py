@@ -325,3 +325,29 @@ def test_store_resource_leaves_symlink_targets_alone(tmp_dir_archive, tmp_path):
     (src / "link").symlink_to(outside)
     archive.store_resource(tmp_dir_archive, src)
     assert stat.S_IMODE(outside.stat().st_mode) == 0o600
+
+
+def test_verify_no_symlinks(tmp_path):
+    real = tmp_path / "real"
+    real.write_text("contents")
+    src = tmp_path / "src"
+    (src / "sub").mkdir(parents=True)
+    (src / "sub" / "data").write_text("contents")
+    assert archive.verify_no_symlinks(real) is None
+    assert archive.verify_no_symlinks(src) is None
+
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    with pytest.raises(ValueError, match=str(link)):
+        archive.verify_no_symlinks(link)
+
+    nested = src / "sub" / "link"
+    nested.symlink_to(real)
+    with pytest.raises(ValueError, match=str(nested)):
+        archive.verify_no_symlinks(src)
+    nested.unlink()
+
+    dir_link = src / "dirlink"
+    dir_link.symlink_to(src / "sub")
+    with pytest.raises(ValueError, match=str(dir_link)):
+        archive.verify_no_symlinks(src)
