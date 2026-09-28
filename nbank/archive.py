@@ -239,23 +239,48 @@ class Resource:
             self.path.unlink()
 
 
-def check_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> bool:
-    """Check if src file can be deposited in an archive."""
-    import os
+def _same_filesystem(a: Path, b: Path) -> bool:
+    """True if a and b are on the same filesystem (mount)."""
+    return a.stat().st_dev == b.stat().st_dev
 
+
+def verify_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> None:
+    """Check whether src can be deposited in an archive.
+
+    Raises PermissionError naming the specific path and problem if not:
+    src is unreadable, the archive's resource directory doesn't exist or
+    isn't readable/writable/searchable, or (if id already has a
+    subdirectory) that subdirectory isn't readable/writable/searchable.
+
+    If src is a directory being deposited onto a different filesystem, also
+    checks that every file and subdirectory inside it is readable: crossing
+    filesystems copies the contents file by file, so a single unreadable file
+    deep inside would otherwise only surface mid-deposit. A same-filesystem
+    deposit is a plain rename and never touches the contents, so this deeper
+    (and slower, for a large directory) check is skipped when it isn't needed.
+    """
     if not os.access(src, os.R_OK):
-        return False
+        raise PermissionError(f"'{src}' is not readable")
     reqd_perms = os.R_OK | os.W_OK | os.X_OK
     if id is None:
         id = src.name
     tgt_base = cfg["path"] / _resource_subdir
     tgt_dir = tgt_base / id_stub(id)
-    if not os.access(tgt_base, os.F_OK) or not os.access(tgt_base, reqd_perms):
-        return False
+    if not os.access(tgt_base, os.F_OK):
+        raise PermissionError(f"archive resource directory '{tgt_base}' does not exist")
+    if not os.access(tgt_base, reqd_perms):
+        raise PermissionError(
+            f"insufficient permissions on archive resource directory '{tgt_base}'"
+        )
     if os.access(tgt_dir, os.F_OK) and not os.access(tgt_dir, reqd_perms):
-        return False
-    else:
-        return True
+        raise PermissionError(
+            f"insufficient permissions on archive subdirectory '{tgt_dir}'"
+        )
+    if src.is_dir() and not _same_filesystem(src, tgt_base):
+        for item in src.rglob("*"):
+            perm = (os.R_OK | os.X_OK) if item.is_dir() else os.R_OK
+            if not os.access(item, perm):
+                raise PermissionError(f"'{item}' is not readable")
 
 
 def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path:
@@ -271,13 +296,16 @@ def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path
     violates the archive policies on directories. Extensions are stripped or
     added to filenames according to policy.
 
+    If src's parent directory isn't writable, src can't be removed after
+    being deposited (removing a file or directory requires write access to
+    its parent, not to the file itself). In that case the resource is copied
+    instead of moved, a warning is logged, and src is left in place.
+
     NB: the policy on disk can always be overridden by modifying the config
     dictionary. This avoids reading and parsing the file repeatedly, but could be
     exploited by a malicious caller.
 
     """
-    from shutil import move
-
     if not cfg["policy"]["allow_directories"] and src.is_dir():
         raise TypeError("policy forbids depositing directories")
 
@@ -307,7 +335,19 @@ def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path
         pass
 
     tgt_file = tgt_dir / id
-    move(src, tgt_file)
+    if os.access(src.parent, os.W_OK | os.X_OK):
+        shutil.move(src, tgt_file)
+    else:
+        log.warning(
+            "'%s' is not writable; copying '%s' instead of moving it "
+            "(source will not be removed)",
+            src.parent,
+            src,
+        )
+        if src.is_dir():
+            shutil.copytree(src, tgt_file, symlinks=True)
+        else:
+            shutil.copy2(src, tgt_file)
     pfix(tgt_file)
     if tgt_file.is_dir():
         for f in tgt_file.rglob("*"):
@@ -341,10 +381,10 @@ def permission_fixer(cfg: ArchiveConfig):
 
 
 __all__ = [
-    "check_permissions",
     "create",
     "get_config",
     "id_stub",
     "resolve_extension",
     "store_resource",
+    "verify_permissions",
 ]

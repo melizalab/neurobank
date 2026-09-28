@@ -1,12 +1,15 @@
 # -*- mode: python -*-
+import argparse
 import json
+import logging
 from base64 import b64encode
+from pathlib import Path
 
 import httpx
 import pytest
 import respx
 
-from nbank import archive, core, registry, util
+from nbank import archive, core, registry, script, util
 from test.test_registry import archives_url, base_url, bulk_url, resource_url
 
 archive_name = "archive"
@@ -125,15 +128,38 @@ def test_deposit_resource_source_errors(mocked_api, tmp_archive, tmp_path):
     src.chmod(0o000)
 
     # src is not readable
-    with pytest.raises(OSError):
+    with pytest.raises(PermissionError, match=str(src)):
         _ = list(core.deposit(root, files=[src], dtype=dtype))
 
     # tgt is not writable
     src.chmod(0o400)
     tgt_dir = archive.resource_path(tmp_archive, name).parent
     tgt_dir.mkdir(0o444, parents=True)
-    with pytest.raises(OSError):
+    with pytest.raises(PermissionError, match=str(tgt_dir)):
         _ = list(core.deposit(root, files=[src], dtype=dtype))
+
+
+def test_store_resources_reports_clean_error(monkeypatch, caplog):
+    # deposit errors (PermissionError, RuntimeError, ValueError) should produce
+    # a log message, not an uncaught traceback, at the CLI level
+    def raise_permission_error(*args, **kwargs):
+        raise PermissionError("'/some/path' is not readable")
+
+    monkeypatch.setattr(core, "deposit", raise_permission_error)
+    args = argparse.Namespace(
+        read_stdin=False,
+        file=[Path("dummy")],
+        directory=Path("archive"),
+        dtype=None,
+        hash=False,
+        auto_id=False,
+        auth=None,
+        metadata={},
+        json_out=False,
+    )
+    with caplog.at_level(logging.ERROR, logger="nbank"):
+        script.store_resources(args)
+    assert "is not readable" in caplog.text
 
 
 def test_deposit_resource_registry_duplicate(mocked_api, tmp_archive, tmp_path):

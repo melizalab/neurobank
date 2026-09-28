@@ -1,4 +1,6 @@
 # -*- mode: python -*-
+import logging
+
 import pytest
 
 from nbank import archive
@@ -183,29 +185,109 @@ def test_can_strip_extensions(tmp_noext_archive, tmp_path):
     assert path.suffix == ""
 
 
-def test_check_permissions(tmp_archive, tmp_path):
-    name = "dummy_100"
-    src = tmp_path / "temp.wav"
-    contents = "not a wave file"
-    src.write_text(contents)
-    archive.store_resource(tmp_archive, src, name)
-    # need a second source file for check_permissions
+def test_verify_permissions_source_unreadable(tmp_path, tmp_archive):
+    unreadable = tmp_path / "unreadable"
+    unreadable.write_text("blah")
+    unreadable.chmod(0o000)
+    with pytest.raises(PermissionError, match=str(unreadable)):
+        archive.verify_permissions(tmp_archive, unreadable)
+
+
+def test_verify_permissions_resource_dir_missing(tmp_archive, tmp_path):
     dummy = tmp_path / "dummy"
     dummy.write_text("blah")
-
     tgt_base = tmp_archive["path"] / archive._resource_subdir
-    tgt_sub = tgt_base / archive.id_stub(name)
+    tgt_base.rmdir()
+    with pytest.raises(PermissionError, match=str(tgt_base)):
+        archive.verify_permissions(tmp_archive, dummy)
+
+
+def test_verify_permissions_resource_dir_denied(tmp_archive, tmp_path):
+    dummy = tmp_path / "dummy"
+    dummy.write_text("blah")
+    tgt_base = tmp_archive["path"] / archive._resource_subdir
     mode = tgt_base.stat().st_mode
-    tgt_base.chmod(0o500)
-    assert not archive.check_permissions(tmp_archive, dummy)
-    tgt_base.chmod(0o400)
-    assert not archive.check_permissions(tmp_archive, dummy)
-    tgt_base.chmod(mode)
-    assert archive.check_permissions(tmp_archive, dummy)
+    tgt_base.chmod(0o500)  # readable and searchable, but not writable
+    try:
+        with pytest.raises(PermissionError, match=str(tgt_base)):
+            archive.verify_permissions(tmp_archive, dummy)
+    finally:
+        tgt_base.chmod(mode)
+
+
+def test_verify_permissions_subdirectory_denied(tmp_archive, tmp_path):
+    name = "dummy_100"
+    dummy = tmp_path / "dummy"
+    dummy.write_text("blah")
+    tgt_sub = tmp_archive["path"] / archive._resource_subdir / archive.id_stub(name)
+    tgt_sub.mkdir()
     mode = tgt_sub.stat().st_mode
-    tgt_sub.chmod(0o500)
-    assert not archive.check_permissions(tmp_archive, dummy, name)
-    tgt_sub.chmod(0o400)
-    assert not archive.check_permissions(tmp_archive, dummy, name)
-    tgt_sub.chmod(mode)
-    assert archive.check_permissions(tmp_archive, dummy, name)
+    tgt_sub.chmod(0o500)  # readable and searchable, but not writable
+    try:
+        with pytest.raises(PermissionError, match=str(tgt_sub)):
+            archive.verify_permissions(tmp_archive, dummy, name)
+    finally:
+        tgt_sub.chmod(mode)
+
+
+def test_verify_permissions_ok(tmp_archive, tmp_path):
+    name = "dummy_100"
+    dummy = tmp_path / "dummy"
+    dummy.write_text("blah")
+    # id has no subdirectory yet: only the resources dir itself is checked
+    assert archive.verify_permissions(tmp_archive, dummy, name) is None
+    # id's subdirectory exists and has correct permissions
+    tgt_sub = tmp_archive["path"] / archive._resource_subdir / archive.id_stub(name)
+    tgt_sub.mkdir()
+    assert archive.verify_permissions(tmp_archive, dummy, name) is None
+
+
+def test_verify_permissions_same_filesystem_skips_content_check(
+    tmp_dir_archive, tmp_path
+):
+    # same-filesystem deposit is a plain rename, so unreadable contents don't
+    # matter (archive.tmp_path and tmp_dir_archive's path share a filesystem)
+    dname = tmp_path / "tempdir"
+    dname.mkdir()
+    (dname / "unreadable").write_text("blah")
+    (dname / "unreadable").chmod(0o000)
+    assert archive.verify_permissions(tmp_dir_archive, dname, "dummy_1") is None
+
+
+def test_verify_permissions_cross_filesystem_checks_contents(
+    monkeypatch, tmp_dir_archive, tmp_path
+):
+    monkeypatch.setattr(archive, "_same_filesystem", lambda a, b: False)
+    dname = tmp_path / "tempdir"
+    dname.mkdir()
+    unreadable = dname / "unreadable"
+    unreadable.write_text("blah")
+    unreadable.chmod(0o000)
+    with pytest.raises(PermissionError, match=str(unreadable)):
+        archive.verify_permissions(tmp_dir_archive, dname, "dummy_1")
+
+
+def test_verify_permissions_cross_filesystem_ok(monkeypatch, tmp_dir_archive, tmp_path):
+    monkeypatch.setattr(archive, "_same_filesystem", lambda a, b: False)
+    dname = tmp_path / "tempdir"
+    dname.mkdir()
+    (dname / "readable").write_text("blah")
+    assert archive.verify_permissions(tmp_dir_archive, dname, "dummy_1") is None
+
+
+def test_store_resource_copies_when_source_dir_not_writable(
+    tmp_archive, tmp_path, caplog
+):
+    src_dir = tmp_path / "readonly_dir"
+    src_dir.mkdir()
+    src = src_dir / "dummy"
+    src.write_text("blah")
+    src_dir.chmod(0o500)  # readable and searchable, but not writable
+    try:
+        with caplog.at_level(logging.WARNING, logger="nbank"):
+            tgt = archive.store_resource(tmp_archive, src, "dummy_1")
+    finally:
+        src_dir.chmod(0o700)
+    assert tgt.read_text() == "blah"
+    assert src.exists()  # left in place, not removed
+    assert "not writable" in caplog.text
