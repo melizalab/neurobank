@@ -106,7 +106,9 @@ def id_from_fname(fname: Path | str) -> str:
     """Generates an ID from the basename of fname, stripped of any extensions.
 
     Raises ValueError unless the resulting id only contains URL-unreserved characters
-    ([-_~0-9a-zA-Z])
+    ([-_~0-9a-zA-Z]). This is a fast local sanity check, not a guarantee that the
+    registry will accept the id: the registry has its own, narrower rules (e.g., it
+    doesn't allow '~'), and is the final authority on what ids are valid.
     """
     import re
 
@@ -261,6 +263,7 @@ def fetch_resource(
 
 class JSONEncoder(json.JSONEncoder):
     """JSON encoder that serializes pathlib objects as strings."""
+
     def default(self, o):
         if isinstance(o, PurePath):
             return str(o)
