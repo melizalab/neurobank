@@ -8,6 +8,8 @@ import json
 import logging
 import os
 import shutil
+import stat
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, NewType
@@ -20,6 +22,9 @@ _config_fname = "nbank.json"
 _config_schema = "https://melizalab.github.io/neurobank/config.json#"
 _resource_subdir = "resources"
 _default_umask = 0o002
+# Linux needs setgid on directories for new files to inherit their group. BSD
+# and macOS always inherit the group of the parent directory.
+_setgid = stat.S_ISGID if sys.platform.startswith("linux") else 0
 _README = """
 This directory contains a [neurobank](https://github.com/melizalab/neurobank)
 data management archive. The following files and directories are part of the archive:
@@ -368,8 +373,31 @@ def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path
     return tgt_file
 
 
+def mode_policy(cfg: ArchiveConfig, path: Path) -> tuple[int, int]:
+    """Returns (required, forbidden) mode bits for path under the archive's policy.
+
+    Nothing may have bits that the umask forbids. The resources directory and
+    its subdirectories need every permission the umask allows, so any group
+    member can deposit, plus setgid on Linux, so new files inherit the group.
+    Other directories need to be readable and searchable, and files readable,
+    by everyone the umask allows.
+    """
+    umask = cfg["policy"]["access"]["umask"]
+    base = cfg["path"] / _resource_subdir
+    if path.is_dir():
+        if path == base or path.parent == base:
+            return (0o777 & ~umask) | _setgid, umask
+        return 0o555 & ~umask, umask
+    return 0o444 & ~umask, umask
+
+
 def permission_fixer(cfg: ArchiveConfig):
-    """Returns a function that will fix ownership/permissions for a resource or containing directory."""
+    """Returns a function that fixes ownership and permissions of a path in the archive.
+
+    The path is given the policy's group, and the policy's user if running as
+    root. Mode bits are set according to mode_policy. Symbolic links are left
+    alone, so that their targets aren't changed.
+    """
     import grp
     import pwd
     from os import chown, getuid
@@ -380,12 +408,14 @@ def permission_fixer(cfg: ArchiveConfig):
     else:
         uid = -1
     gid = grp.getgrnam(cfg["policy"]["access"]["group"]).gr_gid
-    umask = cfg["policy"]["access"]["umask"]
 
     def fix(p: Path) -> None:
+        if p.is_symlink():
+            return
         try:
             chown(p, uid, gid)
-            p.chmod(p.stat().st_mode & ~umask)
+            required, forbidden = mode_policy(cfg, p)
+            p.chmod((stat.S_IMODE(p.stat().st_mode) | required) & ~forbidden)
         except PermissionError:
             log.warning("unable to change uid/gid or permissions of %s", p)
 
@@ -396,6 +426,7 @@ __all__ = [
     "create",
     "get_config",
     "id_stub",
+    "mode_policy",
     "resolve_extension",
     "store_resource",
     "verify_permissions",

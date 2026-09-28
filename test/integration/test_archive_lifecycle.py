@@ -34,6 +34,7 @@ def test_check_consistent(cli, archive, dtype, deposit_file, caplog):
     for name in names:
         assert f" - {name} : {stored_path(archive, name)} - OK" in caplog.text
     check_summary(caplog, 2, 0, 0, 0)
+    assert "permission errors: 0" in caplog.text
 
 
 def test_check_missing_from_archive(cli, register, archive, caplog):

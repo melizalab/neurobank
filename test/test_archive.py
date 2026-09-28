@@ -1,9 +1,11 @@
 # -*- mode: python -*-
 import logging
+import os
+import stat
 
 import pytest
 
-from nbank import archive
+from nbank import archive, check
 
 dummy_registry = "https://localhost:8000/neurobank"
 
@@ -293,3 +295,33 @@ def test_store_resource_copies_when_source_dir_not_writable(
     assert tgt.read_text() == "blah"
     assert src.exists()  # left in place, not removed
     assert "not writable" in caplog.text
+
+
+@pytest.fixture
+def restrictive_umask():
+    old = os.umask(0o077)
+    yield
+    os.umask(old)
+
+
+def test_store_resource_applies_mode_policy(tmp_path, restrictive_umask):
+    # the depositor's umask shouldn't leave files or directories less
+    # accessible than the archive's policy requires
+    cfg = archive.create(tmp_path / "archive", dummy_registry, umask=0o002)
+    src = tmp_path / "res_1"
+    src.write_text("contents")
+    path = archive.store_resource(cfg, src)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o644
+    assert stat.S_IMODE(path.parent.stat().st_mode) & 0o777 == 0o775
+    assert list(check.check_archive_permissions(cfg)) == []
+
+
+def test_store_resource_leaves_symlink_targets_alone(tmp_dir_archive, tmp_path):
+    outside = tmp_path / "outside"
+    outside.write_text("not in the archive")
+    outside.chmod(0o600)
+    src = tmp_path / "res_1"
+    src.mkdir()
+    (src / "link").symlink_to(outside)
+    archive.store_resource(tmp_dir_archive, src)
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o600

@@ -618,6 +618,7 @@ def check_archive(args):
       if the record has one
     - the registry record has this archive as a location
     - every record in the registry is matched with a file
+    - ownership and permissions match the archive's policy
 
     TODO support non-neurobank archives
     """
@@ -658,6 +659,10 @@ def check_archive(args):
             )
         elif finding.status == check.Status.MISSING_FROM_ARCHIVE:
             log.error(" - %s: MISSING from the archive!", finding.resource)
+        elif finding.resource is None:
+            log.error(
+                " - %s - %s (%s)!", finding.path, finding.status.value, finding.detail
+            )
         elif not finding.ok:
             log.error(
                 " - %s : %s - %s!", finding.resource, finding.path, finding.status.value
@@ -666,15 +671,36 @@ def check_archive(args):
             log.info(
                 " - %s : %s - %s", finding.resource, finding.path, finding.status.value
             )
+    log.info("checking ownership and permissions:")
+    perm_counts = Counter()
+    try:
+        for finding in check.check_archive_permissions(archive_cfg):
+            perm_counts[finding.status] += 1
+            if args.verbose:
+                log.error(
+                    " - %s - %s (%s)!",
+                    finding.path,
+                    finding.status.value,
+                    finding.detail,
+                )
+    except ValueError as err:
+        log.error(" - unable to check: %s", err)
+    if not args.verbose:
+        for status, count in perm_counts.items():
+            log.error(
+                " - %s: %d files or directories (use -v to list)", status.value, count
+            )
     log.info(
-        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d",
+        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d; permission errors: %d",
         len(expected),
         counts[check.Status.MISSING_FROM_ARCHIVE],
         counts[check.Status.MISSING_FROM_REGISTRY],
         counts[check.Status.UNREADABLE] + counts[check.Status.HASH_MISMATCH],
         counts[check.Status.MISPLACED]
         + counts[check.Status.DUPLICATE]
-        + counts[check.Status.UNEXPECTED],
+        + counts[check.Status.UNEXPECTED]
+        + counts[check.Status.SYMLINK],
+        perm_counts.total(),
     )
 
 
