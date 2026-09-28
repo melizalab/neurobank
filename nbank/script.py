@@ -144,6 +144,12 @@ def main(argv=None):
         help="ask the registry to generate an id for each resource",
     )
     pp.add_argument(
+        "-y",
+        "--dry-run",
+        action="store_true",
+        help="run all pre-flight checks but don't register or move any files",
+    )
+    pp.add_argument(
         "-k",
         help="specify metadata field (use multiple -k for multiple values)",
         action=ParseKeyVal,
@@ -439,6 +445,7 @@ def store_resources(args):
             hash=args.hash,
             auto_id=args.auto_id,
             auth=args.auth,
+            dry_run=args.dry_run,
             **args.metadata,
         ):
             if args.json_out:

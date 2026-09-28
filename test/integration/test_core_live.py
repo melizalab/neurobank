@@ -56,6 +56,18 @@ def test_deposit(registry, archive, dtype, tmp_path, unique):
     assert record["created_by"] == registry.auth[0]
 
 
+def test_deposit_dry_run(registry, archive, dtype, tmp_path, unique):
+    name = unique("res")
+    src = write_file(tmp_path / f"{name}.txt", name)
+    items = list(
+        core.deposit(archive.path, [src], dtype=dtype, auth=registry.auth, dry_run=True)
+    )
+    assert items == [{"source": src, "id": name, "dry_run": True}]
+    assert src.exists()  # source is untouched
+    assert core.describe(registry.url, name) is None  # nothing registered
+    assert not nbank_archive.resource_path(archive.config, name).exists()
+
+
 def test_deposit_without_hash(registry, archive, dtype, tmp_path, unique):
     src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
     name = deposit_one(registry, archive, dtype, src)
@@ -129,11 +141,10 @@ def test_deposit_duplicate_hash(registry, archive, dtype, tmp_path, unique):
 
 
 def test_deposit_unknown_dtype(registry, archive, tmp_path, unique):
+    # caught by deposit's pre-flight check, before any file is touched
     src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
-    with pytest.raises(httpx.HTTPStatusError) as err:
+    with pytest.raises(RuntimeError, match="no-such-dtype"):
         deposit_one(registry, archive, "no-such-dtype", src)
-    assert err.value.response.status_code == 400
-    assert "dtype" in err.value.response.json()
     assert src.exists()
 
 

@@ -39,11 +39,18 @@ def deposit(
     hash: bool = False,
     auto_id: bool = False,
     auth: RegistryAuth = None,
+    dry_run: bool = False,
     **metadata: Any,
 ) -> Iterator[dict]:
     """Main entry point to deposit resources into an archive
 
     Yields the short IDs for each deposited item in files
+
+    Set dry_run to True to run all the same pre-flight checks (archive and
+    dtype are registered, files are readable, archive is writable) without
+    registering anything or moving any files. Yielded records have
+    "dry_run": True and, for files where the id isn't known until the
+    registry assigns it (auto_identifiers with no auto_id_type), "id": None.
 
     Here's how a variety of error conditions are handled:
 
@@ -51,6 +58,7 @@ def deposit(
     - attempt to add unallowed directory: skip the directory
     - unable to read the source file or write to the target directory:
       PermissionError, naming the specific path and problem
+    - requested dtype is not registered: RuntimeError
     - failed to register resource for any reason: HTTPError, usually 400 error code
     - unable to match archive path to archive in registry: RuntimeError
     - failed to add the file (usually b/c the identifier is taken): RuntimeError
@@ -66,13 +74,20 @@ def deposit(
 
     from nbank import util
     from nbank.archive import get_config, store_resource, verify_permissions
-    from nbank.registry import add_resource, find_archive_by_path, full_url
+    from nbank.registry import (
+        add_resource,
+        find_archive_by_path,
+        full_url,
+        get_datatypes,
+    )
 
     try:
         archive_cfg = get_config(archive_path)
     except FileNotFoundError as err:
         raise ValueError(f"{archive_path} is not a valid archive") from err
     archive_path = archive_cfg["path"]  # this will resolve the path
+    if dry_run:
+        log.info("DRY RUN: no changes will be made")
     log.info("archive: %s", archive_path)
     registry_url = archive_cfg["registry"]
     log.info("   registry: %s", registry_url)
@@ -91,6 +106,16 @@ def deposit(
                 f"archive '{archive_path}' not in registry. did it move?"
             ) from err
         log.info("   archive name: %s", archive)
+
+        # check that dtype (if specified) is known to the registry, rather
+        # than discovering this only after hashing and trying to add each file
+        if dtype is not None:
+            url, params = get_datatypes(registry_url)
+            known_dtypes = {
+                d["name"] for d in util.query_registry_paginated(session, url, params)
+            }
+            if dtype not in known_dtypes:
+                raise RuntimeError(f"'{dtype}' is not a registered datatype")
 
         for src in files:
             log.info("processing '%s':", src)
@@ -113,6 +138,10 @@ def deposit(
                 log.info("   sha1: %s", sha1)
             else:
                 sha1 = None
+            if dry_run:
+                log.info("   OK (dry run; nothing registered or moved)")
+                yield {"source": src, "id": id, "dry_run": True}
+                continue
             url, params = add_resource(
                 registry_url, id, dtype, archive, sha1, **metadata
             )

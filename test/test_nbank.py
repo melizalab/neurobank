@@ -10,7 +10,13 @@ import pytest
 import respx
 
 from nbank import archive, core, registry, script, util
-from test.test_registry import archives_url, base_url, bulk_url, resource_url
+from test.test_registry import (
+    archives_url,
+    base_url,
+    bulk_url,
+    datatypes_url,
+    resource_url,
+)
 
 archive_name = "archive"
 auth = ("dmeliza", "dummy_pw!")
@@ -59,6 +65,9 @@ def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(json=[{"name": archive_name, "root": str(root)}])
+    mocked_api.get(datatypes_url).respond(
+        json=[{"name": dtype, "content_type": "application/json"}]
+    )
     mocked_api.post(
         resource_url,
         json={
@@ -74,6 +83,40 @@ def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
         core.deposit(root, files=[src], dtype=dtype, auth=auth, hash=True, **metadata)
     )
     assert items == [{"source": src, "id": name}]
+
+
+def test_deposit_dry_run(mocked_api, tmp_archive, tmp_path):
+    root = tmp_archive["path"]
+    name = "dummy_1"
+    dtype = "dummy-dtype"
+    src = tmp_path / name
+    src.write_text('{"foo": 10}\n')
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    mocked_api.get(datatypes_url).respond(
+        json=[{"name": dtype, "content_type": "application/json"}]
+    )
+    # no resource POST is mocked: dry_run must not attempt one
+    items = list(core.deposit(root, files=[src], dtype=dtype, dry_run=True))
+    assert items == [{"source": src, "id": name, "dry_run": True}]
+    assert src.exists()  # source is untouched
+    assert not archive.resource_path(tmp_archive, name).exists()  # nothing stored
+
+
+def test_deposit_resource_unknown_dtype(mocked_api, tmp_archive, tmp_path):
+    root = tmp_archive["path"]
+    dtype = "no-such-dtype"
+    src = tmp_path / "dummy"
+    src.write_text("blah")
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    mocked_api.get(datatypes_url).respond(
+        json=[{"name": "other-dtype", "content_type": "text/plain"}]
+    )
+    with pytest.raises(RuntimeError, match=dtype):
+        _ = list(core.deposit(root, files=[src], dtype=dtype))
 
 
 @pytest.mark.skip(reason="not implemented")
@@ -115,6 +158,9 @@ def test_deposit_resource_source_errors(mocked_api, tmp_archive, tmp_path):
     ).respond(
         json=[{"name": archive_name, "root": str(root)}],
     )
+    mocked_api.get(datatypes_url).respond(
+        json=[{"name": dtype, "content_type": "application/json"}]
+    )
     # src does not exist
     items = list(core.deposit(root, files=[src], dtype=dtype))
     assert items == []
@@ -154,12 +200,37 @@ def test_store_resources_reports_clean_error(monkeypatch, caplog):
         hash=False,
         auto_id=False,
         auth=None,
+        dry_run=False,
         metadata={},
         json_out=False,
     )
     with caplog.at_level(logging.ERROR, logger="nbank"):
         script.store_resources(args)
     assert "is not readable" in caplog.text
+
+
+def test_store_resources_passes_dry_run(monkeypatch):
+    captured = {}
+
+    def fake_deposit(*args, **kwargs):
+        captured.update(kwargs)
+        return iter(())
+
+    monkeypatch.setattr(core, "deposit", fake_deposit)
+    args = argparse.Namespace(
+        read_stdin=False,
+        file=[Path("dummy")],
+        directory=Path("archive"),
+        dtype=None,
+        hash=False,
+        auto_id=False,
+        auth=None,
+        dry_run=True,
+        metadata={},
+        json_out=False,
+    )
+    script.store_resources(args)
+    assert captured["dry_run"] is True
 
 
 def test_deposit_resource_registry_duplicate(mocked_api, tmp_archive, tmp_path):
@@ -173,6 +244,9 @@ def test_deposit_resource_registry_duplicate(mocked_api, tmp_archive, tmp_path):
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(
         json=[{"name": archive_name, "root": str(root)}],
+    )
+    mocked_api.get(datatypes_url).respond(
+        json=[{"name": dtype, "content_type": "application/json"}]
     )
     # registry will respond with 400 if the resource cannot be created for some
     # reason (duplicate/invalid name, duplicate/invalid sha1, invalid dtype)
