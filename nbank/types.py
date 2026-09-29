@@ -37,3 +37,28 @@ class LocalResource(FetchableResource, Protocol):
 
 
 Resource = FetchableResource | NonFetchableResource
+
+_location_schemes: dict[str, type] = {}
+
+
+def location_scheme(cls: type) -> type:
+    """Class decorator that registers cls to build resources for its location schemes.
+
+    cls needs a `schemes` tuple naming the schemes it handles, and a classmethod
+    `from_location(location, *, alt_base, http_session)` that builds a resource
+    from a registry location dict, or returns None if the resource can't be
+    reached from this host. Raises ValueError if a scheme already has a class.
+    """
+    for scheme in cls.schemes:
+        existing = _location_schemes.get(scheme)
+        if existing is not None and existing is not cls:
+            raise ValueError(
+                f"location scheme '{scheme}' is already handled by {existing}"
+            )
+        _location_schemes[scheme] = cls
+    return cls
+
+
+def location_class(scheme: str) -> type | None:
+    """Returns the class registered for a location scheme, or None."""
+    return _location_schemes.get(scheme)

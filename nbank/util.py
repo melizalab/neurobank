@@ -15,16 +15,28 @@ from typing import (
 
 from httpx import Client
 
-from nbank import archive, tape_archive
-from nbank.types import FetchableResource, NotFetchableError, Resource
+# imported so that their resource classes register their location schemes
+from nbank import archive, tape_archive  # noqa: F401
+from nbank.types import (
+    FetchableResource,
+    NotFetchableError,
+    Resource,
+    location_class,
+    location_scheme,
+)
 
 log = logging.getLogger("nbank")  # root logger
 
 
+@location_scheme
 class HttpResource(FetchableResource):
     """A resource that can be fetched from an HTTP(S) endpoint"""
 
     schemes = ("http", "https")
+
+    @classmethod
+    def from_location(cls, location, *, alt_base=None, http_session=None):
+        return cls(location, http_session)
 
     def __init__(self, location: Mapping[str, str], session: Client | None = None):
         from urllib.parse import urlunparse
@@ -72,37 +84,6 @@ class HttpResource(FetchableResource):
         return target
 
 
-def _neurobank_resource(location, *, alt_base, http_session) -> Resource | None:
-    try:
-        return archive.Resource(location["root"], location["resource_name"], alt_base)
-    except FileNotFoundError:
-        return None
-
-
-def _http_resource(location, *, alt_base, http_session) -> Resource:
-    return HttpResource(location, http_session)
-
-
-def _tape_resource(location, *, alt_base, http_session) -> Resource:
-    return tape_archive.Resource(
-        location["root"],
-        location["resource_name"],
-        alt_base,
-        member=location.get("key"),
-    )
-
-
-# Builds a Resource for each location scheme the client knows. Each function
-# takes the location dict and the alt_base and http_session arguments of
-# parse_location, and returns None if the resource can't be reached.
-_location_schemes = {
-    "neurobank": _neurobank_resource,
-    "http": _http_resource,
-    "https": _http_resource,
-    "tape": _tape_resource,
-}
-
-
 def parse_location(
     location: Mapping[str, str],
     *,
@@ -118,12 +99,11 @@ def parse_location(
 
     """
     scheme = location["scheme"]
-    try:
-        make_resource = _location_schemes[scheme]
-    except KeyError:
+    cls = location_class(scheme)
+    if cls is None:
         log.debug("Unrecognized location scheme %s", scheme)
         return None
-    return make_resource(location, alt_base=alt_base, http_session=http_session)
+    return cls.from_location(location, alt_base=alt_base, http_session=http_session)
 
 
 def id_from_fname(fname: Path | str) -> str:

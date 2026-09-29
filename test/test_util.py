@@ -155,6 +155,66 @@ def test_parse_unreachable_neurobank_location(tmp_path):
     assert util.parse_location(location) is None
 
 
+def test_location_schemes_are_registered():
+    from nbank import archive, types
+
+    assert types.location_class("neurobank") is archive.Resource
+    assert types.location_class("tape") is tape_archive.Resource
+    assert types.location_class("http") is util.HttpResource
+    assert types.location_class("https") is util.HttpResource
+
+
+def test_location_schemes_register_when_util_is_imported():
+    # a fresh interpreter, so no other module has already imported the classes
+    import subprocess
+    import sys
+
+    code = (
+        "from nbank import util; "
+        "print(util.parse_location("
+        "{'scheme': 'tape', 'root': 't:1', 'resource_name': 'x'}))"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    assert out.stdout.strip() == "tape://t:1/x"
+
+
+def test_register_new_location_scheme(monkeypatch):
+    from nbank import types
+
+    monkeypatch.setattr(types, "_location_schemes", dict(types._location_schemes))
+
+    @types.location_scheme
+    class DummyResource:
+        schemes = ("dummy",)
+
+        def __init__(self, id):
+            self.id = id
+
+        @classmethod
+        def from_location(cls, location, *, alt_base=None, http_session=None):
+            return cls(location["resource_name"])
+
+    location = {"scheme": "dummy", "root": "somewhere", "resource_name": "res_1"}
+    res = util.parse_location(location)
+    assert isinstance(res, DummyResource)
+    assert res.id == "res_1"
+
+
+def test_register_duplicate_location_scheme(monkeypatch):
+    from nbank import types
+
+    monkeypatch.setattr(types, "_location_schemes", dict(types._location_schemes))
+
+    class Impostor:
+        schemes = ("tape",)
+
+    with pytest.raises(ValueError, match="tape"):
+        types.location_scheme(Impostor)
+    assert types.location_class("tape") is tape_archive.Resource
+
+
 def test_parse_unknown_scheme():
     location = {"scheme": "ipfs", "root": "gateway", "resource_name": "dummy"}
     assert util.parse_location(location) is None

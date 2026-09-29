@@ -14,6 +14,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, NewType
 
+from nbank.types import location_scheme
+
 log = logging.getLogger("nbank")  # root logger
 
 ArchiveConfig = NewType("ArchiveConfig", dict)
@@ -230,6 +232,7 @@ def iter_resources(path: Path) -> Iterator[Path]:
     return (f for stub_dir in base_dir.iterdir() for f in stub_dir.iterdir())
 
 
+@location_scheme
 class Resource:
     """A resource stored in a local neurobank archive.
 
@@ -252,6 +255,16 @@ class Resource:
             root = Path(alt_base) / root.name
         self.id = id
         self.path = resource_path(root, id, resolve_ext=True)
+
+    @classmethod
+    def from_location(
+        cls, location, *, alt_base=None, http_session=None
+    ) -> "Resource | None":
+        """Returns None if the archive or the resource isn't on this host."""
+        try:
+            return cls(location["root"], location["resource_name"], alt_base)
+        except FileNotFoundError:
+            return None
 
     def __str__(self):
         return str(self.path)
