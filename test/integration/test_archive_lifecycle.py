@@ -43,7 +43,7 @@ def test_check_consistent(cli, archive, dtype, deposit_file, caplog):
 def test_check_missing_from_archive(cli, register, archive, caplog):
     name = register(archive=archive.name)["name"]
     assert cli("check", "archive", str(archive.path)) == 1
-    assert f" - {name}: MISSING from the archive!" in caplog.text
+    assert f" - {name}: MISSING from the archive" in caplog.text
     check_summary(caplog, 1, 1, 0, 0)
 
 
@@ -53,9 +53,7 @@ def test_check_missing_from_registry(cli, archive, tmp_path, unique, caplog):
     src.write_text("contents")
     stored = nbank_archive.store_resource(archive.config, src, id=name)
     cli("check", "archive", str(archive.path))
-    assert (
-        f" - {stored}: MISSING from the registry under {archive.name}!" in caplog.text
-    )
+    assert f" - {stored}: MISSING from the registry under {archive.name}" in caplog.text
     check_summary(caplog, 0, 0, 1, 0)
 
 
@@ -63,7 +61,7 @@ def test_check_changed_contents(cli, archive, dtype, deposit_file, caplog):
     name = deposit_file(archive, dtype, hash=True)
     stored_path(archive, name).write_text("changed")
     assert cli("check", "archive", str(archive.path)) == 1
-    assert "FAILED to match hash!" in caplog.text
+    assert "FAILED to match hash" in caplog.text
     check_summary(caplog, 1, 0, 0, 1)
     caplog.clear()
     assert cli("check", "archive", "--no-hash", "-v", str(archive.path)) == 0
@@ -142,7 +140,7 @@ def test_check_registry(cli, register, make_archive, has_location_filter, caplog
     orphan = register()["name"]
     placed = register(archive=full.name)["name"]
     assert cli("check", "registry") == 1
-    assert f" - {orphan}: has NO locations!" in caplog.text
+    assert f" - {orphan}: has NO locations" in caplog.text
     assert placed not in caplog.text
     assert f" - archive {empty.name}: has no resources" in caplog.text
     assert f" - archive {full.name}:" not in caplog.text
@@ -245,7 +243,7 @@ def test_check_all_continues_after_crash(
 
     monkeypatch.setattr(check, "check_archive_contents", crash_on_broken)
     assert cli("check", "all") == 1
-    assert " - unable to check: simulated failure!" in caplog.text
+    assert " - unable to check: simulated failure" in caplog.text
     assert broken.name in failed_checks(caplog)
 
 
@@ -300,7 +298,7 @@ def test_check_registered_elsewhere(cli, copied, caplog):
     assert cli("check", "archive", str(copied.archive.path)) == 1
     assert (
         f" - {copied.path}: registered, but NOT located in this archive "
-        f"(located in: {copied.original.name})!"
+        f"(located in: {copied.original.name})"
     ) in caplog.text
     assert "MISSING from the registry" not in caplog.text
     assert "registered elsewhere: 1" in caplog.text

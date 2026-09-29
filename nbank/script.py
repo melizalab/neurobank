@@ -714,7 +714,7 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
             if finding.fixed:
                 log.info("%s - fixed", msg)
             else:
-                log.error("%s!", msg)
+                log.error("%s", msg)
     except ValueError as err:
         log.error(" - unable to check: %s", err)
         unable_to_check = True
@@ -742,14 +742,14 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
         counts[finding.status] += 1
         n_errors += not finding.ok
         if finding.status == check.Status.MISSING_FROM_ARCHIVE:
-            log.error(" - %s: MISSING from the archive!", finding.resource)
+            log.error(" - %s: MISSING from the archive", finding.resource)
         elif finding.resource is None:
             log.error(
-                " - %s - %s (%s)!", finding.path, finding.status.value, finding.detail
+                " - %s - %s (%s)", finding.path, finding.status.value, finding.detail
             )
         elif not finding.ok:
             log.error(
-                " - %s : %s - %s!", finding.resource, finding.path, finding.status.value
+                " - %s : %s - %s", finding.resource, finding.path, finding.status.value
             )
         elif args.verbose:
             log.info(
@@ -764,13 +764,13 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     for finding in check.recheck_unregistered(session, registry_url, unregistered):
         if finding.status == check.Status.MISSING_FROM_REGISTRY:
             log.error(
-                " - %s: MISSING from the registry under %s!",
+                " - %s: MISSING from the registry under %s",
                 finding.path,
                 archive_name,
             )
         else:
             log.error(
-                " - %s: %s (%s)!", finding.path, finding.status.value, finding.detail
+                " - %s: %s (%s)", finding.path, finding.status.value, finding.detail
             )
             if prompting and _resolve_elsewhere(
                 session, registry_url, archive_name, finding
@@ -890,7 +890,7 @@ def _check_registry(session, registry_url) -> bool:
         for finding in check.check_registry(session, registry_url):
             counts[finding.status] += 1
             if finding.status == check.Status.NO_LOCATION:
-                log.error(" - %s: %s!", finding.resource, finding.status.value)
+                log.error(" - %s: %s", finding.resource, finding.status.value)
             else:
                 log.warning(" - archive %s: %s", finding.archive, finding.status.value)
     except RuntimeError as err:
@@ -933,23 +933,23 @@ def check_all(args):
             try:
                 archive_cfg = archive.get_config(root)
             except FileNotFoundError:
-                log.error(" - %s is not a valid neurobank archive!", root)
+                log.error(" - %s is not a valid neurobank archive", root)
                 failed.append(name)
                 continue
             except (OSError, ValueError, KeyError) as err:
-                log.error(" - unable to read nbank.json: %s!", err)
+                log.error(" - unable to read nbank.json: %s", err)
                 failed.append(name)
                 continue
             ok = True
             if archive_cfg["path"] != root:
                 log.error(
-                    " - registered root resolves to %s; deposits won't find the archive!",
+                    " - registered root resolves to %s; deposits won't find the archive",
                     archive_cfg["path"],
                 )
                 ok = False
             if archive_cfg["registry"].rstrip("/") != registry_url.rstrip("/"):
                 log.error(
-                    " - nbank.json points to a different registry (%s)!",
+                    " - nbank.json points to a different registry (%s)",
                     archive_cfg["registry"],
                 )
                 ok = False
@@ -957,7 +957,7 @@ def check_all(args):
                 if not _check_archive(session, registry_url, name, archive_cfg, args):
                     ok = False
             except OSError as err:
-                log.error(" - unable to check: %s!", err)
+                log.error(" - unable to check: %s", err)
                 ok = False
             if not ok:
                 failed.append(name)
@@ -1085,7 +1085,7 @@ def prune_archive(args):
                 # something is really wrong
                 resource = util.parse_location(locations[args.archive_name])
                 if resource is None:
-                    log.error("  ✗ resource is not actually present in archive!")
+                    log.error("  ✗ resource is not actually present in archive")
                     continue
                 if not args.dry_run and not resource.deletable:
                     log.info("  ✗ insufficient permissions to delete")
