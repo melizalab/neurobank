@@ -75,6 +75,28 @@ class ParseKeyVal(argparse.Action):
         setattr(namespace, self.dest, kv)
 
 
+def add_check_archive_args(pp):
+    """Adds the arguments for checking an archive to a subcommand parser."""
+    pp.set_defaults(func=check_archive)
+    pp.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="show results for all resources, not just errors",
+    )
+    pp.add_argument(
+        "--fix",
+        action="store_true",
+        help="fix ownership and permissions (changing ownership requires root)",
+    )
+    pp.add_argument(
+        "--no-hash",
+        action="store_true",
+        help="don't verify file hashes (much faster for large archives)",
+    )
+    pp.add_argument("path", type=Path, help="path of the archive to check")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="manage source files and collected data")
     p.add_argument(
@@ -296,25 +318,10 @@ def main(argv=None):
     pp.add_argument("--scheme", help="filter archive list by scheme")
     pp.add_argument("-n", "--name", help="filter archive list by name")
 
-    pp = ppsub.add_parser("check", help="verify integrity of an archive")
-    pp.set_defaults(func=check_archive)
-    pp.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="show results for all resources, not just errors",
+    pp = ppsub.add_parser(
+        "check", help="check an archive (same as 'nbank check archive')"
     )
-    pp.add_argument(
-        "--fix",
-        action="store_true",
-        help="fix ownership and permissions (changing ownership requires root)",
-    )
-    pp.add_argument(
-        "--no-hash",
-        action="store_true",
-        help="don't verify file hashes (much faster for large archives)",
-    )
-    pp.add_argument("path", type=Path, help="path of the archive to check")
+    add_check_archive_args(pp)
 
     pp = ppsub.add_parser(
         "register-tar",
@@ -376,6 +383,13 @@ def main(argv=None):
         help="check the registry for resources without locations and empty archives",
     )
     pp.set_defaults(func=check_registry)
+
+    pp = ppsub.add_parser(
+        "archive",
+        help="check an archive's contents against the registry, and its "
+        "ownership and permissions against its policy",
+    )
+    add_check_archive_args(pp)
 
     args = p.parse_args(argv)
 

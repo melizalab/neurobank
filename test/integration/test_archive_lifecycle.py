@@ -31,7 +31,7 @@ def check_summary(caplog, total, missing_archive, missing_registry, errors):
 
 def test_check_consistent(cli, archive, dtype, deposit_file, caplog):
     names = [deposit_file(archive, dtype, hash=True) for _ in range(2)]
-    assert cli("archive", "check", "-v", str(archive.path)) == 0
+    assert cli("check", "archive", "-v", str(archive.path)) == 0
     for name in names:
         assert f" - {name} : {stored_path(archive, name)} - OK" in caplog.text
     check_summary(caplog, 2, 0, 0, 0)
@@ -40,7 +40,7 @@ def test_check_consistent(cli, archive, dtype, deposit_file, caplog):
 
 def test_check_missing_from_archive(cli, register, archive, caplog):
     name = register(archive=archive.name)["name"]
-    assert cli("archive", "check", str(archive.path)) == 1
+    assert cli("check", "archive", str(archive.path)) == 1
     assert f" - {name}: MISSING from the archive!" in caplog.text
     check_summary(caplog, 1, 1, 0, 0)
 
@@ -50,7 +50,7 @@ def test_check_missing_from_registry(cli, archive, tmp_path, unique, caplog):
     src = tmp_path / f"{name}.txt"
     src.write_text("contents")
     stored = nbank_archive.store_resource(archive.config, src, id=name)
-    cli("archive", "check", str(archive.path))
+    cli("check", "archive", str(archive.path))
     assert (
         f" - {stored}: MISSING from the registry under {archive.name}!" in caplog.text
     )
@@ -60,23 +60,23 @@ def test_check_missing_from_registry(cli, archive, tmp_path, unique, caplog):
 def test_check_changed_contents(cli, archive, dtype, deposit_file, caplog):
     name = deposit_file(archive, dtype, hash=True)
     stored_path(archive, name).write_text("changed")
-    assert cli("archive", "check", str(archive.path)) == 1
+    assert cli("check", "archive", str(archive.path)) == 1
     assert "FAILED to match hash!" in caplog.text
     check_summary(caplog, 1, 0, 0, 1)
     caplog.clear()
-    assert cli("archive", "check", "--no-hash", "-v", str(archive.path)) == 0
+    assert cli("check", "archive", "--no-hash", "-v", str(archive.path)) == 0
     assert "OK (hash not checked)" in caplog.text
     check_summary(caplog, 1, 0, 0, 0)
 
 
 def test_check_not_an_archive(cli, tmp_path, caplog):
-    assert cli("archive", "check", str(tmp_path)) == 1
+    assert cli("check", "archive", str(tmp_path)) == 1
     assert "is not a valid neurobank archive" in caplog.text
 
 
 def test_check_unregistered_archive(cli, registry, tmp_path, caplog):
     config = nbank_archive.create(tmp_path / "unregistered", registry.url)
-    assert cli("archive", "check", str(config["path"])) == 1
+    assert cli("check", "archive", str(config["path"])) == 1
     assert "No archive associated with" in caplog.text
 
 
@@ -90,7 +90,7 @@ def test_check_ignores_archive_with_similar_name(
     )
     client.post(url, json=body).raise_for_status()
     register(archive=other)
-    cli("archive", "check", str(archive.path))
+    cli("check", "archive", str(archive.path))
     assert "MISSING from the archive" not in caplog.text
     check_summary(caplog, 0, 0, 0, 0)
 
@@ -100,14 +100,14 @@ def test_check_fix_permissions(cli, archive, dtype, deposit_file, caplog):
     path = stored_path(archive, name)
     path.chmod(0o600)
     path.parent.chmod(0o700)
-    assert cli("archive", "check", str(archive.path)) == 1
+    assert cli("check", "archive", str(archive.path)) == 1
     assert "permission errors: 2" in caplog.text
     caplog.clear()
-    assert cli("archive", "check", "--fix", str(archive.path)) == 0
+    assert cli("check", "archive", "--fix", str(archive.path)) == 0
     assert "permission errors: 0" in caplog.text
     assert "Permission errors fixed: 2" in caplog.text
     caplog.clear()
-    assert cli("archive", "check", str(archive.path)) == 0
+    assert cli("check", "archive", str(archive.path)) == 0
     assert "permission errors: 0" in caplog.text
 
 
@@ -116,7 +116,7 @@ def test_check_unknown_archive_user(cli, archive, caplog):
     config = json.loads(config_file.read_text())
     config["policy"]["access"]["user"] = "no-such-user-xyzzy"
     config_file.write_text(json.dumps(config))
-    assert cli("archive", "check", str(archive.path)) == 1
+    assert cli("check", "archive", str(archive.path)) == 1
     assert "unable to check: archive user 'no-such-user-xyzzy'" in caplog.text
 
 
@@ -173,7 +173,7 @@ def test_check_registry_unsupported(cli, has_location_filter, caplog):
 
 def test_check_resource_without_hash(cli, archive, dtype, deposit_file, caplog):
     deposit_file(archive, dtype)
-    cli("archive", "check", "-v", str(archive.path))
+    cli("check", "archive", "-v", str(archive.path))
     assert "OK (no hash to verify)" in caplog.text
     check_summary(caplog, 1, 0, 0, 0)
 
