@@ -105,11 +105,27 @@ def get_locations_bulk(base_url: str, ids: Sequence[str], **params) -> tuple[str
     return (url_join(base_url, "bulk", "locations/"), {"names": list(ids), **params})
 
 
-def add_location(base_url: str, id: str, archive: str) -> tuple[str, dict]:
-    """Constructs URL to add a location for a resource (use post)"""
+def add_location(
+    base_url: str, id: str, archive: str, key: str | None = None
+) -> tuple[str, dict]:
+    """Constructs URL to add a location for a resource (use post).
+
+    key records where the resource is within the archive, if that can't be
+    derived from its id. Registries before API version 1.1 ignore it.
+    """
     return (
         url_join(base_url, "resources", id, "locations/"),
-        {"archive_name": archive},
+        strip_nulls({"archive_name": archive, "key": key}),
+    )
+
+
+def update_location(
+    base_url: str, id: str, archive: str, key: str | None
+) -> tuple[str, dict]:
+    """Constructs URL to set (or, with None, clear) the key of a location (use patch)"""
+    return (
+        url_join(base_url, "resources", id, "locations", f"{archive}/"),
+        {"key": key},
     )
 
 
@@ -226,5 +242,6 @@ __all__ = [
     "local_schemes",
     "log_error",
     "parse_resource_url",
+    "update_location",
     "update_resource_metadata",
 ]

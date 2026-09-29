@@ -6,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from nbank import util
+from nbank import tape_archive, util
 
 dummy_info = {"name": "django-neurobank", "version": "0.10.11", "api_version": "1.0"}
 
@@ -113,6 +113,51 @@ def test_parse_http_location_strip_slash():
     res = util.parse_location(location)
     assert isinstance(res, util.HttpResource)
     assert res.url == "https://localhost:8000/bucket/dummy/"
+
+
+def test_parse_tape_location():
+    location = {"scheme": "tape", "root": "tape01:3", "resource_name": "dummy"}
+    res = util.parse_location(location)
+    assert isinstance(res, tape_archive.Resource)
+    assert (res.tape_name, res.file_index, res.id) == ("tape01", 3, "dummy")
+    assert res.member is None
+    assert res.local is False
+
+
+def test_parse_tape_location_with_key():
+    location = {
+        "scheme": "tape",
+        "root": "tape01:3",
+        "resource_name": "dummy",
+        "key": "home/data/archive/resources/du/dummy.wav",
+    }
+    res = util.parse_location(location)
+    assert res.member == "home/data/archive/resources/du/dummy.wav"
+
+
+def test_parse_http_location_ignores_key():
+    location = {
+        "scheme": "https",
+        "root": "localhost:8000/bucket",
+        "resource_name": "dummy",
+        "key": "something",
+    }
+    res = util.parse_location(location)
+    assert res.url == "https://localhost:8000/bucket/dummy/"
+
+
+def test_parse_unreachable_neurobank_location(tmp_path):
+    location = {
+        "scheme": "neurobank",
+        "root": str(tmp_path / "not-mounted"),
+        "resource_name": "dummy",
+    }
+    assert util.parse_location(location) is None
+
+
+def test_parse_unknown_scheme():
+    location = {"scheme": "ipfs", "root": "gateway", "resource_name": "dummy"}
+    assert util.parse_location(location) is None
 
 
 def test_query_registry(mocked_api):

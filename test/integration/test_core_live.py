@@ -323,3 +323,25 @@ def test_update_missing(registry, register, unique):
     results = list(core.update(registry.url, missing, name, auth=registry.auth, k="v"))
     assert results[0] == {"name": missing, "error": "not found"}
     assert results[1]["name"] == name
+
+
+def test_location_key(client, registry, register, unique):
+    tape = unique("tape")
+    url, body = reg.add_archive(registry.url, tape, "tape", f"{tape}:1")
+    client.post(url, json=body).raise_for_status()
+    name = register()["name"]
+    member = f"home/data/archive/resources/{name[:2]}/{name}.wav"
+
+    url, body = reg.add_location(registry.url, name, tape, key=member)
+    r = client.post(url, json=body)
+    assert r.status_code == 201
+    assert r.json()["key"] == member
+
+    url, params = reg.get_locations(registry.url, name)
+    [location] = client.get(url, params=params).json()
+    assert util.parse_location(location).member == member
+
+    url, body = reg.update_location(registry.url, name, tape, "other.wav")
+    assert client.patch(url, json=body).json()["key"] == "other.wav"
+    url, body = reg.update_location(registry.url, name, tape, None)
+    assert client.patch(url, json=body).json()["key"] is None

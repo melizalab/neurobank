@@ -72,6 +72,37 @@ class HttpResource(FetchableResource):
         return target
 
 
+def _neurobank_resource(location, *, alt_base, http_session) -> Resource | None:
+    try:
+        return archive.Resource(location["root"], location["resource_name"], alt_base)
+    except FileNotFoundError:
+        return None
+
+
+def _http_resource(location, *, alt_base, http_session) -> Resource:
+    return HttpResource(location, http_session)
+
+
+def _tape_resource(location, *, alt_base, http_session) -> Resource:
+    return tape_archive.Resource(
+        location["root"],
+        location["resource_name"],
+        alt_base,
+        member=location.get("key"),
+    )
+
+
+# Builds a Resource for each location scheme the client knows. Each function
+# takes the location dict and the alt_base and http_session arguments of
+# parse_location, and returns None if the resource can't be reached.
+_location_schemes = {
+    "neurobank": _neurobank_resource,
+    "http": _http_resource,
+    "https": _http_resource,
+    "tape": _tape_resource,
+}
+
+
 def parse_location(
     location: Mapping[str, str],
     *,
@@ -80,26 +111,19 @@ def parse_location(
 ) -> Resource | None:
     """Parse a location dict and return a Resource or None if the location is invalid.
 
-    location is a dict with 'scheme', 'root', and 'resource_name'.
+    location is a dict with 'scheme', 'root', and 'resource_name', and 'key' if
+    the registry records where the resource is within its archive. Returns None
+    for schemes the client doesn't know and for local resources that don't
+    exist.
 
     """
     scheme = location["scheme"]
-    # TODO: replace hard-coded dispatch - plugin?
-    if scheme == "neurobank":
-        try:
-            return archive.Resource(
-                location["root"], location["resource_name"], alt_base
-            )
-        except FileNotFoundError:
-            pass
-    elif scheme in ("http", "https"):
-        return HttpResource(location, http_session)
-    elif scheme == "tape":
-        return tape_archive.Resource(
-            location["root"], location["resource_name"], alt_base
-        )
-    else:
+    try:
+        make_resource = _location_schemes[scheme]
+    except KeyError:
         log.debug("Unrecognized location scheme %s", scheme)
+        return None
+    return make_resource(location, alt_base=alt_base, http_session=http_session)
 
 
 def id_from_fname(fname: Path | str) -> str:

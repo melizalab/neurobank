@@ -15,13 +15,21 @@ class Resource:
 
     The `root` field of the location is interpreted as
     `name_of_tape`:`file_index`. The `alt_base` parameter can be set to point to
-    a tar file on a local file system.
+    a tar file on a local file system. `member` is the name of the tar member
+    that holds the resource, if the location records one; otherwise the member
+    is the one whose name (without extension) is the resource id.
 
     """
 
-    local: False
+    local = False
 
-    def __init__(self, root: str, id: str, alt_base: Path | None = None):
+    def __init__(
+        self,
+        root: str,
+        id: str,
+        alt_base: Path | None = None,
+        member: str | None = None,
+    ):
         try:
             self.tape_name, file_index = root.split(":")
             self.file_index = int(file_index)
@@ -29,6 +37,7 @@ class Resource:
             raise ValueError("Tape resources must have the form 'name:index'") from err
         self.alt_base = alt_base
         self.id = id
+        self.member = member
         # TODO: set local to True if alt_base is set?
 
     def __str__(self):

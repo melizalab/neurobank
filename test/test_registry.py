@@ -135,6 +135,25 @@ def test_get_location():
     assert params is None
 
 
+def test_add_location():
+    url, params = registry.add_location(base_url, id, location)
+    assert url == f"{base_url}resources/{id}/locations/"
+    assert params == {"archive_name": location}
+
+
+def test_add_location_with_key():
+    url, params = registry.add_location(base_url, id, location, key="123456")
+    assert url == f"{base_url}resources/{id}/locations/"
+    assert params == {"archive_name": location, "key": "123456"}
+
+
+@pytest.mark.parametrize("key", ["123456", None])
+def test_update_location(key):
+    url, params = registry.update_location(base_url, id, location, key)
+    assert url == f"{base_url}resources/{id}/locations/{location}/"
+    assert params == {"key": key}
+
+
 def test_add_datatype():
     test_name = "my-dtype"
     test_content_type = "audio/wav"
