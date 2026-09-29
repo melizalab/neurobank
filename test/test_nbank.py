@@ -407,3 +407,31 @@ def test_update_with_netrc(mocked_api, netrc_auth):
     )
     updated = list(core.update(base_url, name, auth=netrc_auth, **metadata))
     assert updated == [{"metadata": metadata, "name": name}]
+
+
+def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
+    root = tmp_archive["path"]
+    src = tmp_path / "res_1"
+    src.write_text("contents")
+    sha1 = util.hash(src)
+    archive.store_resource(tmp_archive, src)
+    mocked_api.get(resource_url, params={"has_location": "false"}).respond(json=[])
+    mocked_api.get(archives_url).respond(
+        json=[
+            {"name": archive_name, "scheme": "neurobank", "root": str(root)},
+            {"name": "tape", "scheme": "tape", "root": "tape:1"},
+        ]
+    )
+    mocked_api.get(resource_url, params={"location": archive_name}).respond(
+        json=[{"name": "res_1", "sha1": sha1, "locations": [archive_name]}]
+    )
+    mocked_api.get(resource_url, params={"location": "tape"}).respond(
+        json=[{"name": "res_2", "sha1": None, "locations": ["tape"]}]
+    )
+    log = logging.getLogger("nbank")
+    handlers, level = list(log.handlers), log.level
+    try:
+        assert script.main(["-r", base_url, "check", "all"]) == 0
+    finally:
+        log.handlers[:] = handlers
+        log.setLevel(level)

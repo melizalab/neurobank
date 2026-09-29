@@ -374,3 +374,29 @@ def test_check_registry(mocked_api):
         check.Finding(Status.EMPTY_ARCHIVE, None, archive="empty"),
     ]
     assert [f.ok for f in findings] == [False, True]
+
+
+def test_check_contents_unlistable_resources_directory(tmp_archive, tmp_path):
+    _, sha1 = store(tmp_archive, tmp_path, "res_1")
+    base = tmp_archive["path"] / "resources"
+    base.chmod(0o000)
+    try:
+        findings = list(
+            check.check_archive_contents(tmp_archive["path"], {"res_1": sha1})
+        )
+    finally:
+        base.chmod(0o750)
+    assert statuses(findings) == {
+        None: Status.UNREADABLE,
+        "res_1": Status.MISSING_FROM_ARCHIVE,
+    }
+    assert findings[0].path == base
+
+
+def test_check_missing_resources_directory(tmp_archive):
+    base = tmp_archive["path"] / "resources"
+    base.rmdir()
+    findings = list(check.check_archive_contents(tmp_archive["path"], {}))
+    assert [(f.status, f.path) for f in findings] == [(Status.UNREADABLE, base)]
+    assert "No such file" in findings[0].detail
+    assert permission_findings(tmp_archive) == []

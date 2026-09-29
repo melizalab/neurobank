@@ -7,7 +7,7 @@ import tarfile
 import pytest
 
 from nbank import archive as nbank_archive
-from nbank import core
+from nbank import check, core
 from nbank import registry as nbank_registry
 
 
@@ -169,6 +169,82 @@ def test_check_registry_unsupported(cli, has_location_filter, caplog):
         pytest.skip("registry supports the has_location filter")
     assert cli("check", "registry") == 1
     assert "doesn't support the has_location filter" in caplog.text
+
+
+def failed_checks(caplog):
+    """Returns the names in check all's list of failed checks."""
+    for record in caplog.records:
+        message = record.getMessage()
+        if message.startswith("failed checks: "):
+            return message.removeprefix("failed checks: ").split(", ")
+    return []
+
+
+def test_check_all(
+    cli,
+    client,
+    registry,
+    register,
+    make_archive,
+    dtype,
+    deposit_file,
+    unique,
+    tmp_path,
+    caplog,
+):
+    def add_archive(name, scheme, root):
+        url, body = nbank_registry.add_archive(registry.url, name, scheme, root)
+        client.post(url, json=body).raise_for_status()
+
+    good = make_archive()
+    deposit_file(good, dtype, hash=True)
+    bad = make_archive()
+    register(archive=bad.name)
+    unmounted = unique("arch")
+    add_archive(unmounted, "neurobank", f"/nonexistent/{unmounted}")
+    tape = unique("tape")
+    add_archive(tape, "tape", f"{tape}:1")
+    linked = unique("arch")
+    real = nbank_archive.create(tmp_path / f"{linked}-real", registry.url)
+    (tmp_path / linked).symlink_to(real["path"])
+    add_archive(linked, "neurobank", tmp_path / linked)
+    elsewhere = unique("arch")
+    config = nbank_archive.create(tmp_path / elsewhere, "https://elsewhere/")
+    add_archive(elsewhere, "neurobank", config["path"])
+
+    assert cli("check", "all") == 1
+    failed = failed_checks(caplog)
+    assert good.name not in failed
+    assert f"archive {good.name}: {good.path}" in caplog.text
+    assert bad.name in failed
+    assert (
+        f" - {unmounted}: /nonexistent/{unmounted} is not on this host" in caplog.text
+    )
+    assert f" - {tape}: tape archive" in caplog.text
+    assert linked in failed
+    assert "deposits won't find the archive" in caplog.text
+    assert elsewhere in failed
+    assert (
+        "nbank.json points to a different registry (https://elsewhere/)" in caplog.text
+    )
+
+
+def test_check_all_continues_after_crash(
+    cli, make_archive, dtype, deposit_file, monkeypatch, caplog
+):
+    broken = make_archive()
+    deposit_file(broken, dtype)
+    original = check.check_archive_contents
+
+    def crash_on_broken(archive_path, *args, **kwargs):
+        if archive_path == broken.path:
+            raise OSError("simulated failure")
+        return original(archive_path, *args, **kwargs)
+
+    monkeypatch.setattr(check, "check_archive_contents", crash_on_broken)
+    assert cli("check", "all") == 1
+    assert " - unable to check: simulated failure!" in caplog.text
+    assert broken.name in failed_checks(caplog)
 
 
 def test_check_resource_without_hash(cli, archive, dtype, deposit_file, caplog):

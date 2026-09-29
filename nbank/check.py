@@ -135,8 +135,14 @@ def registry_resources_in_archive(
 def _scan_archive(archive_path: Path) -> tuple[dict[str, list[Path]], list[Finding]]:
     """Returns ({resource name: [files]}, [layout problems]) for an archive."""
     files = defaultdict(list)
+    base = archive_path / archive._resource_subdir
+    try:
+        entries = sorted(base.iterdir())
+    except OSError as err:
+        detail = f"unable to list directory: {err.strerror}"
+        return files, [Finding(Status.UNREADABLE, None, base, detail)]
     problems = []
-    for entry in sorted((archive_path / archive._resource_subdir).iterdir()):
+    for entry in entries:
         if not entry.is_dir():
             problems.append(Finding(Status.UNEXPECTED, entry.name, entry))
             continue
@@ -312,8 +318,11 @@ def check_archive_permissions(
         gid = grp.getgrnam(access["group"]).gr_gid
     except KeyError as err:
         raise ValueError(f"archive group '{access['group']}' does not exist") from err
+    base = cfg["path"] / archive._resource_subdir
+    if not base.exists():
+        return  # reported by check_archive_contents
     pfix = archive.permission_fixer(cfg, quiet=True) if fix else None
-    for path, name in _archive_tree(cfg["path"] / archive._resource_subdir):
+    for path, name in _archive_tree(base):
         findings = list(_check_path(cfg, path, name, uid, gid))
         if findings and pfix is not None:
             pfix(path)

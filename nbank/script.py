@@ -78,6 +78,12 @@ class ParseKeyVal(argparse.Action):
 def add_check_archive_args(pp):
     """Adds the arguments for checking an archive to a subcommand parser."""
     pp.set_defaults(func=check_archive)
+    add_check_options(pp)
+    pp.add_argument("path", type=Path, help="path of the archive to check")
+
+
+def add_check_options(pp):
+    """Adds the options for checking archives to a subcommand parser."""
     pp.add_argument(
         "-v",
         "--verbose",
@@ -94,7 +100,6 @@ def add_check_archive_args(pp):
         action="store_true",
         help="don't verify file hashes (much faster for large archives)",
     )
-    pp.add_argument("path", type=Path, help="path of the archive to check")
 
 
 def main(argv=None):
@@ -391,6 +396,13 @@ def main(argv=None):
     )
     add_check_archive_args(pp)
 
+    pp = ppsub.add_parser(
+        "all",
+        help="check the registry, then every neurobank archive on this host",
+    )
+    pp.set_defaults(func=check_all)
+    add_check_options(pp)
+
     args = p.parse_args(argv)
 
     if not hasattr(args, "func"):
@@ -677,14 +689,20 @@ def check_archive(args):
         if archive_info is None:
             log.error("No archive associated with '%s' in the registry", archive_path)
             return 1
-        archive_name = archive_info["name"]
-        log.info(
-            "retrieving resources that should be in %s from the registry...",
-            archive_name,
+        ok = _check_archive(
+            session, registry_url, archive_info["name"], archive_cfg, args
         )
-        expected = check.registry_resources_in_archive(
-            session, registry_url, archive_name
-        )
+    return 0 if ok else 1
+
+
+def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bool:
+    """Runs the archive checks and logs the results. Returns True if there are no errors."""
+    archive_path = archive_cfg["path"]
+    log.info(
+        "retrieving resources that should be in %s from the registry...",
+        archive_name,
+    )
+    expected = check.registry_resources_in_archive(session, registry_url, archive_name)
     log.info(" - resources in the registry: %d", len(expected))
     log.info("checking ownership and permissions:")
     perm_counts = Counter()
@@ -756,7 +774,7 @@ def check_archive(args):
     if args.fix:
         log.info("Permission errors fixed: %d", n_fixed)
     n_errors += perm_counts.total() - n_fixed
-    return 1 if n_errors or unable_to_check else 0
+    return n_errors == 0 and not unable_to_check
 
 
 def check_registry(args):
@@ -766,26 +784,97 @@ def check_registry(args):
     otherwise.
     """
     log.info("registry: %s", args.registry_url)
-    counts = Counter()
     with httpx.Client(auth=args.auth) as session:
-        try:
-            for finding in check.check_registry(session, args.registry_url):
-                counts[finding.status] += 1
-                if finding.status == check.Status.NO_LOCATION:
-                    log.error(" - %s: %s!", finding.resource, finding.status.value)
-                else:
-                    log.warning(
-                        " - archive %s: %s", finding.archive, finding.status.value
-                    )
-        except RuntimeError as err:
-            log.error("error: %s", err)
-            return 1
+        ok = _check_registry(session, args.registry_url)
+    return 0 if ok else 1
+
+
+def _check_registry(session, registry_url) -> bool:
+    """Runs the registry checks and logs the results. Returns True if there are no errors."""
+    counts = Counter()
+    try:
+        for finding in check.check_registry(session, registry_url):
+            counts[finding.status] += 1
+            if finding.status == check.Status.NO_LOCATION:
+                log.error(" - %s: %s!", finding.resource, finding.status.value)
+            else:
+                log.warning(" - archive %s: %s", finding.archive, finding.status.value)
+    except RuntimeError as err:
+        log.error("error: %s", err)
+        return False
     log.info(
         "\nResources without locations: %d; empty archives: %d",
         counts[check.Status.NO_LOCATION],
         counts[check.Status.EMPTY_ARCHIVE],
     )
-    return 1 if counts[check.Status.NO_LOCATION] else 0
+    return counts[check.Status.NO_LOCATION] == 0
+
+
+def check_all(args):
+    """Check the registry, then every neurobank archive that's on this host.
+
+    Archives with other schemes, and archives whose root isn't a directory on
+    this host, are skipped. A problem with one archive is logged and doesn't
+    stop the others from being checked. Returns 1 if the registry or any
+    archive has errors, 0 otherwise.
+    """
+    registry_url = args.registry_url
+    log.info("registry: %s", registry_url)
+    failed = []
+    skipped = []
+    with httpx.Client(auth=args.auth) as session:
+        if not _check_registry(session, registry_url):
+            failed.append("(registry)")
+        url, params = registry.get_archives(registry_url)
+        for info in util.query_registry_paginated(session, url, params):
+            name = info["name"]
+            root = Path(info["root"])
+            if info["scheme"] not in archive.Resource.schemes:
+                skipped.append((name, f"{info['scheme']} archive"))
+                continue
+            if not root.is_dir():
+                skipped.append((name, f"{root} is not on this host"))
+                continue
+            log.info("\narchive %s: %s", name, root)
+            try:
+                archive_cfg = archive.get_config(root)
+            except FileNotFoundError:
+                log.error(" - %s is not a valid neurobank archive!", root)
+                failed.append(name)
+                continue
+            except (OSError, ValueError, KeyError) as err:
+                log.error(" - unable to read nbank.json: %s!", err)
+                failed.append(name)
+                continue
+            ok = True
+            if archive_cfg["path"] != root:
+                log.error(
+                    " - registered root resolves to %s; deposits won't find the archive!",
+                    archive_cfg["path"],
+                )
+                ok = False
+            if archive_cfg["registry"].rstrip("/") != registry_url.rstrip("/"):
+                log.error(
+                    " - nbank.json points to a different registry (%s)!",
+                    archive_cfg["registry"],
+                )
+                ok = False
+            try:
+                if not _check_archive(session, registry_url, name, archive_cfg, args):
+                    ok = False
+            except OSError as err:
+                log.error(" - unable to check: %s!", err)
+                ok = False
+            if not ok:
+                failed.append(name)
+    log.info("\nskipped archives: %d", len(skipped))
+    for name, reason in skipped:
+        log.info(" - %s: %s", name, reason)
+    if failed:
+        log.error("failed checks: %s", ", ".join(failed))
+    else:
+        log.info("all checks passed")
+    return 1 if failed else 0
 
 
 def register_tar(args):
