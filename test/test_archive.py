@@ -380,3 +380,75 @@ def test_create_resources_directory_mode(tmp_path, restrictive_umask):
     required, _ = archive.mode_policy(cfg, resdir)
     assert stat.S_IMODE(resdir.stat().st_mode) == required
     assert list(check.check_archive_permissions(cfg)) == []
+
+
+def test_create_shared_archive(tmp_path):
+    cfg = archive.create(tmp_path / "archive", dummy_registry, shared=True)
+    assert cfg["policy"]["access"]["user"] is None
+    src = tmp_path / "res_1"
+    src.write_text("contents")
+    archive.store_resource(cfg, src)
+    assert list(check.check_archive_permissions(cfg)) == []
+
+
+@pytest.mark.skipif(os.getuid() == 0, reason="root can own anything")
+def test_owner_is_checked_unless_shared(tmp_path):
+    import pwd
+
+    cfg = archive.create(tmp_path / "archive", dummy_registry)
+    cfg["policy"]["access"]["user"] = pwd.getpwuid(0).pw_name
+    statuses = {f.status for f in check.check_archive_permissions(cfg)}
+    assert check.Status.WRONG_OWNER in statuses
+    cfg["policy"]["access"]["user"] = None
+    assert list(check.check_archive_permissions(cfg)) == []
+
+
+def test_create_with_group(tmp_path):
+    import grp
+
+    group = grp.getgrgid(os.getgid()).gr_name
+    cfg = archive.create(tmp_path / "archive", dummy_registry, group=group)
+    assert cfg["policy"]["access"]["group"] == group
+    for path in (
+        cfg["path"] / "resources",
+        cfg["path"] / "nbank.json",
+        cfg["path"] / "README.md",
+    ):
+        assert path.stat().st_gid == os.getgid()
+
+
+def test_create_with_unknown_group(tmp_path):
+    root = tmp_path / "archive"
+    with pytest.raises(ValueError, match="no-such-group-xyzzy"):
+        archive.create(root, dummy_registry, group="no-such-group-xyzzy")
+    assert not root.exists()
+
+
+@pytest.mark.skipif(os.getuid() == 0, reason="root can change any group")
+def test_create_with_group_not_a_member(tmp_path, caplog):
+    import grp
+
+    if os.getgid() == 0 or 0 in os.getgroups():
+        pytest.skip("need a group this user doesn't belong to")
+    group = grp.getgrgid(0).gr_name
+    with caplog.at_level(logging.WARNING, logger="nbank"):
+        cfg = archive.create(tmp_path / "archive", dummy_registry, group=group)
+    assert cfg["policy"]["access"]["group"] == group
+    assert "unable to change the group of" in caplog.text
+    assert "unable to change uid/gid of" in caplog.text
+
+
+@pytest.mark.parametrize("user", [None, "root"])
+def test_permission_fixer_as_root(tmp_archive, monkeypatch, user):
+    import grp
+    import pwd
+
+    tmp_archive["policy"]["access"]["user"] = user
+    calls = []
+    monkeypatch.setattr(os, "getuid", lambda: 0)
+    monkeypatch.setattr(os, "chown", lambda path, uid, gid: calls.append((uid, gid)))
+    path = tmp_archive["path"] / "resources"
+    archive.permission_fixer(tmp_archive)(path)
+    gid = grp.getgrnam(tmp_archive["policy"]["access"]["group"]).gr_gid
+    expected_uid = -1 if user is None else pwd.getpwnam(user).pw_uid
+    assert calls == [(expected_uid, gid)]

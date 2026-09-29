@@ -8,6 +8,7 @@ Created Tue Nov 26 22:48:58 2013
 import argparse
 import concurrent.futures
 import datetime
+import grp
 import json
 import logging
 import os
@@ -151,6 +152,17 @@ def main(argv=None):
         "as an octal. The default is %(default)03o.",
         type=octalint,
         default=archive._default_umask,
+    )
+    pp.add_argument(
+        "-g",
+        "--group",
+        help="group for the archive. The default is your primary group.",
+    )
+    pp.add_argument(
+        "--shared",
+        action="store_true",
+        help="configure archive for shared use, with users depositing under "
+        "their own accounts",
     )
 
     pp = sub.add_parser("deposit", help="deposit resource(s)")
@@ -462,6 +474,13 @@ def init_archive(args):
     args.directory = args.directory.resolve()
     if args.name is None:
         args.name = args.directory.name
+    # check before registering, so a bad group doesn't leave a registered archive
+    if args.group is not None:
+        try:
+            grp.getgrnam(args.group)
+        except KeyError:
+            log.error("error: group '%s' does not exist", args.group)
+            return
 
     url, params = registry.add_archive(
         args.registry_url,
@@ -476,7 +495,13 @@ def init_archive(args):
         registry.log_error(e)
     else:
         log.info("registered '%s' as archive '%s'", args.directory, args.name)
-        archive.create(args.directory, args.registry_url, args.umask)
+        archive.create(
+            args.directory,
+            args.registry_url,
+            args.umask,
+            shared=args.shared,
+            group=args.group,
+        )
         log.info("initialized neurobank archive in %s", args.directory)
 
 

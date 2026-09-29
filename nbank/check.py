@@ -286,11 +286,15 @@ def _group_name(gid: int) -> str:
 
 
 def _check_path(
-    cfg: archive.ArchiveConfig, path: Path, resource: str | None, uid: int, gid: int
+    cfg: archive.ArchiveConfig,
+    path: Path,
+    resource: str | None,
+    uid: int | None,
+    gid: int,
 ) -> Iterator[Finding]:
-    """Checks the owner, group, and mode of path."""
+    """Checks the owner (unless uid is None), group, and mode of path."""
     st = path.lstat()
-    if st.st_uid != uid:
+    if uid is not None and st.st_uid != uid:
         detail = f"owner is {_user_name(st.st_uid)}, expected {_user_name(uid)}"
         yield Finding(Status.WRONG_OWNER, resource, path, detail)
     if st.st_gid != gid:
@@ -354,7 +358,9 @@ def check_archive_permissions(
     """Checks ownership and permissions in a local archive against its policy.
 
     Every file and directory under resources/ must be owned by the policy's
-    user and group and have the mode bits given by archive.mode_policy.
+    user and group and have the mode bits given by archive.mode_policy. If the
+    policy's user is null (a shared archive, where users deposit under their
+    own accounts), ownership by user isn't checked.
     Symbolic links and files directly under resources/ are skipped, because
     check_archive_contents reports them. Directories that can't be listed are
     skipped too.
@@ -367,10 +373,11 @@ def check_archive_permissions(
     Raises ValueError if the policy's user or group doesn't exist on this host.
     """
     access = cfg["policy"]["access"]
+    user = access.get("user")
     try:
-        uid = pwd.getpwnam(access["user"]).pw_uid
+        uid = None if user is None else pwd.getpwnam(user).pw_uid
     except KeyError as err:
-        raise ValueError(f"archive user '{access['user']}' does not exist") from err
+        raise ValueError(f"archive user '{user}' does not exist") from err
     try:
         gid = grp.getgrnam(access["group"]).gr_gid
     except KeyError as err:

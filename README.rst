@@ -117,7 +117,7 @@ settings you may want to modify:
 -  ``require_hash``: If set to true (the default), every resource will have a hash value calculated and stored in the registry. The registry will then be able to prevent duplicate files from being deposited under multiple identifiers.
    - ``keep_extensions``: If set to true (the default), files keep their extensions when deposited. Only one file with a given base identifier can be deposited, so if you have a ``st32_1_2_1.wav``, the identifier is ``st32_1_2_1``, and therefore you can’t also have an ``st32_1_2_1.json`` file. If set to false, the extension is stripped, so ``st32_1_2_1.wav`` would be deposited as ``st32_1_2_1``. Usually you want this to be true, unless your archive only contains one kind of file.
    -  ``allow_directories``: If set to true, directories and their contents can be deposited as resources. The identifier is given to the directory, and the user is responsible for knowing how to interpret the contents. If set to false (the default), only regular files can be deposited.
-   -  ``access``: Specify the ``user`` and ``group`` who will own deposited files, and the ``umask`` to modify access mode. If these are not set, files will be owned by the user who deposited them.
+   -  ``access``: The ``user`` and ``group`` that should own the archive's files, and the ``umask`` that limits their access mode. Deposited files are given the group and mode, but only root can change who owns them. For a shared archive, where users deposit under their own accounts, set ``user`` to ``null`` (``nbank init --shared``) so that the owner isn't checked. ``nbank check archive`` reports files that don't match these settings, and ``--fix`` repairs them.
 
 Registering and storing resources
 ---------------------------------
@@ -268,10 +268,11 @@ suggested for POSIX operating systems:
    group.
 2. To restrict access to users not in the project group, give the
    archive a umask of 027 when creating it (``nbank init -u 027``).
-3. Set the group in ``nbank.json`` to the project group. When resources
-   are deposited, neurobank gives them this group and the permissions
-   allowed by the umask, and makes the resource subdirectories
-   group-writable and setgid so that any member of the group can deposit.
+3. Create the archive with ``nbank init --shared -g GROUP``, where
+   ``GROUP`` is the project group. When resources are deposited,
+   neurobank gives them this group and the permissions allowed by the
+   umask, and makes the resource subdirectories group-writable and setgid
+   so that any member of the group can deposit.
 4. Run ``nbank check archive --fix`` (as root, to fix ownership) to find
    and repair files and directories whose ownership or permissions don’t
    match ``nbank.json``.

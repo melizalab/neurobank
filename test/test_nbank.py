@@ -2,6 +2,7 @@
 import argparse
 import json
 import logging
+import os
 from base64 import b64encode
 from pathlib import Path
 
@@ -435,3 +436,33 @@ def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
     finally:
         log.handlers[:] = handlers
         log.setLevel(level)
+
+
+def run_main(*argv):
+    log = logging.getLogger("nbank")
+    handlers, level = list(log.handlers), log.level
+    try:
+        return script.main(["-r", base_url, *argv])
+    finally:
+        log.handlers[:] = handlers
+        log.setLevel(level)
+
+
+def test_init_shared_archive(mocked_api, tmp_path):
+    import grp
+
+    group = grp.getgrgid(os.getgid()).gr_name
+    root = tmp_path / "archive"
+    mocked_api.post(archives_url).respond(201, json={})
+    run_main("init", "--shared", "-g", group, str(root))
+    access = archive.get_config(root)["policy"]["access"]
+    assert access["user"] is None
+    assert access["group"] == group
+
+
+def test_init_unknown_group(mocked_api, tmp_path, caplog):
+    # no registry route is mocked: the archive must not be registered
+    root = tmp_path / "archive"
+    run_main("init", "-g", "no-such-group-xyzzy", str(root))
+    assert "group 'no-such-group-xyzzy' does not exist" in caplog.text
+    assert not root.exists()

@@ -72,6 +72,9 @@ def create(
     archive_path: Path,
     registry_url: str,
     umask: int = _default_umask,
+    *,
+    shared: bool = False,
+    group: str | None = None,
     **policies: Any,
 ) -> ArchiveConfig:
     """Initializes a new data archive in archive_path.
@@ -79,18 +82,33 @@ def create(
     archive_path: the absolute or relative path of the archive
     registry_url: the URL of the registry service
     umask: the default umask (as an integer)
+    shared: if True, don't record an owner. Use this for archives where users
+      deposit under their own accounts, so files can't all have the same owner.
+      Otherwise the current user is recorded as the owner.
+    group: the group for the archive. The default is the current user's
+      primary group.
     **policies: override auto_identifiers, keep_extensions, allow_directories, or require_hash
 
-    Creates archive_path and all parents as needed. Does not overwrite existing
-    files or directories. If a config file already exists, uses the umask stored
-    there rather than the supplied one. Raises OSError for failed operations.
+    Creates archive_path and all parents as needed, and gives the resources
+    directory and the files created here the archive's group. Does not overwrite
+    existing files or directories. If a config file already exists, uses the
+    umask stored there rather than the supplied one. Raises ValueError if group
+    doesn't exist, and OSError for failed operations.
 
     Returns the config dict for the archive
 
     """
     import grp
     import pwd
-    from os import getgid, getuid
+    from os import chown, getgid, getuid
+
+    if group is None:
+        group = grp.getgrgid(getgid()).gr_name
+    try:
+        gid = grp.getgrnam(group).gr_gid
+    except KeyError as err:
+        raise ValueError(f"group '{group}' does not exist") from err
+    user = None if shared else pwd.getpwuid(getuid()).pw_name
 
     archive_path = archive_path.resolve(strict=False)
     try:
@@ -103,15 +121,11 @@ def create(
 
     resdir = archive_path / _resource_subdir
     resdir.mkdir(parents=True, exist_ok=True)
-    # try to set setgid bit on directory; this fails in some cases
-    resdir.chmod(0o2777 & ~umask)
 
     fname = archive_path / _README_fname
     fname.write_text(_README)
     fname.chmod(0o666 & ~umask)
 
-    user = pwd.getpwuid(getuid())
-    group = grp.getgrgid(getgid())
     config = {
         "$schema": _config_schema,
         "project": {"name": None, "description": None},
@@ -123,7 +137,7 @@ def create(
             "keep_extensions": True,
             "allow_directories": False,
             "require_hash": True,
-            "access": {"user": user.pw_name, "group": group.gr_name, "umask": umask},
+            "access": {"user": user, "group": group, "umask": umask},
         },
     }
     for k, v in policies.items():
@@ -136,7 +150,14 @@ def create(
     fname.write_text("resources/\n")
     fname.chmod(0o666 & ~umask)
 
-    return get_config(archive_path)
+    cfg = get_config(archive_path)
+    permission_fixer(cfg)(resdir)
+    for name in (_README_fname, _config_fname, ".gitignore"):
+        try:
+            chown(archive_path / name, -1, gid)
+        except PermissionError:
+            log.warning("unable to change the group of %s", archive_path / name)
+    return cfg
 
 
 def id_stub(id: str) -> str:
@@ -396,8 +417,8 @@ def mode_policy(cfg: ArchiveConfig, path: Path) -> tuple[int, int]:
 def permission_fixer(cfg: ArchiveConfig, quiet: bool = False):
     """Returns a function that fixes ownership and permissions of a path in the archive.
 
-    The path is given the policy's group, and the policy's user if running as
-    root. Mode bits are set according to mode_policy. Ownership and mode are
+    The path is given the policy's group, and the policy's user if there is one
+    and this is running as root. Mode bits are set according to mode_policy. Ownership and mode are
     changed independently, so a failure to change one doesn't prevent changing
     the other. Failures are logged as warnings unless quiet is True. Symbolic
     links are left alone, so that their targets aren't changed.
@@ -407,9 +428,9 @@ def permission_fixer(cfg: ArchiveConfig, quiet: bool = False):
     import pwd
     from os import chown, getuid
 
-    myuid = getuid()
-    if myuid == 0:
-        uid = pwd.getpwnam(cfg["policy"]["access"]["user"]).pw_uid
+    user = cfg["policy"]["access"].get("user")
+    if user is not None and getuid() == 0:
+        uid = pwd.getpwnam(user).pw_uid
     else:
         uid = -1
     gid = grp.getgrnam(cfg["policy"]["access"]["group"]).gr_gid
