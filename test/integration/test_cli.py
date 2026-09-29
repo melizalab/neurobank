@@ -32,7 +32,7 @@ def test_registry_info(cli, registry, caplog):
 
 def test_init(cli, registry, client, tmp_path, unique):
     path = tmp_path / unique("arch")
-    cli("init", str(path))
+    assert cli("init", str(path)) == 0
     url, _ = reg.get_archive(registry.url, path.name)
     record = client.get(url).json()
     assert record["scheme"] == "neurobank"
@@ -49,7 +49,7 @@ def test_init_with_name(cli, registry, client, tmp_path, unique):
 
 def test_init_duplicate_name(cli, archive, tmp_path, caplog):
     path = tmp_path / "second"
-    cli("init", "-n", archive.name, str(path))
+    assert cli("init", "-n", archive.name, str(path)) == 1
     assert "an archive with this name already exists" in caplog.text
     assert not path.exists()
 
@@ -61,12 +61,13 @@ def test_deposit(cli, registry, archive, dtype, tmp_path, unique, capsys):
         files.append(tmp_path / f"{name}.txt")
         files[-1].write_text(name)
     hashes = [util.hash(f) for f in files]
-    cli(
+    status = cli(
         *["deposit", "-d", dtype, "-H", "-j"],
         *["-k", "experimenter=dmeliza", "-k", "n=3"],
         str(archive.path),
         *map(str, files),
     )
+    assert status == 0
     items = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert [item["id"] for item in items] == names
     assert [item["source"] for item in items] == [str(f) for f in files]
@@ -106,7 +107,7 @@ def test_deposit_stdin_blank_lines_and_hashes(
 def test_deposit_invalid_name(cli, registry, archive, dtype, tmp_path, caplog):
     src = tmp_path / "not valid.txt"
     src.write_text("contents")
-    cli("deposit", "-d", dtype, str(archive.path), str(src))
+    assert cli("deposit", "-d", dtype, str(archive.path), str(src)) == 1
     assert "error:" in caplog.text
     assert src.exists()
 
@@ -118,7 +119,7 @@ def test_deposit_name_rejected_by_registry(
     name = unique("res") + "~x"
     src = tmp_path / f"{name}.txt"
     src.write_text("contents")
-    cli("deposit", "-d", dtype, str(archive.path), str(src))
+    assert cli("deposit", "-d", dtype, str(archive.path), str(src)) == 1
     assert "can only contain letters, numbers, underscores" in caplog.text
     assert src.exists()
     assert core.describe(registry.url, name) is None
@@ -126,7 +127,7 @@ def test_deposit_name_rejected_by_registry(
 
 def test_info(cli, register, unique, capsys):
     name, missing = register()["name"], unique("missing")
-    cli("info", name, missing)
+    assert cli("info", name, missing) == 1
     found, not_found = json_objects(capsys.readouterr().out)
     assert found["name"] == name
     assert not_found == {"id": missing, "error": "not found"}
@@ -171,27 +172,27 @@ def test_search_json(cli, register, dtype, capsys):
 
 
 def test_search_requires_a_filter(cli, caplog):
-    cli("search")
+    assert cli("search") == 1
     assert "at least one filter parameter is required" in caplog.text
 
 
 def test_locate(cli, registry, archive, dtype, deposit_file, capsys, unique):
     name = deposit_file(archive, dtype)
     path = nbank_archive.resource_path(archive.config, name, resolve_ext=True)
-    cli("locate", name)
+    assert cli("locate", name) == 0
     assert capsys.readouterr().out == f"{name:<20}\t{path}\n"
     # a full resource URL is also accepted
-    cli("locate", reg.full_url(registry.url, name))
+    assert cli("locate", reg.full_url(registry.url, name)) == 0
     assert capsys.readouterr().out == f"{name:<20}\t{path}\n"
     missing = unique("missing")
-    cli("locate", missing)
+    assert cli("locate", missing, name) == 1
     assert "(not found)" in capsys.readouterr().out
 
 
 def test_locate_null_separated(cli, archive, dtype, deposit_file, capsys):
     name = deposit_file(archive, dtype)
     path = nbank_archive.resource_path(archive.config, name, resolve_ext=True)
-    cli("locate", "-0", name)
+    assert cli("locate", "-0", name) == 0
     assert capsys.readouterr().out == f"{path}\0"
 
 
@@ -200,13 +201,13 @@ def test_locate_link(cli, archive, dtype, deposit_file, tmp_path):
     path = nbank_archive.resource_path(archive.config, name, resolve_ext=True)
     links = tmp_path / "links"
     links.mkdir()
-    cli("locate", "-L", str(links), name)
+    assert cli("locate", "-L", str(links), name) == 0
     assert (links / path.name).resolve() == path
 
 
 def test_modify(cli, registry, register, capsys):
     name = register(a=1, b=2)["name"]
-    cli("modify", "-k", "b=3", "-k", "c=new", "-K", "a", name)
+    assert cli("modify", "-k", "b=3", "-k", "c=new", "-K", "a", name) == 0
     [result] = json_objects(capsys.readouterr().out)
     assert result["metadata"] == {"b": 3, "c": "new"}
     assert core.describe(registry.url, name)["metadata"] == result["metadata"]
@@ -214,7 +215,7 @@ def test_modify(cli, registry, register, capsys):
 
 def test_modify_missing(cli, register, unique, capsys):
     missing, name = unique("missing"), register()["name"]
-    cli("modify", "-k", "k=v", missing, name)
+    assert cli("modify", "-k", "k=v", missing, name) == 1
     error, result = json_objects(capsys.readouterr().out)
     assert error == {"name": missing, "error": "not found"}
     assert result["name"] == name
@@ -225,7 +226,7 @@ def test_verify_matching_id(cli, register, tmp_path, unique, capsys):
     src = tmp_path / f"{name}.txt"
     src.write_text(unique("contents"))
     register(name, sha1=util.hash(src))
-    cli("verify", str(src))
+    assert cli("verify", str(src)) == 0
     assert capsys.readouterr().out == f"{src}: OK\n"
 
 
@@ -235,7 +236,7 @@ def test_verify_changed_contents(cli, register, tmp_path, unique, capsys):
     src.write_text("original")
     register(name, sha1=util.hash(src))
     src.write_text("changed")
-    cli("verify", str(src))
+    assert cli("verify", str(src)) == 1
     assert capsys.readouterr().out == f"{src}: FAILED to match record for {name}\n"
 
 
@@ -243,30 +244,30 @@ def test_verify_finds_other_name(cli, register, tmp_path, unique, capsys):
     src = tmp_path / f"{unique('res')}.txt"
     src.write_text(unique("contents"))
     other = register(sha1=util.hash(src))["name"]
-    cli("verify", str(src))
+    assert cli("verify", str(src)) == 0
     assert capsys.readouterr().out == f"{src}: matches registry resource {other}\n"
 
 
 def test_verify_no_match(cli, tmp_path, unique, capsys):
     src = tmp_path / f"{unique('res')}.txt"
     src.write_text(unique("contents"))
-    cli("verify", str(src))
+    assert cli("verify", str(src)) == 1
     assert capsys.readouterr().out == f"{src}: no matches in registry\n"
 
 
 def test_verify_missing_file(cli, tmp_path, capsys):
     src = tmp_path / "missing.txt"
-    cli("verify", str(src))
+    assert cli("verify", str(src)) == 1
     assert capsys.readouterr().out == f"{src}: no such file or directory\n"
 
 
 def test_dtype_add_and_list(cli, unique, capsys, caplog):
     name = unique("dtype")
-    cli("dtype", "add", name, "text/plain")
+    assert cli("dtype", "add", name, "text/plain") == 0
     cli("dtype", "list")
     assert f"{name:<25}\t(text/plain)" in capsys.readouterr().out
     caplog.clear()
-    cli("dtype", "add", name, "text/plain")
+    assert cli("dtype", "add", name, "text/plain") == 1
     assert "a dtype with this name already exists" in caplog.text
 
 
@@ -286,7 +287,7 @@ def dest(tmp_path):
 
 def test_fetch_from_local_archive(cli, archive, dtype, deposit_file, dest, capsys):
     names = [deposit_file(archive, dtype) for _ in range(2)]
-    cli("fetch", "-d", str(dest), *names)
+    assert cli("fetch", "-d", str(dest), *names) == 0
     out = capsys.readouterr().out
     for name in names:
         assert f"{name:<20}\t-> {dest / name}" in out
@@ -316,10 +317,10 @@ def test_fetch_existing_target(cli, archive, dtype, deposit_file, dest, capsys):
     name = deposit_file(archive, dtype, contents="new")
     target = dest / name
     target.write_text("old")
-    cli("fetch", "-d", str(dest), name)
+    assert cli("fetch", "-d", str(dest), name) == 1
     assert "already exists" in capsys.readouterr().out
     assert target.read_text() == "old"
-    cli("fetch", "-f", "-d", str(dest), name)
+    assert cli("fetch", "-f", "-d", str(dest), name) == 0
     assert target.read_text() == "new"
 
 
@@ -328,7 +329,7 @@ def test_fetch_unknown_and_unreachable(cli, archive, register, dest, unique, cap
     no_locations = register()["name"]
     # registered in the archive, but the file is not on this host
     unreachable = register(archive=archive.name)["name"]
-    cli("fetch", "-d", str(dest), missing, no_locations, unreachable)
+    assert cli("fetch", "-d", str(dest), missing, no_locations, unreachable) == 1
     out = capsys.readouterr().out
     assert f"{missing:<20}\t-> (no locations found)" in out
     assert f"{no_locations:<20}\t-> (no locations found)" in out

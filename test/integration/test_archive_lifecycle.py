@@ -413,7 +413,7 @@ def test_prune(cli, registry, two_archives, dtype, deposit_file, replicate, tmp_
     name = deposit_file(a, dtype)
     replicate(name, a, b)
     path_a = stored_path(a, name)
-    cli("archive", "prune", a.name, str(listing(tmp_path, name)))
+    assert cli("archive", "prune", a.name, str(listing(tmp_path, name))) == 0
     assert not path_a.exists()
     assert stored_path(b, name).exists()
     assert core.describe(registry.url, name)["locations"] == [b.name]
@@ -435,7 +435,8 @@ def test_prune_keeps_only_copy(
 ):
     a, _ = two_archives
     name = deposit_file(a, dtype)
-    cli("archive", "prune", a.name, str(listing(tmp_path, name)))
+    # declining to remove the only copy isn't a failure
+    assert cli("archive", "prune", a.name, str(listing(tmp_path, name))) == 0
     assert "this archive is the only location" in caplog.text
     assert stored_path(a, name).exists()
     assert core.describe(registry.url, name)["locations"] == [a.name]
@@ -453,9 +454,9 @@ def test_prune_resource_elsewhere(
 
 def test_prune_unknown_resource_and_archive(cli, archive, tmp_path, unique, caplog):
     missing = unique("missing")
-    cli("archive", "prune", archive.name, str(listing(tmp_path, missing)))
+    assert cli("archive", "prune", archive.name, str(listing(tmp_path, missing))) == 1
     assert f"{missing}: not in registry" in caplog.text
-    cli("archive", "prune", unique("arch"), str(listing(tmp_path, missing)))
+    assert cli("archive", "prune", unique("arch"), str(listing(tmp_path, missing))) == 1
     assert "No such archive" in caplog.text
 
 
@@ -467,7 +468,7 @@ def test_register_tar(
     other.write_text("not in the registry")
     tar = make_tar(tmp_path / "archive.tar", stored_path(archive, name), other)
     tape = unique("tape")
-    cli("archive", "register-tar", "-n", tape, "tape01", "3", str(tar))
+    assert cli("archive", "register-tar", "-n", tape, "tape01", "3", str(tar)) == 0
     assert set(core.describe(registry.url, name)["locations"]) == {archive.name, tape}
     record = client.get(f"{registry.url}archives/{tape}/").json()
     assert record["scheme"] == "tape"
@@ -497,13 +498,13 @@ def test_import_tar(
     unregistered.write_text("not in the registry")
     tar = make_tar(tmp_path / "archive.tar", stored_path(a, name), unregistered)
 
-    cli("archive", "import-tar", str(tar), str(b.path))
+    assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
     assert stored_path(b, name).read_text() == "the contents"
     assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
     assert "not in the registry" in caplog.text
 
     caplog.clear()
-    cli("archive", "import-tar", str(tar), str(b.path))
+    assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
     assert "is already in the destination archive" in caplog.text
 
 
@@ -527,7 +528,7 @@ def test_import_tar_refused(
     home = tmp_path / "no_netrc"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    cli("archive", "import-tar", str(tar), str(b.path))
+    assert cli("archive", "import-tar", str(tar), str(b.path)) == 1
     assert "unable to add location" in caplog.text
     assert "Authentication credentials were not provided." in caplog.text
     with pytest.raises(FileNotFoundError):

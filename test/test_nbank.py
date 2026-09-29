@@ -228,7 +228,7 @@ def test_store_resources_reports_clean_error(monkeypatch, caplog):
         json_out=False,
     )
     with caplog.at_level(logging.ERROR, logger="nbank"):
-        script.store_resources(args)
+        assert script.store_resources(args) == 1
     assert "is not readable" in caplog.text
 
 
@@ -466,6 +466,49 @@ def test_init_unknown_group(mocked_api, tmp_path, caplog):
     run_main("init", "-g", "no-such-group-xyzzy", str(root))
     assert "group 'no-such-group-xyzzy' does not exist" in caplog.text
     assert not root.exists()
+
+
+def test_exit_status_registry_unreachable(mocked_api, caplog):
+    mocked_api.post(bulk_url + "resources/").mock(
+        side_effect=httpx.ConnectError("refused")
+    )
+    assert run_main("info", "res_1") == 1
+    assert "unable to contact server" in caplog.text
+
+
+def test_exit_status_not_authorized(mocked_api, caplog):
+    mocked_api.post(datatypes_url).respond(403, json={"detail": "not allowed"})
+    assert run_main("dtype", "add", "new-dtype", "text/plain") == 1
+    assert "authentication error" in caplog.text
+
+
+def test_exit_status_no_registry(monkeypatch, caplog):
+    monkeypatch.delenv(registry._env_registry, raising=False)
+    log = logging.getLogger("nbank")
+    handlers, level = list(log.handlers), log.level
+    try:
+        assert script.main(["info", "res_1"]) == 1
+    finally:
+        log.handlers[:] = handlers
+        log.setLevel(level)
+    assert "supply a registry url" in caplog.text
+
+
+def test_exit_status_interrupted(monkeypatch):
+    def interrupt(args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(script, "get_resource_info", interrupt)
+    assert run_main("info", "res_1") == 130
+
+
+def test_verify_name_that_isnt_an_id(mocked_api, tmp_path, capsys):
+    # the name can't be an id, so the file is looked up by its hash
+    src = tmp_path / "not an id.txt"
+    src.write_text("contents")
+    mocked_api.get(resource_url, params={"sha1": util.hash(src)}).respond(json=[])
+    assert run_main("verify", str(src)) == 1
+    assert capsys.readouterr().out == f"{src}: no matches in registry\n"
 
 
 def test_init_existing_archive(mocked_api, tmp_archive, caplog):

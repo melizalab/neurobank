@@ -428,7 +428,7 @@ def main(argv=None):
         args.auth = core.make_auth(args.auth)
     except NetrcParseError as err:
         log.error("error: unable to use netrc file: %s", err.msg)
-        return
+        return 1
 
     # most commands requre a registry, so check it here once
     if args.registry_url is None and args.func not in (
@@ -439,9 +439,10 @@ def main(argv=None):
             "error: supply a registry url with '-r' or %s environment variable",
             registry._env_registry,
         )
-        return
+        return 1
 
-    # some of the error handling is common; sub-funcs should only catch specific errors
+    # some of the error handling is common; sub-funcs should only catch specific
+    # errors. Commands return 1 (or None for success) and exit status follows.
     try:
         return args.func(args)
     except httpx.RequestError:
@@ -457,7 +458,8 @@ def main(argv=None):
         else:
             registry.log_error(e)
     except KeyboardInterrupt:
-        pass
+        return 130
+    return 1
 
 
 def registry_info(args):
@@ -480,12 +482,12 @@ def init_archive(args):
             grp.getgrnam(args.group)
         except KeyError:
             log.error("error: group '%s' does not exist", args.group)
-            return
+            return 1
     try:
         archive.verify_can_create(args.directory)
     except FileExistsError as err:
         log.error("error: %s", err)
-        return
+        return 1
 
     url, params = registry.add_archive(
         args.registry_url,
@@ -498,6 +500,7 @@ def init_archive(args):
         r.raise_for_status()
     except httpx.HTTPStatusError as e:
         registry.log_error(e)
+        return 1
     else:
         log.info("registered '%s' as archive '%s'", args.directory, args.name)
         archive.create(
@@ -529,10 +532,13 @@ def store_resources(args):
                 sys.stdout.write("\n")
     except (ValueError, OSError, RuntimeError) as e:
         log.error("error: %s", e)
+        return 1
 
 
 def locate_resources(args):
+    """Returns 1 if any id can't be resolved to a location reachable from this host."""
     # This subcommand can handle IDs or full neurobank URLs
+    n_failed = 0
     with httpx.Client() as session:
         for id in args.id:
             try:
@@ -541,8 +547,10 @@ def locate_resources(args):
                 base = args.registry_url
             if base is None:
                 print(f"{id:<20} [no registry to resolve short identifier]")
+                n_failed += 1
                 continue
             url, params = registry.get_locations(base, id)
+            found = False
             try:
                 locations = util.query_registry_paginated(session, url, params)
                 for loc in locations:
@@ -553,22 +561,26 @@ def locate_resources(args):
                         try:
                             linkpath = resource.link(args.link)
                             print(f"{id:<20}\t-> {linkpath}")
+                            found = True
                             break
                         except AttributeError:
                             log.info("%s doesn't support linking", resource)
                     elif args.print0:
                         try:
                             print(str(resource.path), end="\0")
+                            found = True
                         except AttributeError:
                             log.info("%s isn't local, skipping", resource)
                     else:
                         print(f"{id:<20}\t{resource}")
+                        found = True
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
                     print(f"{id:<20}\t(not found)")
                 else:
                     registry.log_error(e)
-                continue
+            n_failed += not found
+    return 1 if n_failed else None
 
 
 def search_resources(args):
@@ -592,7 +604,7 @@ def search_resources(args):
         params[kk] = v
     if len(params) == 0:
         log.error("nbank search: error: at least one filter parameter is required")
-        return
+        return 1
     for d in core.search(args.registry_url, **params):
         if args.json_out:
             json.dump(d, fp=sys.stdout, indent=2)
@@ -610,16 +622,20 @@ def get_resource_info(args):
     for _, result in results.items():
         json.dump(result, fp=sys.stdout, indent=2)
         sys.stdout.write("\n")
+    return 1 if any("error" in result for result in results.values()) else None
 
 
 def set_resource_metadata(args):
     for key in args.metadata_remove:
         args.metadata[key] = None
+    n_failed = 0
     for result in core.update(
         args.registry_url, *args.id, auth=args.auth, **args.metadata
     ):
         json.dump(result, fp=sys.stdout, indent=2)
         sys.stdout.write("\n")
+        n_failed += "error" in result
+    return 1 if n_failed else None
 
 
 def fetch_resources(args):
@@ -642,11 +658,15 @@ def fetch_resources(args):
             ): resource["name"]
             for resource in response
         }
+        n_failed = len(to_fetch)
         for future in concurrent.futures.as_completed(future_to_name):
             resource_id = future_to_name[future]
-            print(f"{resource_id:<20}\t-> {future.result()}")
+            result = future.result()
+            print(f"{resource_id:<20}\t-> {result}")
+            n_failed += isinstance(result, Exception)
     for resource_id in to_fetch:
         print(f"{resource_id:<20}\t-> (no locations found)")
+    return 1 if n_failed else None
 
 
 def list_datatypes(args):
@@ -1020,7 +1040,7 @@ def register_tar(args):
                 r.raise_for_status()
             except httpx.HTTPStatusError as e:
                 registry.log_error(e)
-                return
+                return 1
         log.info("- scanning contents of %s", args.tar)
         last_path = None
         for tarinfo in tarf:
@@ -1064,12 +1084,18 @@ def register_tar(args):
                     )
                 except httpx.HTTPStatusError as e:
                     registry.log_error(e)
-                    return
+                    return 1
             last_path = path
 
 
 def prune_archive(args):
-    """Remove files from a neurobank archive, but only if they're stored somewhere else"""
+    """Remove files from a neurobank archive, but only if they're stored somewhere else.
+
+    Returns 1 if the archive can't be pruned or any resource fails to be
+    removed. Resources that aren't in the archive, or that are only stored
+    there, are skipped without counting as failures.
+    """
+    n_failed = 0
     if args.dry_run:
         log.info("DRY RUN")
     log.info("registry: %s", args.registry_url)
@@ -1079,17 +1105,17 @@ def prune_archive(args):
         result = util.query_registry(session, url)
         if result is None:
             log.error("No such archive '%s' in the registry", args.archive_name)
-            return
+            return 1
         if result["scheme"] not in archive.Resource.schemes:
             log.error("'%s' is not a neurobank archive ", args.archive_name)
-            return
+            return 1
         if not Path(result["root"]).is_dir():
             log.error(
                 "The archive '%s' is not on this host (%s) ",
                 args.archive_name,
                 result["root"],
             )
-            return
+            return 1
         log.info("pruning archive: %s (%s)", args.archive_name, result["root"])
         for line in fp:
             resource_id = line.strip()
@@ -1100,6 +1126,7 @@ def prune_archive(args):
             response = util.query_registry(session, url, query)
             if response is None:
                 log.error("✗ %s: not in registry", resource_id)
+                n_failed += 1
                 continue
             locations = {loc["archive_name"]: loc for loc in response}
             locations.pop("registry", None)  # remove registry pseudo-location
@@ -1113,9 +1140,11 @@ def prune_archive(args):
                 resource = util.parse_location(locations[args.archive_name])
                 if resource is None:
                     log.error("  ✗ resource is not actually present in archive")
+                    n_failed += 1
                     continue
                 if not args.dry_run and not resource.deletable:
                     log.info("  ✗ insufficient permissions to delete")
+                    n_failed += 1
                     continue
                 url, query = registry.get_location(
                     args.registry_url, resource_id, args.archive_name
@@ -1127,20 +1156,28 @@ def prune_archive(args):
                         log.info(
                             "  ✗ unable to remove from registry: %s", r.json()["detail"]
                         )
+                        n_failed += 1
                         continue
                 log.info("  - removed %s", req.url)
                 if not args.dry_run:
                     resource.unlink()
                 log.info("  - deleted %s", resource.path)
+    return 1 if n_failed else None
 
 
 def import_tar(args):
-    """Import files from a tar file into a neurobank archive"""
+    """Import files from a tar file into a neurobank archive.
+
+    Returns 1 if the import can't be run or any resource fails to be imported.
+    Files that aren't registered resources, or that are already in the
+    destination, are skipped without counting as failures.
+    """
+    n_failed = 0
     try:
         archive_cfg = archive.get_config(args.dest)
     except FileNotFoundError:
         log.error(f"error: {args.dest} is not a valid neurobank archive")
-        return
+        return 1
     registry_url = args.registry_url or archive_cfg["registry"]
     archive_path = archive_cfg["path"]  # this will resolve the path
     pfix = archive.permission_fixer(archive_cfg)  # used to fix permissions
@@ -1150,7 +1187,7 @@ def import_tar(args):
         archive_info = util.query_registry_first(session, url, params)
         if archive_info is None:
             log.error("No archive associated with '%s' in the registry", archive_path)
-            return
+            return 1
         archive_name = archive_info["name"]
         log.info("destination archive: %s (%s)", archive_name, archive_path)
         log.info("source archive file: %s", args.tar)
@@ -1180,6 +1217,7 @@ def import_tar(args):
                     tarinfo.name,
                     resource_name,
                 )
+                n_failed += 1
                 continue
             if not args.dry_run:
                 # make the target directory if it doesn't exist and set permissions
@@ -1195,6 +1233,7 @@ def import_tar(args):
                         file_path,
                         dest_dir,
                     )
+                    n_failed += 1
                     continue
             url, query = registry.add_location(
                 registry_url, resource_name, archive_name
@@ -1205,6 +1244,7 @@ def import_tar(args):
                 r = session.send(req)
                 if r.status_code != httpx.codes.CREATED:
                     log.info("  ✗ %s -> unable to add location: %s", file_path, r.text)
+                    n_failed += 1
                 elif dest_path.exists():
                     log.warning(
                         "  - %s -> file is already there but not in registry, skipping",
@@ -1218,21 +1258,27 @@ def import_tar(args):
                     pfix(dest_path)
             else:
                 log.info("  - %s -> %s (dry run)", file_path, dest_path)
+    return 1 if n_failed else None
 
 
 def verify_file_hash(args):
+    """Returns 1 if any file is missing or doesn't match a registry record."""
     from nbank.util import id_from_fname
 
+    n_failed = 0
     for path in args.files:
         if not path.exists():
             print(f"{path}: no such file or directory")
+            n_failed += 1
             continue
-        test_id = id_from_fname(path)
+        # if the name isn't a registered id, look for the file's hash instead
         try:
+            test_id = id_from_fname(path)
             if core.verify(args.registry_url, path, id=test_id):
                 print(f"{path}: OK")
             else:
                 print(f"{path}: FAILED to match record for {test_id}")
+                n_failed += 1
         except ValueError:
             i = 0
             for resource in core.verify(args.registry_url, path):
@@ -1240,6 +1286,8 @@ def verify_file_hash(args):
                 i += 1
             if i == 0:
                 print(f"{path}: no matches in registry")
+                n_failed += 1
+    return 1 if n_failed else None
 
 
 # Variables:

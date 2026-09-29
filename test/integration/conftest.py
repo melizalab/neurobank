@@ -254,8 +254,9 @@ def cli(registry, netrc_home):
     log = logging.getLogger("nbank")
     handlers, level = list(log.handlers), log.level
 
-    def run(*args: str):
-        return script.main(["-r", registry.url, *args])
+    def run(*args: str) -> int:
+        """Returns the exit status: 0 when the command returns None, as sys.exit does."""
+        return script.main(["-r", registry.url, *args]) or 0
 
     yield run
     log.handlers[:] = handlers
