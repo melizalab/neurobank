@@ -108,7 +108,7 @@ wheels = [
 
 [[package]]
 name = "django-neurobank"
-version = "0.10.14"
+version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "basehash" },
@@ -119,9 +119,9 @@ dependencies = [
     { name = "djangorestframework" },
     { name = "djangorestframework-link-header-pagination" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/46/9b1f6914d2d172030baeee4d0d3a329dca7333394b77d8349cacc60fc4f1/django_neurobank-0.10.14.tar.gz", hash = "sha256:8bb5ed197c510acbcd2cdbaf9544a38f577c4b0450f19acf3164bb907cd2988c", size = 13340, upload-time = "2026-09-24T13:04:17.63Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4f/6d/0464d18066e9f245bec0f72622868f6f5295d97c3b18abb4cb2a6e87a473/django_neurobank-0.11.0.tar.gz", hash = "sha256:32924e72c7edbf38a3f68e5b184f11f0a37af9bdd5f499546f59fe38a7fec226", size = 14769, upload-time = "2026-09-29T20:11:45.641Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/43/25/0dd5745234277b05ce7e1c6678c795961c0524b0e533384e50ffa50ec70a/django_neurobank-0.10.14-py3-none-any.whl", hash = "sha256:225cef0cb06017a70db81af1f2e995e0e084384eb58a1fb1252c5dd448a19fbd", size = 22870, upload-time = "2026-09-24T13:04:16.412Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/11/5cc2b9689bbc26576cd9deffd6933762a4f32cddaf6165bd24023902ce45/django_neurobank-0.11.0-py3-none-any.whl", hash = "sha256:b9f59ee2aa2e17d07954f64a7c8a4f641e8db4a9273c0286654d535b150b5c36", size = 25061, upload-time = "2026-09-29T20:11:44.416Z" },
 ]
 
 [[package]]
@@ -259,7 +259,7 @@ dev = [
     { name = "respx", specifier = ">=0.20" },
     { name = "ruff", specifier = ">=0.7.0" },
 ]
-integration = [{ name = "django-neurobank", specifier = ">=0.10.14" }]
+integration = [{ name = "django-neurobank", specifier = ">=0.11.0" }]
 postgres = [{ name = "psycopg", extras = ["binary"], specifier = ">=3.1" }]
 
 [[package]]
