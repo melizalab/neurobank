@@ -876,10 +876,7 @@ def _resolve_elsewhere(session, registry_url, archive_name, finding) -> bool:
     answer = _ask(f"   {', '.join(text for _, text in options)}? ", choices)
     if answer == "d":
         try:
-            if path.is_dir() and not path.is_symlink():
-                shutil.rmtree(path)
-            else:
-                path.unlink()
+            archive.remove(path)
         except OSError as err:
             log.error("   unable to delete %s: %s", path, err)
             return False

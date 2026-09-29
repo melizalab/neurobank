@@ -311,7 +311,7 @@ def test_store_resource_applies_mode_policy(tmp_path, restrictive_umask):
     src = tmp_path / "res_1"
     src.write_text("contents")
     path = archive.store_resource(cfg, src)
-    assert stat.S_IMODE(path.stat().st_mode) == 0o644
+    assert stat.S_IMODE(path.stat().st_mode) == 0o444
     assert stat.S_IMODE(path.parent.stat().st_mode) & 0o777 == 0o775
     assert list(check.check_archive_permissions(cfg)) == []
 
@@ -366,7 +366,7 @@ def test_permission_fixer_changes_mode_when_chown_fails(tmp_archive, tmp_path, c
     tmp_archive["policy"]["access"]["group"] = grp.getgrgid(0).gr_name
     with caplog.at_level(logging.WARNING, logger="nbank"):
         archive.permission_fixer(tmp_archive)(path)
-    assert stat.S_IMODE(path.stat().st_mode) == 0o644
+    assert stat.S_IMODE(path.stat().st_mode) == 0o444
     assert "unable to change uid/gid" in caplog.text
     caplog.clear()
     with caplog.at_level(logging.WARNING, logger="nbank"):
@@ -452,3 +452,82 @@ def test_permission_fixer_as_root(tmp_archive, monkeypatch, user):
     gid = grp.getgrnam(tmp_archive["policy"]["access"]["group"]).gr_gid
     expected_uid = -1 if user is None else pwd.getpwnam(user).pw_uid
     assert calls == [(expected_uid, gid)]
+
+
+def test_create_defaults_to_read_only_resources(tmp_archive):
+    assert tmp_archive["policy"]["access"]["read_only_resources"] is True
+
+
+def test_mode_policy_read_only_resources(tmp_archive):
+    umask = tmp_archive["policy"]["access"]["umask"]
+    stub = tmp_archive["path"] / "resources" / "re"
+    stub.mkdir()
+    resource = stub / "res_1"
+    resource.write_text("contents")
+    # the archive layout stays writable so resources can be added
+    assert archive.mode_policy(tmp_archive, stub)[1] == umask
+    assert archive.mode_policy(tmp_archive, resource) == (
+        0o444 & ~umask,
+        umask | 0o222,
+    )
+    # archives without the setting keep writable resources
+    del tmp_archive["policy"]["access"]["read_only_resources"]
+    assert archive.mode_policy(tmp_archive, resource) == (0o444 & ~umask, umask)
+
+
+def make_directory_resource(cfg, tmp_path, name="res_1"):
+    src = tmp_path / name
+    (src / "sub").mkdir(parents=True)
+    (src / "sub" / "data").write_text("contents")
+    return archive.store_resource(cfg, src)
+
+
+def test_store_read_only_directory_resource(tmp_dir_archive, tmp_path):
+    path = make_directory_resource(tmp_dir_archive, tmp_path)
+    for p in (path, path / "sub"):
+        assert stat.S_IMODE(p.stat().st_mode) & 0o222 == 0
+    assert stat.S_IMODE((path / "sub" / "data").stat().st_mode) == 0o444
+    # the subdirectory still accepts new resources
+    other = tmp_path / "res_2"
+    other.write_text("contents")
+    archive.store_resource(tmp_dir_archive, other)
+    assert list(check.check_archive_permissions(tmp_dir_archive)) == []
+
+
+def test_remove_read_only_directory_resource(tmp_dir_archive, tmp_path):
+    path = make_directory_resource(tmp_dir_archive, tmp_path)
+    resource = archive.Resource(tmp_dir_archive["path"], "res_1")
+    assert resource.deletable
+    resource.unlink()
+    assert not path.exists()
+
+
+def test_cannot_remove_others_read_only_directory_resource(
+    tmp_dir_archive, tmp_path, monkeypatch
+):
+    path = make_directory_resource(tmp_dir_archive, tmp_path)
+    src = tmp_path / "res_2"
+    src.write_text("contents")
+    file_path = archive.store_resource(tmp_dir_archive, src)
+    # pretend to be some other (non-root) user in the archive's group
+    monkeypatch.setattr(os, "getuid", lambda: path.stat().st_uid + 1)
+    assert not archive.can_remove(path)
+    # a file only needs its directory to be writable
+    assert archive.can_remove(file_path)
+
+
+def test_fix_makes_existing_resources_read_only(tmp_path):
+    cfg = archive.create(
+        tmp_path / "archive", dummy_registry, read_only_resources=False
+    )
+    src = tmp_path / "res_1"
+    src.write_text("contents")
+    src.chmod(0o644)
+    path = archive.store_resource(cfg, src)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o644
+    cfg["policy"]["access"]["read_only_resources"] = True
+    findings = list(check.check_archive_permissions(cfg, fix=True))
+    assert [(f.status, f.path, f.fixed) for f in findings] == [
+        (check.Status.WRONG_MODE, path, True)
+    ]
+    assert stat.S_IMODE(path.stat().st_mode) == 0o444

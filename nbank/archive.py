@@ -75,6 +75,7 @@ def create(
     *,
     shared: bool = False,
     group: str | None = None,
+    read_only_resources: bool = True,
     **policies: Any,
 ) -> ArchiveConfig:
     """Initializes a new data archive in archive_path.
@@ -87,6 +88,8 @@ def create(
       Otherwise the current user is recorded as the owner.
     group: the group for the archive. The default is the current user's
       primary group.
+    read_only_resources: if True, deposited resources aren't writable by
+      anyone, although new resources can still be added.
     **policies: override auto_identifiers, keep_extensions, allow_directories, or require_hash
 
     Creates archive_path and all parents as needed, and gives the resources
@@ -137,7 +140,12 @@ def create(
             "keep_extensions": True,
             "allow_directories": False,
             "require_hash": True,
-            "access": {"user": user, "group": group, "umask": umask},
+            "access": {
+                "user": user,
+                "group": group,
+                "umask": umask,
+                "read_only_resources": read_only_resources,
+            },
         },
     }
     for k, v in policies.items():
@@ -247,7 +255,7 @@ class Resource:
 
     @property
     def deletable(self) -> bool:
-        return os.access(self.path.parent, os.W_OK)
+        return can_remove(self.path)
 
     def fetch(self, target: Path) -> Path:
         if target.is_dir():
@@ -261,10 +269,46 @@ class Resource:
         return linkpath
 
     def unlink(self) -> None:
-        if self.path.is_dir():
-            shutil.rmtree(self.path)
-        else:
-            self.path.unlink()
+        remove(self.path)
+
+
+def _directories_in(path: Path) -> list[Path]:
+    """Returns path and every directory inside it, not following symbolic links."""
+    return [path] + [p for p in path.rglob("*") if p.is_dir() and not p.is_symlink()]
+
+
+def can_remove(path: Path) -> bool:
+    """True if this process can remove the resource at path.
+
+    Removing anything requires write access to its parent directory. Removing a
+    directory resource also requires write access to every directory inside it,
+    but a read-only directory can be made writable by its owner or by root.
+    """
+    if not os.access(path.parent, os.W_OK | os.X_OK):
+        return False
+    if not path.is_dir() or path.is_symlink():
+        return True
+    uid = os.getuid()
+    return all(
+        uid == 0 or d.stat().st_uid == uid or os.access(d, os.W_OK | os.X_OK)
+        for d in _directories_in(path)
+    )
+
+
+def remove(path: Path) -> None:
+    """Removes the resource at path.
+
+    Read-only directories inside a directory resource are made writable by their
+    owner first, since their contents can't be removed otherwise. Raises
+    PermissionError if that isn't allowed.
+    """
+    if not path.is_dir() or path.is_symlink():
+        path.unlink()
+        return
+    for d in _directories_in(path):
+        if not os.access(d, os.W_OK | os.X_OK):
+            d.chmod(stat.S_IMODE(d.stat().st_mode) | stat.S_IRWXU)
+    shutil.rmtree(path)
 
 
 def _same_filesystem(a: Path, b: Path) -> bool:
@@ -403,15 +447,24 @@ def mode_policy(cfg: ArchiveConfig, path: Path) -> tuple[int, int]:
     its subdirectories need every permission the umask allows, so any group
     member can deposit, plus setgid on Linux, so new files inherit the group.
     Other directories need to be readable and searchable, and files readable,
-    by everyone the umask allows.
+    by everyone the umask allows. If the policy's read_only_resources is true,
+    resources (and everything inside directory resources) must not be writable.
     """
-    umask = cfg["policy"]["access"]["umask"]
+    access = cfg["policy"]["access"]
+    umask = access["umask"]
     base = cfg["path"] / _resource_subdir
+    try:
+        in_resource = len(path.relative_to(base).parts) >= 2
+    except ValueError:
+        in_resource = False
+    forbidden = umask
+    if in_resource and access.get("read_only_resources", False):
+        forbidden |= 0o222
     if path.is_dir():
-        if path == base or path.parent == base:
+        if not in_resource:
             return (0o777 & ~umask) | _setgid, umask
-        return 0o555 & ~umask, umask
-    return 0o444 & ~umask, umask
+        return 0o555 & ~umask, forbidden
+    return 0o444 & ~umask, forbidden
 
 
 def permission_fixer(cfg: ArchiveConfig, quiet: bool = False):
@@ -454,10 +507,12 @@ def permission_fixer(cfg: ArchiveConfig, quiet: bool = False):
 
 
 __all__ = [
+    "can_remove",
     "create",
     "get_config",
     "id_stub",
     "mode_policy",
+    "remove",
     "resolve_extension",
     "store_resource",
     "verify_no_symlinks",

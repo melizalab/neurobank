@@ -309,7 +309,7 @@ def _check_path(
         if missing:
             problems.append(f"missing {missing:04o}")
         if extra:
-            problems.append(f"has {extra:04o} forbidden by umask")
+            problems.append(f"has {extra:04o}, which the policy forbids")
         detail = f"mode is {mode:04o}: {', '.join(problems)}"
         yield Finding(Status.WRONG_MODE, resource, path, detail)
 

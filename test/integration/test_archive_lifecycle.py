@@ -59,7 +59,10 @@ def test_check_missing_from_registry(cli, archive, tmp_path, unique, caplog):
 
 def test_check_changed_contents(cli, archive, dtype, deposit_file, caplog):
     name = deposit_file(archive, dtype, hash=True)
-    stored_path(archive, name).write_text("changed")
+    path = stored_path(archive, name)
+    path.chmod(0o644)
+    path.write_text("changed")
+    path.chmod(0o444)
     assert cli("check", "archive", str(archive.path)) == 1
     assert "FAILED to match hash" in caplog.text
     check_summary(caplog, 1, 0, 0, 1)

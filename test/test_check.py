@@ -43,6 +43,7 @@ def test_check_contents_not_hashed(tmp_archive, tmp_path):
 
 def test_check_contents_hash_mismatch(tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
+    path.chmod(0o640)
     path.write_text("changed")
     findings = list(check.check_archive_contents(tmp_archive["path"], {"res_1": sha1}))
     assert statuses(findings) == {"res_1": Status.HASH_MISMATCH}
@@ -51,6 +52,7 @@ def test_check_contents_hash_mismatch(tmp_archive, tmp_path):
 
 def test_check_contents_skip_hash(tmp_archive, tmp_path, monkeypatch):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
+    path.chmod(0o640)
     path.write_text("changed")
 
     def no_hashing(*args, **kwargs):
@@ -154,13 +156,14 @@ def test_check_permissions_ok(tmp_archive, tmp_path):
 
 def test_check_permissions_file_mode(tmp_archive, tmp_path):
     path, _ = store(tmp_archive, tmp_path, "res_1")
-    # umask is 027: group read is required, other read is forbidden
+    # umask is 027 and resources are read-only: group read is required, and
+    # other read and all write bits are forbidden
     path.chmod(0o604)
     findings = list(check.check_archive_permissions(tmp_archive))
     assert [(f.status, f.path) for f in findings] == [(Status.WRONG_MODE, path)]
     assert findings[0].resource == "res_1"
     assert "missing 0040" in findings[0].detail
-    assert "has 0004 forbidden by umask" in findings[0].detail
+    assert "has 0204, which the policy forbids" in findings[0].detail
 
 
 def test_check_permissions_subdirectory_mode(tmp_archive, tmp_path):
@@ -181,9 +184,9 @@ def test_check_permissions_directory_resource(tmp_path):
     src = tmp_path / "res_1"
     src.mkdir()
     (src / "data").write_text("contents")
+    (src / "link").symlink_to(src / "data")
     path = archive.store_resource(cfg, src)
     (path / "data").chmod(0o600)
-    (path / "link").symlink_to(path / "data")
     assert permission_findings(cfg) == [(Status.WRONG_MODE, path / "data")]
 
 

@@ -72,9 +72,9 @@ First, initialize an archive:
 
 .. code:: bash
 
-   nbank [-a username:password] [-r registry-url] init [-n name] my-archive-path
+   nbank [-a username:password] [-r registry-url] init [-n name] [-u umask] [-g group] [--shared] my-archive-path
 
-``my-archive-path`` must be a directory on a locallly-accessible
+``my-archive-path`` must be a directory on a locally-accessible
 filesystem (which could be an NFS or SSHFS mount).
 
 ``registry-url`` specifies the registry to use, which can be any service
@@ -82,7 +82,7 @@ that implements the API defined in
 `django-neurobank <https://github.com/melizalab/django-neurobank>`__ can
 be used. If not supplied, the script will try to use the value of the
 environment variable ``NBANK_REGISTRY``. The registry URL also
-determines the base URL for the resource identifiers. For example, if
+determines the domain for the resource identifiers. For example, if
 the registry is at ``http://melizalab.org/neurobank/resources/`` and you
 deposit a resource with the identifier ``st32_1_2_1``, the full
 identifier is ``http://melizalab.org/neurobank/resources/st32_1_2_1/``.
@@ -104,20 +104,33 @@ under ``my-archive-path``. You’ll get an error if the target directory
 already exists, or if the registry already has an archive with the same
 name.
 
+By default, the archive is owned by you and your primary group, and its
+umask is 002. Use ``-g`` to give the archive a different group, and
+``-u`` to set a different umask (for example, 027 to keep out users who
+aren't in the group). If several users will deposit into the archive
+under their own accounts, add ``--shared``. See `Controlling access`_
+for how to set up and maintain shared archives.
+
 Set archive policies
 ~~~~~~~~~~~~~~~~~~~~
 
 Edit the ``README.md`` and ``nbank.json`` files created in the archive
-directory to describe your project. The ``nbank.json`` file is also
-where you’ll need to set some key variables and policies. These are the
-settings you may want to modify:
+directory to describe your project. The ``nbank.json`` file also holds
+the archive's policies. These are the settings you may want to modify:
 
 -  ``auto_identifiers``: If set to false (the default), when files are deposited, their names are used as identifiers unless the user asks for an automatically generated id. If set to true, every resource is given an automatic id.
-- ``auto_id_type``: If set to ``null`` (or not set at all), automatic ids are assigned by the registry. This is usually a short, random base-36 string. If set to ``"uuid"``, the ``nbank`` script will generate 128-bit UUIDs as identifiers, which are guaranteed to work everywhere but a little painful to manipulate by hand.
+-  ``auto_id_type``: If set to ``null`` (or not set at all), automatic ids are assigned by the registry. This is usually a short, random base-36 string. If set to ``"uuid"``, the ``nbank`` script will generate 128-bit UUIDs as identifiers, which are guaranteed to work everywhere but a little painful to manipulate by hand.
 -  ``require_hash``: If set to true (the default), every resource will have a hash value calculated and stored in the registry. The registry will then be able to prevent duplicate files from being deposited under multiple identifiers.
-   - ``keep_extensions``: If set to true (the default), files keep their extensions when deposited. Only one file with a given base identifier can be deposited, so if you have a ``st32_1_2_1.wav``, the identifier is ``st32_1_2_1``, and therefore you can’t also have an ``st32_1_2_1.json`` file. If set to false, the extension is stripped, so ``st32_1_2_1.wav`` would be deposited as ``st32_1_2_1``. Usually you want this to be true, unless your archive only contains one kind of file.
-   -  ``allow_directories``: If set to true, directories and their contents can be deposited as resources. The identifier is given to the directory, and the user is responsible for knowing how to interpret the contents. If set to false (the default), only regular files can be deposited.
-   -  ``access``: The ``user`` and ``group`` that should own the archive's files, and the ``umask`` that limits their access mode. Deposited files are given the group and mode, but only root can change who owns them. For a shared archive, where users deposit under their own accounts, set ``user`` to ``null`` (``nbank init --shared``) so that the owner isn't checked. ``nbank check archive`` reports files that don't match these settings, and ``--fix`` repairs them.
+-  ``keep_extensions``: If set to true (the default), files keep their extensions when deposited. Only one file with a given base identifier can be deposited, so if you have a ``st32_1_2_1.wav``, the identifier is ``st32_1_2_1``, and therefore you can’t also have an ``st32_1_2_1.json`` file. If set to false, the extension is stripped, so ``st32_1_2_1.wav`` would be deposited as ``st32_1_2_1``. Usually you want this to be true, unless your archive only contains one kind of file.
+-  ``allow_directories``: If set to true, directories and their contents can be deposited as resources. The identifier is given to the directory, and the user is responsible for knowing how to interpret the contents. If set to false (the default), only regular files can be deposited.
+-  ``access``: Who owns the archive's files and who can read and write them. These are usually set by ``nbank init``.
+
+   -  ``user``: The account that should own the files, or ``null`` for a shared archive (``--shared``).
+   -  ``group``: The group that should own the files (``-g``).
+   -  ``umask``: Permissions to withhold from files and directories (``-u``).
+   -  ``read_only_resources``: If true (the default), deposited resources can't be modified.
+
+   See `Controlling access`_ for details.
 
 Registering and storing resources
 ---------------------------------
@@ -263,19 +276,36 @@ copies and ensuring that a canonical, centralized backup of critical
 data can be maintained. In this case, the following practices are
 suggested for POSIX operating systems:
 
-1. For each project, create a separate group and make the archive owned
-   by the group. To give a user access to the data, add them to the
-   group.
-2. To restrict access to users not in the project group, give the
-   archive a umask of 027 when creating it (``nbank init -u 027``).
-3. Create the archive with ``nbank init --shared -g GROUP``, where
-   ``GROUP`` is the project group. When resources are deposited,
-   neurobank gives them this group and the permissions allowed by the
-   umask, and makes the resource subdirectories group-writable and setgid
-   so that any member of the group can deposit.
-4. Run ``nbank check archive --fix`` (as root, to fix ownership) to find
-   and repair files and directories whose ownership or permissions don’t
-   match ``nbank.json``.
+1. For each project, create a separate user group. To give a user access to
+   the data, add them to the group.
+2. Create the archive with ``nbank init --shared -g GROUP``, where
+   ``GROUP`` is the project group. Add ``-u 027`` to keep out users who
+   aren't in the group.
+3. Run ``nbank check all --fix`` as root on a regular schedule (for
+   example, as a nightly cron job) to find and repair problems.
+
+Users deposit files under their own accounts, and only root can change
+who owns a file, so a shared archive doesn't record an owner (``user``
+is ``null`` in ``nbank.json``) and ownership by user isn't checked.
+Instead, neurobank gives deposited files the archive's group and the
+permissions allowed by its umask, and keeps the resource subdirectories
+group-writable and setgid so that any member of the group can deposit.
+
+In new archives, deposited resources are read-only, including everything
+inside directory resources, so they can't be changed after they're
+registered. New resources can still be deposited, and resources can
+still be removed with ``nbank archive prune``, but only the owner of a
+read-only directory resource, or root, can remove it.
+
+``nbank check archive`` reports files and directories whose group or
+permissions don't match ``nbank.json``, and ``--fix`` repairs them. Only
+the owner of a file or root can change its permissions, which is why
+fixing a shared archive needs to be done as root.
+
+Archives created by older versions of neurobank don't have the
+``read_only_resources`` setting, so their resources stay writable. To
+make them read-only, add ``"read_only_resources": true`` to ``access`` in
+``nbank.json`` and run ``nbank check archive --fix`` as root.
 
 License
 -------
