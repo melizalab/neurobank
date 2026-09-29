@@ -10,13 +10,16 @@ import os
 import pwd
 import stat
 from collections import defaultdict
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from httpx import Client
 
 from nbank import archive, registry, util
+
+# names per request to the registry's bulk endpoints
+_bulk_size = 500
 
 
 class Status(enum.Enum):
@@ -27,6 +30,11 @@ class Status(enum.Enum):
     HASH_MISMATCH = "FAILED to match hash"
     MISSING_FROM_ARCHIVE = "MISSING from the archive"
     MISSING_FROM_REGISTRY = "MISSING from the registry"
+    REGISTERED_ELSEWHERE = "registered, but NOT located in this archive"
+    UNVERIFIED_ELSEWHERE = (
+        "registered, but NOT located in this archive (no hash to verify contents)"
+    )
+    CHANGED_ELSEWHERE = "registered, but contents DIFFER from the registered hash"
     MISPLACED = "in the WRONG subdirectory"
     DUPLICATE = "DUPLICATE file for the same resource"
     UNEXPECTED = "UNEXPECTED file outside a resource subdirectory"
@@ -43,8 +51,10 @@ class Finding:
     """The result of checking one resource, file, or archive.
 
     resource is None for directories that belong to the archive layout rather
-    than to a resource, and for findings about a whole archive. fixed is True
-    if the problem was found and then fixed. ok is True unless the finding is
+    than to a resource, and for findings about a whole archive. locations
+    lists a resource's registered archives, for findings about files whose
+    resource is registered somewhere else. fixed is True if the problem was
+    found and then fixed. ok is True unless the finding is
     an error; some findings that are ok are still worth reporting, like an
     archive with no resources.
     """
@@ -55,6 +65,7 @@ class Finding:
     detail: str = ""
     fixed: bool = False
     archive: str | None = None
+    locations: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -214,6 +225,52 @@ def check_archive_contents(
         yield Finding(Status.MISSING_FROM_ARCHIVE, name)
 
 
+def recheck_unregistered(
+    session: Client, registry_url: str, findings: Iterable[Finding]
+) -> Iterator[Finding]:
+    """Looks up the resources of MISSING_FROM_REGISTRY findings in the registry.
+
+    An archive can hold a copy of a resource that's registered, but not with
+    this archive as a location. Each such file is yielded as
+    REGISTERED_ELSEWHERE if it matches the registered hash, CHANGED_ELSEWHERE if
+    it doesn't (so it's a different file with the same name), or
+    UNVERIFIED_ELSEWHERE if the registry has no hash, with locations set to the
+    resource's registered locations (which may be empty). The file's hash is always checked when the registry
+    has one, since the result decides whether it can be treated as a copy.
+    Other findings are yielded unchanged.
+    """
+    findings = list(findings)
+    names = sorted(
+        {f.resource for f in findings if f.status == Status.MISSING_FROM_REGISTRY}
+    )
+    records = {}
+    for i in range(0, len(names), _bulk_size):
+        url, query = registry.get_resource_bulk(registry_url, names[i : i + _bulk_size])
+        for record in util.query_registry_bulk(session, url, query):
+            records[record["name"]] = record
+    for finding in findings:
+        record = records.get(finding.resource)
+        if finding.status != Status.MISSING_FROM_REGISTRY or record is None:
+            yield finding
+            continue
+        locations = tuple(record["locations"])
+        detail = (
+            f"located in: {', '.join(locations)}"
+            if locations
+            else "the registry lists no locations"
+        )
+        sha1 = record["sha1"]
+        if not os.access(finding.path, os.R_OK):
+            status = Status.UNREADABLE
+        elif sha1 is None:
+            status = Status.UNVERIFIED_ELSEWHERE
+        elif util.hash(finding.path) != sha1:
+            status = Status.CHANGED_ELSEWHERE
+        else:
+            status = Status.REGISTERED_ELSEWHERE
+        yield replace(finding, status=status, detail=detail, locations=locations)
+
+
 def _user_name(uid: int) -> str:
     try:
         return pwd.getpwuid(uid).pw_name
@@ -338,6 +395,7 @@ __all__ = [
     "check_archive_contents",
     "check_archive_permissions",
     "check_registry",
+    "recheck_unregistered",
     "registry_resources_in_archive",
     "resources_without_locations",
 ]

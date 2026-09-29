@@ -1,7 +1,7 @@
 # -*- mode: python -*-
 """Script entry points for neurobank
 
-Copyright (C) 2013-2024 Dan Meliza <dan@meliza.org>
+Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
 Created Tue Nov 26 22:48:58 2013
 """
 
@@ -378,9 +378,7 @@ def main(argv=None):
     pp.add_argument("tar", type=Path, help="tar file with the resources to import")
     pp.add_argument("dest", type=Path, help="path of the destination neurobank archive")
 
-    pp = sub.add_parser(
-        "check", help="check the integrity of the registry and archives"
-    )
+    pp = sub.add_parser("check", help="check integrity of the registry and archives")
     ppsub = pp.add_subparsers(title="subcommands")
 
     pp = ppsub.add_parser(
@@ -734,18 +732,16 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     log.info("verifying resources:")
     counts = Counter()
     n_errors = 0
+    unregistered = []  # looked up in the registry after the main pass
     for finding in check.check_archive_contents(
         archive_path, expected, check_hash=not args.no_hash
     ):
+        if finding.status == check.Status.MISSING_FROM_REGISTRY:
+            unregistered.append(finding)
+            continue
         counts[finding.status] += 1
         n_errors += not finding.ok
-        if finding.status == check.Status.MISSING_FROM_REGISTRY:
-            log.error(
-                " - %s: MISSING from the registry under %s!",
-                finding.path,
-                archive_name,
-            )
-        elif finding.status == check.Status.MISSING_FROM_ARCHIVE:
+        if finding.status == check.Status.MISSING_FROM_ARCHIVE:
             log.error(" - %s: MISSING from the archive!", finding.resource)
         elif finding.resource is None:
             log.error(
@@ -759,8 +755,32 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
             log.info(
                 " - %s : %s - %s", finding.resource, finding.path, finding.status.value
             )
+    n_resolved = 0
+    if unregistered:
+        log.info("looking up files that aren't in this archive's registry records:")
+    prompting = args.fix and _interactive()
+    if args.fix and unregistered and not prompting:
+        log.info(" - not an interactive terminal, so not asking how to resolve them")
+    for finding in check.recheck_unregistered(session, registry_url, unregistered):
+        if finding.status == check.Status.MISSING_FROM_REGISTRY:
+            log.error(
+                " - %s: MISSING from the registry under %s!",
+                finding.path,
+                archive_name,
+            )
+        else:
+            log.error(
+                " - %s: %s (%s)!", finding.path, finding.status.value, finding.detail
+            )
+            if prompting and _resolve_elsewhere(
+                session, registry_url, archive_name, finding
+            ):
+                n_resolved += 1
+                continue
+        counts[finding.status] += 1
+        n_errors += 1
     log.info(
-        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d; permission errors: %d",
+        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d; permission errors: %d; registered elsewhere: %d",
         len(expected),
         counts[check.Status.MISSING_FROM_ARCHIVE],
         counts[check.Status.MISSING_FROM_REGISTRY],
@@ -770,11 +790,85 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
         + counts[check.Status.UNEXPECTED]
         + counts[check.Status.SYMLINK],
         perm_counts.total() - n_fixed,
+        counts[check.Status.REGISTERED_ELSEWHERE]
+        + counts[check.Status.UNVERIFIED_ELSEWHERE]
+        + counts[check.Status.CHANGED_ELSEWHERE],
     )
     if args.fix:
         log.info("Permission errors fixed: %d", n_fixed)
+        log.info("Files registered elsewhere resolved: %d", n_resolved)
     n_errors += perm_counts.total() - n_fixed
     return n_errors == 0 and not unable_to_check
+
+
+def _interactive() -> bool:
+    """True if the user can be asked questions."""
+    return sys.stdin.isatty()
+
+
+def _ask(prompt: str, choices: str) -> str:
+    """Asks the user to pick one of choices (single letters). Returns "" on EOF."""
+    while True:
+        try:
+            answer = input(prompt).strip().lower()
+        except EOFError:
+            return ""
+        if len(answer) == 1 and answer in choices:
+            return answer
+
+
+def _resolve_elsewhere(session, registry_url, archive_name, finding) -> bool:
+    """Asks whether to delete a copy of a resource or add this archive as a location.
+
+    Only offered for files that match the registered hash, or whose resource
+    has no hash (with a warning that the contents can't be verified). A file
+    with a different hash isn't a copy, so it's left for the user to sort out.
+    Deleting is offered only if the registry lists another location, so the
+    copy isn't the only one. Adding the location is offered only if the file is
+    in the right subdirectory. Returns True if the file was deleted or the
+    location added.
+    """
+    if finding.status not in (
+        check.Status.REGISTERED_ELSEWHERE,
+        check.Status.UNVERIFIED_ELSEWHERE,
+    ):
+        return False
+    path = finding.path
+    options = []
+    if finding.locations:
+        options.append(("d", "[d]elete this copy"))
+    if path.parent.name == archive.id_stub(finding.resource):
+        options.append(("a", f"[a]dd {archive_name} as a location"))
+    if not options:
+        return False
+    if finding.status == check.Status.UNVERIFIED_ELSEWHERE:
+        log.warning(
+            "   the registry has no hash for %s, so this file may not be a copy",
+            finding.resource,
+        )
+    options.append(("s", "[s]kip"))
+    choices = "".join(key for key, _ in options)
+    answer = _ask(f"   {', '.join(text for _, text in options)}? ", choices)
+    if answer == "d":
+        try:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except OSError as err:
+            log.error("   unable to delete %s: %s", path, err)
+            return False
+        log.info("   - deleted %s", path)
+        return True
+    if answer == "a":
+        url, body = registry.add_location(registry_url, finding.resource, archive_name)
+        r = session.post(url, json=body)
+        if r.status_code != httpx.codes.CREATED:
+            log.error("   unable to add location: %s", r.text)
+            return False
+        log.info("   - added %s as a location for %s", archive_name, finding.resource)
+        return True
+    return False
 
 
 def check_registry(args):

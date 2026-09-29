@@ -1,5 +1,6 @@
 # -*- mode: python -*-
 import grp
+import json
 import os
 import pwd
 
@@ -8,7 +9,7 @@ import respx
 
 from nbank import archive, check, util
 from nbank.check import Status
-from test.test_registry import archives_url, base_url, resource_url
+from test.test_registry import archives_url, base_url, bulk_url, resource_url
 
 
 @pytest.fixture
@@ -400,3 +401,54 @@ def test_check_missing_resources_directory(tmp_archive):
     assert [(f.status, f.path) for f in findings] == [(Status.UNREADABLE, base)]
     assert "No such file" in findings[0].detail
     assert permission_findings(tmp_archive) == []
+
+
+def bulk_response(*records):
+    return (json.dumps(record).encode() + b"\n" for record in records)
+
+
+def test_recheck_unregistered(mocked_api, tmp_archive, tmp_path):
+    import httpx
+
+    copy, sha1 = store(tmp_archive, tmp_path, "copy")
+    store(tmp_archive, tmp_path, "changed")
+    store(tmp_archive, tmp_path, "unhashed")
+    unknown, _ = store(tmp_archive, tmp_path, "unknown")
+    findings = list(check.check_archive_contents(tmp_archive["path"], {}))
+    route = mocked_api.post(bulk_url + "resources/").respond(
+        stream=bulk_response(
+            resource_record("copy", ["other"], sha1),
+            resource_record("changed", ["other"], "0" * 40),
+            resource_record("unhashed", [], None),
+        )
+    )
+    with httpx.Client() as session:
+        rechecked = list(check.recheck_unregistered(session, base_url, findings))
+    assert json.loads(route.calls.last.request.content) == {
+        "names": ["changed", "copy", "unhashed", "unknown"]
+    }
+    by_name = {f.resource: f for f in rechecked}
+    assert by_name["copy"] == check.Finding(
+        Status.REGISTERED_ELSEWHERE,
+        "copy",
+        copy,
+        "located in: other",
+        locations=("other",),
+    )
+    assert by_name["changed"].status == Status.CHANGED_ELSEWHERE
+    assert by_name["changed"].locations == ("other",)
+    assert by_name["unhashed"].status == Status.UNVERIFIED_ELSEWHERE
+    assert by_name["unhashed"].locations == ()
+    assert by_name["unhashed"].detail == "the registry lists no locations"
+    assert by_name["unknown"] == check.Finding(
+        Status.MISSING_FROM_REGISTRY, "unknown", unknown
+    )
+    assert not any(f.ok for f in rechecked)
+
+
+def test_recheck_unregistered_nothing_to_look_up(mocked_api, tmp_archive, tmp_path):
+    import httpx
+
+    findings = [check.Finding(Status.MISSING_FROM_ARCHIVE, "res_1")]
+    with httpx.Client() as session:
+        assert list(check.recheck_unregistered(session, base_url, findings)) == findings

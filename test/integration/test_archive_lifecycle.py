@@ -2,12 +2,14 @@
 """Tests of the commands that keep an archive and the registry consistent."""
 
 import json
+import shutil
 import tarfile
+from types import SimpleNamespace
 
 import pytest
 
 from nbank import archive as nbank_archive
-from nbank import check, core
+from nbank import check, core, script
 from nbank import registry as nbank_registry
 
 
@@ -245,6 +247,146 @@ def test_check_all_continues_after_crash(
     assert cli("check", "all") == 1
     assert " - unable to check: simulated failure!" in caplog.text
     assert broken.name in failed_checks(caplog)
+
+
+def stray_copy(name, src, dst, tmp_path):
+    """Copies a resource into another archive without telling the registry."""
+    stored = stored_path(src, name)
+    tmp = tmp_path / stored.name
+    shutil.copy(stored, tmp)
+    return nbank_archive.store_resource(dst.config, tmp, id=name)
+
+
+@pytest.fixture
+def answers(monkeypatch):
+    """Returns a function that scripts answers to the check's prompts.
+
+    The function returns the list of prompts shown. Running out of answers
+    acts like end of input.
+    """
+
+    def set_answers(*replies):
+        prompts = []
+        remaining = iter(replies)
+
+        def fake_input(prompt):
+            prompts.append(prompt)
+            try:
+                return next(remaining)
+            except StopIteration:
+                raise EOFError from None
+
+        monkeypatch.setattr(script, "_interactive", lambda: True)
+        monkeypatch.setattr("builtins.input", fake_input)
+        return prompts
+
+    return set_answers
+
+
+@pytest.fixture
+def copied(archive, make_archive, dtype, deposit_file, tmp_path):
+    """A resource deposited in one archive, with an unregistered copy in another.
+
+    Has the resource's name, the original archive, the archive with the copy,
+    and the path of the copy.
+    """
+    original = make_archive()
+    name = deposit_file(original, dtype, hash=True)
+    path = stray_copy(name, original, archive, tmp_path)
+    return SimpleNamespace(name=name, original=original, archive=archive, path=path)
+
+
+def test_check_registered_elsewhere(cli, copied, caplog):
+    assert cli("check", "archive", str(copied.archive.path)) == 1
+    assert (
+        f" - {copied.path}: registered, but NOT located in this archive "
+        f"(located in: {copied.original.name})!"
+    ) in caplog.text
+    assert "MISSING from the registry" not in caplog.text
+    assert "registered elsewhere: 1" in caplog.text
+
+
+def test_check_fix_adds_location(cli, registry, copied, answers, caplog):
+    prompts = answers("a")
+    assert cli("check", "archive", "--fix", str(copied.archive.path)) == 0
+    assert "[d]elete this copy" in prompts[0]
+    assert "Files registered elsewhere resolved: 1" in caplog.text
+    locations = core.describe(registry.url, copied.name)["locations"]
+    assert sorted(locations) == sorted([copied.original.name, copied.archive.name])
+    assert cli("check", "archive", str(copied.archive.path)) == 0
+
+
+def test_check_fix_deletes_copy(cli, registry, copied, answers):
+    answers("d")
+    assert cli("check", "archive", "--fix", str(copied.archive.path)) == 0
+    assert not copied.path.exists()
+    assert core.describe(registry.url, copied.name)["locations"] == [
+        copied.original.name
+    ]
+
+
+def test_check_fix_changed_copy(cli, copied, answers, caplog):
+    # a different file with the same name as the resource isn't a copy
+    copied.path.chmod(0o644)
+    copied.path.write_text("changed")
+    prompts = answers("d")
+    assert cli("check", "archive", "--fix", str(copied.archive.path)) == 1
+    assert "contents DIFFER from the registered hash" in caplog.text
+    assert prompts == []
+    assert copied.path.exists()
+
+
+def test_check_fix_unverified_copy(
+    cli, registry, archive, make_archive, dtype, deposit_file, answers, tmp_path, caplog
+):
+    original = make_archive(require_hash=False)
+    name = deposit_file(original, dtype)
+    path = stray_copy(name, original, archive, tmp_path)
+    prompts = answers("d")
+    assert cli("check", "archive", "--fix", str(archive.path)) == 0
+    assert "no hash to verify contents" in caplog.text
+    assert f"the registry has no hash for {name}" in caplog.text
+    assert "[d]elete this copy" in prompts[0]
+    assert "[a]dd" in prompts[0]
+    assert not path.exists()
+
+
+def test_check_fix_misplaced_copy(cli, copied, answers):
+    wrong_dir = copied.archive.path / "resources" / "zz"
+    wrong_dir.mkdir()
+    moved = copied.path.rename(wrong_dir / copied.path.name)
+    prompts = answers("s")
+    assert cli("check", "archive", "--fix", str(copied.archive.path)) == 1
+    # adding the location would register a file that can't be found
+    assert "[a]dd" not in prompts[0]
+    assert moved.exists()
+
+
+def test_check_fix_only_copy(
+    cli, registry, register, archive, answers, tmp_path, caplog
+):
+    # registered with no locations, so this file is the only copy
+    name = register()["name"]
+    src = tmp_path / f"{name}.txt"
+    src.write_text("contents")
+    path = nbank_archive.store_resource(archive.config, src, id=name)
+    prompts = answers("d", "a")
+    assert cli("check", "archive", "--fix", str(archive.path)) == 0
+    assert f"the registry has no hash for {name}" in caplog.text
+    assert "[d]elete" not in prompts[0]
+    assert path.exists()
+    assert core.describe(registry.url, name)["locations"] == [archive.name]
+
+
+def test_check_fix_not_interactive(cli, copied, monkeypatch, caplog):
+    def no_input(prompt):
+        raise AssertionError("should not prompt")
+
+    monkeypatch.setattr(script, "_interactive", lambda: False)
+    monkeypatch.setattr("builtins.input", no_input)
+    assert cli("check", "archive", "--fix", str(copied.archive.path)) == 1
+    assert "not an interactive terminal" in caplog.text
+    assert copied.path.exists()
 
 
 def test_check_resource_without_hash(cli, archive, dtype, deposit_file, caplog):
