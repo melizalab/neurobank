@@ -27,6 +27,9 @@ from nbank.types import (
 
 log = logging.getLogger("nbank")  # root logger
 
+# names per request to the registry's bulk endpoints
+bulk_batch_size = 500
+
 
 @location_scheme
 class HttpResource(FetchableResource):

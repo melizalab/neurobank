@@ -18,9 +18,6 @@ from httpx import Client
 
 from nbank import archive, registry, util
 
-# names per request to the registry's bulk endpoints
-_bulk_size = 500
-
 
 class Status(enum.Enum):
     OK = "OK"
@@ -268,8 +265,10 @@ def recheck_unregistered(
         {f.resource for f in findings if f.status == Status.MISSING_FROM_REGISTRY}
     )
     records = {}
-    for i in range(0, len(names), _bulk_size):
-        url, query = registry.get_resource_bulk(registry_url, names[i : i + _bulk_size])
+    for i in range(0, len(names), util.bulk_batch_size):
+        url, query = registry.get_resource_bulk(
+            registry_url, names[i : i + util.bulk_batch_size]
+        )
         for record in util.query_registry_bulk(session, url, query):
             records[record["name"]] = record
     for finding in findings:
