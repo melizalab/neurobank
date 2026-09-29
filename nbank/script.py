@@ -516,6 +516,7 @@ def init_archive(args):
 def store_resources(args):
     if args.read_stdin:
         args.file.extend(Path(name) for line in sys.stdin if (name := line.strip()))
+    n_failed = 0
     try:
         for res in core.deposit(
             args.directory,
@@ -525,13 +526,18 @@ def store_resources(args):
             auto_id=args.auto_id,
             auth=args.auth,
             dry_run=args.dry_run,
+            skip_errors=True,
             **args.metadata,
         ):
+            n_failed += "error" in res
             if args.json_out:
                 json.dump(res, fp=sys.stdout, cls=util.JSONEncoder)
                 sys.stdout.write("\n")
     except (ValueError, OSError, RuntimeError) as e:
         log.error("error: %s", e)
+        return 1
+    if n_failed:
+        log.error("files that could not be deposited: %d", n_failed)
         return 1
 
 

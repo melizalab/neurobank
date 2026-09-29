@@ -125,6 +125,32 @@ def test_deposit_name_rejected_by_registry(
     assert core.describe(registry.url, name) is None
 
 
+def test_deposit_continues_past_errors(
+    cli, registry, archive, dtype, tmp_path, unique, capsys, caplog
+):
+    invalid = tmp_path / "not valid.txt"
+    rejected = tmp_path / f"{unique('res')}~x.txt"
+    good = tmp_path / f"{unique('res')}.txt"
+    for src in (invalid, rejected, good):
+        src.write_text(src.name)
+    status = cli(
+        "deposit",
+        "-d",
+        dtype,
+        "-j",
+        str(archive.path),
+        *map(str, (invalid, rejected, good)),
+    )
+    assert status == 1
+    items = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [item.get("id") for item in items] == [None, None, good.stem]
+    assert "contains invalid characters" in items[0]["error"]
+    assert "can only contain letters, numbers, underscores" in items[1]["error"]
+    assert invalid.exists() and rejected.exists() and not good.exists()
+    assert core.describe(registry.url, good.stem) is not None
+    assert "files that could not be deposited: 2" in caplog.text
+
+
 def test_info(cli, register, unique, capsys):
     name, missing = register()["name"], unique("missing")
     assert cli("info", name, missing) == 1

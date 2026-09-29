@@ -178,14 +178,21 @@ def strip_nulls(d: dict) -> dict:
     return {k: v for k, v in d.items() if v is not None}
 
 
+def error_messages(response) -> list[str]:
+    """Returns the messages in a 400 (validation error) response from the registry."""
+    messages = []
+    for k, v in response.json().items():
+        # a field has a list of messages; "detail" has a single string
+        for message in [v] if isinstance(v, str) else v:
+            messages.append(f"{k}: {message}")
+    return messages
+
+
 def log_error(err):
     """Writes error message from server to log. Reraises errors where code is not in 400, 403, 415"""
     if err.response.status_code == 400:
-        data = err.response.json()
-        for k, v in data.items():
-            # a field has a list of messages; "detail" has a single string
-            for message in [v] if isinstance(v, str) else v:
-                log.error("   registry error: %s: %s", k, message)
+        for message in error_messages(err.response):
+            log.error("   registry error: %s", message)
     elif err.response.status_code == 403:
         data = err.response.json()
         for _k, v in data.items():
@@ -205,6 +212,7 @@ __all__ = [
     "add_datatype",
     "add_resource",
     "default_registry",
+    "error_messages",
     "find_archive_by_path",
     "find_resource",
     "full_url",

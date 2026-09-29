@@ -208,6 +208,102 @@ def test_deposit_rejects_symlinks(mocked_api, tmp_path, dry_run):
     assert list((root / "resources").iterdir()) == []
 
 
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_deposit_skip_errors(mocked_api, tmp_archive, tmp_path, dry_run):
+    root = tmp_archive["path"]
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    missing = tmp_path / "missing"
+    directory = tmp_path / "a_directory"
+    directory.mkdir()
+    bad_name = tmp_path / "not valid"
+    bad_name.write_text("contents")
+    link = tmp_path / "linked"
+    link.symlink_to(bad_name)
+    good = tmp_path / "good"
+    good.write_text("contents")
+    if not dry_run:
+        mocked_api.post(resource_url).respond(201, json={"name": "good"})
+    sources = [missing, directory, bad_name, link, good]
+    items = list(core.deposit(root, sources, skip_errors=True, dry_run=dry_run))
+    assert [item["source"] for item in items] == sources
+    errors = [item.get("error") for item in items]
+    assert errors[0] == "does not exist"
+    assert "is a directory" in errors[1]
+    assert "contains invalid characters" in errors[2]
+    assert "is a symbolic link" in errors[3]
+    assert errors[4] is None
+    assert items[4]["id"] == "good"
+    assert (archive.resource_path(tmp_archive, "good").exists()) != dry_run
+
+
+def test_deposit_skip_errors_rejected_by_registry(mocked_api, tmp_archive, tmp_path):
+    root = tmp_archive["path"]
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    rejected, good = tmp_path / "rejected", tmp_path / "good"
+    rejected.write_text("contents")
+    good.write_text("other contents")
+    mocked_api.post(resource_url, json__name="rejected").respond(
+        400, json={"name": ["a resource with this name already exists"]}
+    )
+    mocked_api.post(resource_url, json__name="good").respond(201, json={"name": "good"})
+    items = list(core.deposit(root, [rejected, good], skip_errors=True))
+    assert items == [
+        {
+            "source": rejected,
+            "error": "name: a resource with this name already exists",
+        },
+        {"source": good, "id": "good"},
+    ]
+    assert rejected.exists()
+    assert not good.exists()
+
+
+def test_deposit_skip_errors_still_raises_auth_errors(
+    mocked_api, tmp_archive, tmp_path
+):
+    root = tmp_archive["path"]
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    src = tmp_path / "res_1"
+    src.write_text("contents")
+    mocked_api.post(resource_url).respond(403, json={"detail": "not allowed"})
+    with pytest.raises(httpx.HTTPStatusError):
+        list(core.deposit(root, [src], skip_errors=True))
+
+
+def test_store_resources_continues_past_errors(monkeypatch, capsys, caplog):
+    def fake_deposit(*args, skip_errors=False, **kwargs):
+        assert skip_errors
+        yield {"source": Path("bad"), "error": "does not exist"}
+        yield {"source": Path("good"), "id": "good"}
+
+    monkeypatch.setattr(core, "deposit", fake_deposit)
+    args = argparse.Namespace(
+        read_stdin=False,
+        file=[Path("bad"), Path("good")],
+        directory=Path("archive"),
+        dtype=None,
+        hash=False,
+        auto_id=False,
+        auth=None,
+        dry_run=False,
+        metadata={},
+        json_out=True,
+    )
+    assert script.store_resources(args) == 1
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert lines == [
+        {"source": "bad", "error": "does not exist"},
+        {"source": "good", "id": "good"},
+    ]
+    assert "could not be deposited: 1" in caplog.text
+
+
 def test_store_resources_reports_clean_error(monkeypatch, caplog):
     # deposit errors (PermissionError, RuntimeError, ValueError) should produce
     # a log message, not an uncaught traceback, at the CLI level

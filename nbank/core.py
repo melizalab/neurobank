@@ -40,6 +40,7 @@ def deposit(
     auto_id: bool = False,
     auth: RegistryAuth = None,
     dry_run: bool = False,
+    skip_errors: bool = False,
     **metadata: Any,
 ) -> Iterator[dict]:
     """Main entry point to deposit resources into an archive
@@ -52,7 +53,15 @@ def deposit(
     "dry_run": True and, for files where the id isn't known until the
     registry assigns it (auto_identifiers with no auto_id_type), "id": None.
 
-    Here's how a variety of error conditions are handled:
+    Set skip_errors to True to skip a file that can't be deposited and continue
+    with the rest, instead of raising an error. Each skipped file yields
+    {"source": src, "error": message}. This applies to files that don't exist,
+    directories the archive doesn't allow, invalid names, symbolic links,
+    permission problems, and resources the registry rejects as invalid (400).
+    Other errors still raise, including authentication failures and failures to
+    store a file after it has been registered.
+
+    Otherwise, here's how a variety of error conditions are handled:
 
     - unable to contact registry: ConnectionError
     - attempt to add unallowed directory: skip the directory
@@ -82,6 +91,7 @@ def deposit(
     )
     from nbank.registry import (
         add_resource,
+        error_messages,
         find_archive_by_path,
         full_url,
         get_datatypes,
@@ -123,28 +133,46 @@ def deposit(
             if dtype not in known_dtypes:
                 raise RuntimeError(f"'{dtype}' is not a registered datatype")
 
+        def skipped(src: Path, message: str) -> dict:
+            log.error("   error: %s", message)
+            return {"source": src, "error": message}
+
         for src in files:
             log.info("processing '%s':", src)
             if not src.exists():
-                log.info("   does not exist; skipping")
+                if skip_errors:
+                    yield skipped(src, "does not exist")
+                else:
+                    log.info("   does not exist; skipping")
                 continue
             if not allow_dirs and src.is_dir():
-                log.info("   is a directory; skipping")
-                continue
-            if auto_id:
-                if auto_id_type == "uuid":
-                    id = str(uuid.uuid4())
+                if skip_errors:
+                    yield skipped(
+                        src, "is a directory, which the archive doesn't allow"
+                    )
                 else:
-                    id = None
-            else:
-                id = util.id_from_fname(src)
-            verify_no_symlinks(src)
-            verify_permissions(archive_cfg, src, id)
-            if hash or archive_cfg["policy"]["require_hash"]:
-                sha1 = util.hash(src)
-                log.info("   sha1: %s", sha1)
-            else:
-                sha1 = None
+                    log.info("   is a directory; skipping")
+                continue
+            try:
+                if auto_id:
+                    if auto_id_type == "uuid":
+                        id = str(uuid.uuid4())
+                    else:
+                        id = None
+                else:
+                    id = util.id_from_fname(src)
+                verify_no_symlinks(src)
+                verify_permissions(archive_cfg, src, id)
+                if hash or archive_cfg["policy"]["require_hash"]:
+                    sha1 = util.hash(src)
+                    log.info("   sha1: %s", sha1)
+                else:
+                    sha1 = None
+            except (ValueError, OSError) as err:
+                if not skip_errors:
+                    raise
+                yield skipped(src, str(err))
+                continue
             if dry_run:
                 log.info("   OK (dry run; nothing registered or moved)")
                 yield {"source": src, "id": id, "dry_run": True}
@@ -154,6 +182,9 @@ def deposit(
             )
             log.debug("POST %s: %s", url, params)
             r = session.post(url, json=params)
+            if skip_errors and r.status_code == httpx.codes.BAD_REQUEST:
+                yield skipped(src, "; ".join(error_messages(r)))
+                continue
             r.raise_for_status()
             result = r.json()
 

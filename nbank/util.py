@@ -114,7 +114,7 @@ def id_from_fname(fname: Path | str) -> str:
 
     id = Path(fname).stem
     if re.match(r"^[-_~0-9a-zA-Z]+$", id) is None:
-        raise ValueError("resource name '%s' contains invalid characters", id)
+        raise ValueError(f"resource name '{id}' contains invalid characters")
     return id
 
 
