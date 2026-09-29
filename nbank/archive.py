@@ -48,10 +48,9 @@ Add notes about the contents of the data archive here. You should also edit
 
 Deposit resources: `nbank deposit archive_path file-1 [file-2 [file-3]]`
 
-Registered or deposited files are given the permissions specified in `project.json`.
-However, when entire directories are deposited, ownership and access may not be set correctly.
-If you have issues accessing files, run the following commands (usually, as root):
-`find resources -type d -exec chmod 2775 {} \\+` and `setfacl -R -d -m u::rwx,g::rwx,o::rx resources`
+Deposited files are given the group and permissions specified in `nbank.json`.
+To find and fix files with the wrong ownership or permissions, run
+`nbank check archive --fix archive_path` (as root to fix ownership).
 
 """
 
@@ -91,7 +90,6 @@ def create(
     """
     import grp
     import pwd
-    import subprocess
     from os import getgid, getuid
 
     archive_path = archive_path.resolve(strict=False)
@@ -104,17 +102,9 @@ def create(
     umask &= 0o777  # mask out the umask
 
     resdir = archive_path / _resource_subdir
-    resdir.mkdir(umask, parents=True, exist_ok=True)
+    resdir.mkdir(parents=True, exist_ok=True)
     # try to set setgid bit on directory; this fails in some cases
     resdir.chmod(0o2777 & ~umask)
-
-    # try to set default facl; fail silently if setfacl doesn't exist
-    # FIXME this is not correct if umask is not 005
-    faclcmd = f"setfacl -d -m u::rwx,g::rwx,o::rx {resdir}".split()
-    try:
-        _ = subprocess.call(faclcmd)
-    except FileNotFoundError:
-        log.debug("setfacl does not exist on this platform")
 
     fname = archive_path / _README_fname
     fname.write_text(_README)

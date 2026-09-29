@@ -266,16 +266,15 @@ suggested for POSIX operating systems:
 1. For each project, create a separate group and make the archive owned
    by the group. To give a user access to the data, add them to the
    group.
-2. To restrict access to users not in the project group, set your umask
-   to 027 before creating the archive.
-3. Set the setgid (or setuid) bit on the subdirectories of the archive,
-   so that files added to the archive become owned by the group.
-   (``chmod 2770 resources metadata``). You may also consider setting
-   the sticky bit so that files and directories can’t be accidentally
-   deleted.
-4. If your filesystem supports it, set the default ACL on subdirectories
-   so that added files are accessible only to the group.
-   (``setfacl -d -m u::rwx,g::rwx,o::- resources metadata``).
+2. To restrict access to users not in the project group, give the
+   archive a umask of 027 when creating it (``nbank init -u 027``).
+3. Set the group in ``nbank.json`` to the project group. When resources
+   are deposited, neurobank gives them this group and the permissions
+   allowed by the umask, and makes the resource subdirectories
+   group-writable and setgid so that any member of the group can deposit.
+4. Run ``nbank check archive --fix`` (as root, to fix ownership) to find
+   and repair files and directories whose ownership or permissions don’t
+   match ``nbank.json``.
 
 License
 -------

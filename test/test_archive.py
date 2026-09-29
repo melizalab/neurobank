@@ -372,3 +372,11 @@ def test_permission_fixer_changes_mode_when_chown_fails(tmp_archive, tmp_path, c
     with caplog.at_level(logging.WARNING, logger="nbank"):
         archive.permission_fixer(tmp_archive, quiet=True)(path)
     assert caplog.text == ""
+
+
+def test_create_resources_directory_mode(tmp_path, restrictive_umask):
+    cfg = archive.create(tmp_path / "archive", dummy_registry, umask=0o002)
+    resdir = cfg["path"] / "resources"
+    required, _ = archive.mode_policy(cfg, resdir)
+    assert stat.S_IMODE(resdir.stat().st_mode) == required
+    assert list(check.check_archive_permissions(cfg)) == []
