@@ -16,6 +16,7 @@ from test.test_registry import (
     base_url,
     bulk_url,
     datatypes_url,
+    info_url,
     resource_url,
 )
 
@@ -513,16 +514,17 @@ def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
     sha1 = util.hash(src)
     archive.store_resource(tmp_archive, src)
     mocked_api.get(resource_url, params={"has_location": "false"}).respond(json=[])
+    info = mocked_api.get(info_url).respond(json={"api_version": "1.1"})
     mocked_api.get(archives_url).respond(
         json=[
             {"name": archive_name, "scheme": "neurobank", "root": str(root)},
             {"name": "tape", "scheme": "tape", "root": "tape:1"},
         ]
     )
-    mocked_api.get(resource_url, params={"location": archive_name}).respond(
+    mocked_api.get(resource_url, params={"archive": archive_name}).respond(
         json=[{"name": "res_1", "sha1": sha1, "locations": [archive_name]}]
     )
-    mocked_api.get(resource_url, params={"location": "tape"}).respond(
+    mocked_api.get(resource_url, params={"archive": "tape"}).respond(
         json=[{"name": "res_2", "sha1": None, "locations": ["tape"]}]
     )
     log = logging.getLogger("nbank")
@@ -532,6 +534,9 @@ def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
     finally:
         log.handlers[:] = handlers
         log.setLevel(level)
+    # the version is looked up once for the registry check and once for the
+    # archives, not once per archive
+    assert info.call_count == 2
 
 
 def run_main(*argv):
@@ -596,6 +601,35 @@ def test_exit_status_interrupted(monkeypatch):
 
     monkeypatch.setattr(script, "get_resource_info", interrupt)
     assert run_main("info", "res_1") == 130
+
+
+full_hash = "0123456789abcdef0123456789abcdef01234567"
+
+
+def test_search_full_hash_is_exact(mocked_api, capsys):
+    # no info request is mocked: a full hash doesn't need the API version
+    mocked_api.get(resource_url, params={"sha1": full_hash}).respond(
+        json=[{"name": "res_1"}]
+    )
+    assert run_main("search", "-H", full_hash) is None
+    assert capsys.readouterr().out == "res_1\n"
+
+
+@pytest.mark.parametrize(
+    "info, param",
+    [
+        ({"api_version": "1.1"}, "sha1_contains"),
+        ({"api_version": "1.0"}, "sha1"),
+        ({"name": "django-neurobank"}, "sha1"),
+    ],
+)
+def test_search_partial_hash(mocked_api, capsys, info, param):
+    mocked_api.get(info_url).respond(json=info)
+    mocked_api.get(resource_url, params={param: "89abcdef"}).respond(
+        json=[{"name": "res_1"}]
+    )
+    run_main("search", "-H", "89abcdef")
+    assert capsys.readouterr().out == "res_1\n"
 
 
 def test_verify_name_that_isnt_an_id(mocked_api, tmp_path, capsys):

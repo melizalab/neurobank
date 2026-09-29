@@ -94,20 +94,36 @@ def resources_without_locations(session: Client, registry_url: str) -> Iterator[
         yield item["name"]
 
 
+def _archive_filter(archive_name: str, api_version: tuple[int, ...]) -> dict:
+    """Returns the query for resources located in archive_name.
+
+    Registries from API version 1.1 match archive names exactly. Older ones only
+    have a substring match, so callers also check each result's locations.
+    """
+    if api_version >= (1, 1):
+        return {"archive": archive_name}
+    return {"location": archive_name}
+
+
 def archive_has_resources(
-    session: Client, registry_url: str, archive_name: str
+    session: Client,
+    registry_url: str,
+    archive_name: str,
+    api_version: tuple[int, ...] | None = None,
 ) -> bool:
     """True if the registry has any resources in archive_name.
 
-    Stops at the first match, so this is fast unless the archive is empty and
-    its name is part of the name of a larger archive (the registry's location
-    filter matches substrings).
+    Stops at the first match. On registries before API version 1.1, this can be
+    slow if the archive is empty and its name is part of the name of a larger
+    archive. Looks up api_version if it isn't given.
     """
+    if api_version is None:
+        api_version = util.registry_api_version(session, registry_url)
     url, _ = registry.find_resource(registry_url)
     return any(
         archive_name in item["locations"]
         for item in util.query_registry_paginated(
-            session, url, {"location": archive_name}
+            session, url, _archive_filter(archive_name, api_version)
         )
     )
 
@@ -121,23 +137,31 @@ def check_registry(session: Client, registry_url: str) -> Iterator[Finding]:
     """
     for name in resources_without_locations(session, registry_url):
         yield Finding(Status.NO_LOCATION, name)
+    api_version = util.registry_api_version(session, registry_url)
     url, params = registry.get_archives(registry_url)
     for item in util.query_registry_paginated(session, url, params):
-        if not archive_has_resources(session, registry_url, item["name"]):
+        if not archive_has_resources(session, registry_url, item["name"], api_version):
             yield Finding(Status.EMPTY_ARCHIVE, None, archive=item["name"])
 
 
 def registry_resources_in_archive(
-    session: Client, registry_url: str, archive_name: str
+    session: Client,
+    registry_url: str,
+    archive_name: str,
+    api_version: tuple[int, ...] | None = None,
 ) -> dict[str, str | None]:
-    """Returns {name: sha1} for the resources the registry places in archive_name."""
+    """Returns {name: sha1} for the resources the registry places in archive_name.
+
+    Looks up api_version if it isn't given.
+    """
+    if api_version is None:
+        api_version = util.registry_api_version(session, registry_url)
     url, _ = registry.find_resource(registry_url)
-    # the registry's location filter is a substring match, so filter again here
-    # TODO: remove this if the registry is patched to support exact matches
+    # also needed for older registries, whose filter matches substrings
     return {
         item["name"]: item["sha1"]
         for item in util.query_registry_paginated(
-            session, url, {"location": archive_name}
+            session, url, _archive_filter(archive_name, api_version)
         )
         if archive_name in item["locations"]
     }

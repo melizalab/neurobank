@@ -183,6 +183,21 @@ def query_registry(
     return r.json()
 
 
+def registry_api_version(session: Client, registry_url: str) -> tuple[int, ...]:
+    """Returns the registry's API version as a tuple of ints, e.g. (1, 1).
+
+    Returns (0,) if the registry doesn't report a version it can parse.
+    """
+    from nbank.registry import get_info
+
+    url, _ = get_info(registry_url)
+    info = query_registry(session, url) or {}
+    try:
+        return tuple(int(part) for part in str(info["api_version"]).split("."))
+    except (KeyError, ValueError):
+        return (0,)
+
+
 def query_registry_paginated(
     session: Client, url: str, params: Mapping[str, Any] | None = None
 ) -> Iterator[dict]:
@@ -275,4 +290,5 @@ __all__ = [
     "query_registry",
     "query_registry_bulk",
     "query_registry_paginated",
+    "registry_api_version",
 ]

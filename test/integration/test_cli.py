@@ -185,6 +185,7 @@ def test_search_by_hash_archive_and_name(cli, register, archive, unique, capsys)
         return set(capsys.readouterr().out.split())
 
     assert search("-H", sha1) == {a}
+    assert search("-H", sha1[10:30].upper()) == {a}
     assert search("-n", archive.name) == {a}
     assert search(tag) == {a, b}
 

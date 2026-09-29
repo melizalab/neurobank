@@ -239,7 +239,9 @@ def main(argv=None):
         action="store_true",
     )
     pp.add_argument("-d", "--dtype", help="filter results by dtype")
-    pp.add_argument("-H", "--hash", help="filter results by hash")
+    pp.add_argument(
+        "-H", "--hash", help="filter results by hash (full, or any part of one)"
+    )
     pp.add_argument("-n", "--archive", help="filter results by archive name")
     pp.add_argument(
         "-k",
@@ -589,12 +591,29 @@ def locate_resources(args):
     return 1 if n_failed else None
 
 
+def hash_search_param(registry_url: str, value: str) -> dict:
+    """Returns the query parameter to search the registry for a full or partial hash.
+
+    A full sha1 is an exact match, which the registry can look up quickly. Part
+    of a hash needs the substring filter, which is `sha1_contains` from API
+    version 1.1; older registries match substrings with `sha1`, and ignore
+    filters they don't know.
+    """
+    import re
+
+    if re.fullmatch(r"[0-9a-fA-F]{40}", value):
+        return {"sha1": value}
+    with httpx.Client() as session:
+        if util.registry_api_version(session, registry_url) >= (1, 1):
+            return {"sha1_contains": value}
+    return {"sha1": value}
+
+
 def search_resources(args):
     # parse commandline args to query dict
     argmap = [
         ("name", "name"),
         ("dtype", "dtype"),
-        ("sha1", "hash"),
         ("location", "archive"),
     ]
     params = {
@@ -602,6 +621,8 @@ def search_resources(args):
         for (paramname, argname) in argmap
         if getattr(args, argname) is not None
     }
+    if args.hash is not None:
+        params.update(hash_search_param(args.registry_url, args.hash))
     for k, v in args.metadata.items():
         kk = f"metadata__{k}"
         params[kk] = v
@@ -749,14 +770,18 @@ def check_archive(args):
     return 0 if ok else 1
 
 
-def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bool:
+def _check_archive(
+    session, registry_url, archive_name, archive_cfg, args, api_version=None
+) -> bool:
     """Runs the archive checks and logs the results. Returns True if there are no errors."""
     archive_path = archive_cfg["path"]
     log.info(
         "retrieving resources that should be in %s from the registry...",
         archive_name,
     )
-    expected = check.registry_resources_in_archive(session, registry_url, archive_name)
+    expected = check.registry_resources_in_archive(
+        session, registry_url, archive_name, api_version
+    )
     log.info(" - resources in the registry: %d", len(expected))
     log.info("checking ownership and permissions:")
     perm_counts = Counter()
@@ -972,6 +997,7 @@ def check_all(args):
     with httpx.Client(auth=args.auth) as session:
         if not _check_registry(session, registry_url):
             failed.append("(registry)")
+        api_version = util.registry_api_version(session, registry_url)
         url, params = registry.get_archives(registry_url)
         for info in util.query_registry_paginated(session, url, params):
             name = info["name"]
@@ -1007,7 +1033,9 @@ def check_all(args):
                 )
                 ok = False
             try:
-                if not _check_archive(session, registry_url, name, archive_cfg, args):
+                if not _check_archive(
+                    session, registry_url, name, archive_cfg, args, api_version
+                ):
                     ok = False
             except OSError as err:
                 log.error(" - unable to check: %s", err)
