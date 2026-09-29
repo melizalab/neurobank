@@ -136,7 +136,7 @@ def main(argv=None):
         "directory",
         type=Path,
         help="path of the directory for the archive. "
-        "The directory should be empty or not exist. ",
+        "The directory should be empty or not exist.",
     )
     pp.add_argument(
         "-n",
@@ -474,13 +474,18 @@ def init_archive(args):
     args.directory = args.directory.resolve()
     if args.name is None:
         args.name = args.directory.name
-    # check before registering, so a bad group doesn't leave a registered archive
+    # check before registering, so a problem doesn't leave a registered archive
     if args.group is not None:
         try:
             grp.getgrnam(args.group)
         except KeyError:
             log.error("error: group '%s' does not exist", args.group)
             return
+    try:
+        archive.verify_can_create(args.directory)
+    except FileExistsError as err:
+        log.error("error: %s", err)
+        return
 
     url, params = registry.add_archive(
         args.registry_url,

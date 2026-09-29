@@ -101,8 +101,8 @@ can can override this behavior with the ``-n`` flag; however, the
 registry may only allow you to have one archive name for each path to
 avoid confusion. Then the script will create and initialize the archive
 under ``my-archive-path``. You’ll get an error if the target directory
-already exists, or if the registry already has an archive with the same
-name.
+already contains an ``nbank.json``, ``README.md``, or ``.gitignore``
+file, or if the registry already has an archive with the same name.
 
 By default, the archive is owned by you and your primary group, and its
 umask is 002. Use ``-g`` to give the archive a different group, and

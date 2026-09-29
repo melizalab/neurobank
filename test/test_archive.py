@@ -454,6 +454,24 @@ def test_permission_fixer_as_root(tmp_archive, monkeypatch, user):
     assert calls == [(expected_uid, gid)]
 
 
+@pytest.mark.parametrize("existing", ["nbank.json", "README.md", ".gitignore"])
+def test_create_does_not_overwrite(tmp_path, existing):
+    root = tmp_path / "archive"
+    root.mkdir()
+    (root / existing).write_text("keep me")
+    with pytest.raises(FileExistsError, match=existing):
+        archive.create(root, dummy_registry)
+    assert [p.name for p in root.iterdir()] == [existing]
+    assert (root / existing).read_text() == "keep me"
+
+
+def test_create_in_empty_directory(tmp_path):
+    root = tmp_path / "archive"
+    root.mkdir()
+    cfg = archive.create(root, dummy_registry)
+    assert cfg["path"] == root
+
+
 def test_create_defaults_to_read_only_resources(tmp_archive):
     assert tmp_archive["policy"]["access"]["read_only_resources"] is True
 

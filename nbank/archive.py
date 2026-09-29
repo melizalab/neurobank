@@ -68,6 +68,17 @@ def get_config(path: Path) -> ArchiveConfig:
         return ret
 
 
+_created_files = (_config_fname, _README_fname, ".gitignore")
+
+
+def verify_can_create(archive_path: Path) -> None:
+    """Raises FileExistsError if creating an archive would overwrite files in archive_path."""
+    for name in _created_files:
+        path = archive_path / name
+        if path.exists() or path.is_symlink():
+            raise FileExistsError(f"'{path}' already exists")
+
+
 def create(
     archive_path: Path,
     registry_url: str,
@@ -93,10 +104,10 @@ def create(
     **policies: override auto_identifiers, keep_extensions, allow_directories, or require_hash
 
     Creates archive_path and all parents as needed, and gives the resources
-    directory and the files created here the archive's group. Does not overwrite
-    existing files or directories. If a config file already exists, uses the
-    umask stored there rather than the supplied one. Raises ValueError if group
-    doesn't exist, and OSError for failed operations.
+    directory and the files created here the archive's group. Raises
+    FileExistsError if any of the files it would create already exist (see
+    verify_can_create), ValueError if group doesn't exist, and OSError for
+    other failed operations.
 
     Returns the config dict for the archive
 
@@ -114,12 +125,7 @@ def create(
     user = None if shared else pwd.getpwuid(getuid()).pw_name
 
     archive_path = archive_path.resolve(strict=False)
-    try:
-        cfg = get_config(archive_path)
-        umask = cfg["policy"]["access"]["umask"]
-    except FileNotFoundError:
-        pass
-
+    verify_can_create(archive_path)
     umask &= 0o777  # mask out the umask
 
     resdir = archive_path / _resource_subdir
@@ -160,7 +166,7 @@ def create(
 
     cfg = get_config(archive_path)
     permission_fixer(cfg)(resdir)
-    for name in (_README_fname, _config_fname, ".gitignore"):
+    for name in _created_files:
         try:
             chown(archive_path / name, -1, gid)
         except PermissionError:
@@ -515,6 +521,7 @@ __all__ = [
     "remove",
     "resolve_extension",
     "store_resource",
+    "verify_can_create",
     "verify_no_symlinks",
     "verify_permissions",
 ]

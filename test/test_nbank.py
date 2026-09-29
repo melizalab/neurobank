@@ -466,3 +466,12 @@ def test_init_unknown_group(mocked_api, tmp_path, caplog):
     run_main("init", "-g", "no-such-group-xyzzy", str(root))
     assert "group 'no-such-group-xyzzy' does not exist" in caplog.text
     assert not root.exists()
+
+
+def test_init_existing_archive(mocked_api, tmp_archive, caplog):
+    # no registry route is mocked: the archive must not be registered
+    config = tmp_archive["path"] / "nbank.json"
+    before = config.read_text()
+    run_main("init", str(tmp_archive["path"]))
+    assert f"'{config}' already exists" in caplog.text
+    assert config.read_text() == before
