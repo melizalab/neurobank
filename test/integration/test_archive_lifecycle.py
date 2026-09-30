@@ -755,10 +755,24 @@ def test_check_tar_from_stdin(
     assert f"{stored_path(archive, name).name} -> OK" in caplog.text
 
 
-def test_check_tar_truncated(cli, archive, dtype, deposit_file, tmp_path, caplog):
-    name = deposit_file(archive, dtype, hash=True, contents="x" * 100_000)
+def test_check_tar_truncated(
+    cli, archive, dtype, deposit_file, unique, tmp_path, caplog
+):
+    name = deposit_file(archive, dtype, hash=True, contents=unique("x") * 10_000)
     tar = make_tar(tmp_path / "archive.tar", stored_path(archive, name))
     truncated = tmp_path / "truncated.tar"
     truncated.write_bytes(tar.read_bytes()[:50_000])
     assert cli("check", "tar", str(truncated)) == 1
+    assert "unable to read" in caplog.text
+
+
+def test_import_tar_truncated(
+    cli, two_archives, dtype, deposit_file, unique, tmp_path, caplog
+):
+    a, b = two_archives
+    name = deposit_file(a, dtype, hash=True, contents=unique("x") * 10_000)
+    tar = make_tar(tmp_path / "archive.tar", stored_path(a, name))
+    truncated = tmp_path / "truncated.tar"
+    truncated.write_bytes(tar.read_bytes()[:50_000])
+    assert cli("archive", "import-tar", str(truncated), str(b.path)) == 1
     assert "unable to read" in caplog.text

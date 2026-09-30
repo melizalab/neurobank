@@ -677,3 +677,79 @@ def test_receive_reports_progress(tmp_archive, monkeypatch, dry_run):
     entries = [("sub", None), ("sub/a", io.BytesIO(b"12345")), ("b", io.BytesIO(b"1"))]
     transfer.receive_directory(cfg, "res_2", "res_2", entries, None, progress)
     assert seen == [("sub/a", 4), ("sub/a", 5), ("b", 1)]
+
+
+class FakeTape(io.RawIOBase):
+    """Reads like a tape drive in variable-block mode: one block per read, and
+    ENOMEM for any read smaller than the block."""
+
+    def __init__(self, data: bytes, block_size: int):
+        self.blocks = [
+            data[i : i + block_size] for i in range(0, len(data), block_size)
+        ]
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        if not self.blocks:
+            return 0
+        block = self.blocks[0]
+        if len(buffer) < len(block):
+            raise OSError(errno.ENOMEM, "Cannot allocate memory")
+        self.blocks.pop(0)
+        buffer[: len(block)] = block
+        return len(block)
+
+
+tape_members = [("res_1.wav", b"x" * 50_000), ("res_2", b"y" * 3000)]
+
+
+def test_plain_tarfile_fails_on_tape():
+    # why _BlockReader is needed: tarfile's small reads are refused by the drive
+    tape = FakeTape(tar_bytes(tape_members), 10240)
+    with pytest.raises(OSError) as err:
+        tarfile.open(fileobj=tape, mode="r|*")
+    assert err.value.errno == errno.ENOMEM
+
+
+@pytest.mark.parametrize("block_size", [512, 10240, 262144])
+def test_block_reader_reads_tape(block_size):
+    tape = FakeTape(tar_bytes(tape_members), block_size)
+    reader = transfer._BlockReader(tape, transfer.tape_read_size)
+    with tarfile.open(fileobj=reader, mode="r|*") as tar:
+        results = [
+            (res.name, res.data.read())
+            for res in transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
+        ]
+    assert results == tape_members
+
+
+def raise_enomem(self, buffer):
+    raise OSError(errno.ENOMEM, "Cannot allocate memory")
+
+
+def test_open_tar_explains_large_tape_blocks(monkeypatch):
+    # /dev/null is a character device, as a tape drive is
+    monkeypatch.setattr(transfer._BlockReader, "readinto", raise_enomem)
+    with pytest.raises(OSError, match="blocks larger than"):
+        with transfer.open_tar("/dev/null"):
+            pass
+
+
+def test_open_tar_leaves_other_errors_alone(monkeypatch, tmp_path):
+    path = tmp_path / "archive.tar"
+    path.write_bytes(tar_bytes(tape_members))
+    monkeypatch.setattr(transfer._BlockReader, "readinto", raise_enomem)
+    with pytest.raises(OSError, match="Cannot allocate memory"):
+        with transfer.open_tar(path):
+            pass
+
+
+def test_open_tar_file(tmp_path):
+    path = tmp_path / "archive.tar"
+    path.write_bytes(tar_bytes(tape_members))
+    with transfer.open_tar(path) as tar:
+        items = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
+        results = [(res.name, res.data.read()) for res in items]
+    assert results == tape_members

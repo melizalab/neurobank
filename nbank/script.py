@@ -1349,12 +1349,7 @@ def check_tar(args):
     with httpx.Client(auth=args.auth) as session:
         lookup = _tar_lookup(session, args.registry_url, unregistered)
         try:
-            tarf = transfer.open_tar(args.tar)
-        except (OSError, tarfile.TarError) as err:
-            log.error("error: unable to read %s: %s", args.tar, err)
-            return 1
-        with tarf, Progress() as progress:
-            try:
+            with transfer.open_tar(args.tar) as tarf, Progress() as progress:
                 for res in transfer.iter_tar_resources(tarf, lookup):
                     receive = (
                         transfer.receive_directory
@@ -1381,9 +1376,9 @@ def check_tar(args):
                     else:
                         log.info("  - %s -> OK (no registered hash to check)", res.name)
                         counts["unverified"] += 1
-            except (OSError, tarfile.TarError) as err:
-                log.error("error: unable to read %s: %s", args.tar, err)
-                read_error = True
+        except (OSError, tarfile.TarError) as err:
+            log.error("error: unable to read %s: %s", args.tar, err)
+            read_error = True
     log.info(
         "\nResources checked: %d; failed: %d; no registered hash: %d; "
         "files not in the registry: %d",
@@ -1431,43 +1426,55 @@ def import_tar(args):
 
         lookup = _tar_lookup(session, registry_url)
         dest = None if args.dry_run else archive_cfg
-        with transfer.open_tar(args.tar) as tarf:
-            with Progress() as progress:
-                for res in transfer.iter_tar_resources(tarf, lookup):
-                    id = res.record["name"]
-                    if archive_name in res.record["locations"]:
-                        log.info(
-                            "  ✗ %s -> '%s' is already in the destination archive",
-                            res.name,
-                            id,
-                        )
-                        continue
-                    receive = (
-                        transfer.receive_directory
-                        if res.is_dir
-                        else transfer.receive_file
-                    )
-                    progress.start(res.name, res.size)
-                    try:
-                        received = receive(
-                            dest,
-                            id,
-                            res.name,
-                            res.data,
-                            res.record["sha1"],
-                            progress=progress,
-                        )
-                        if dest is not None:
-                            transfer.add_location(
-                                session, registry_url, id, archive_name, received.path
+        try:
+            with transfer.open_tar(args.tar) as tarf:
+                with Progress() as progress:
+                    for res in transfer.iter_tar_resources(tarf, lookup):
+                        id = res.record["name"]
+                        if archive_name in res.record["locations"]:
+                            log.info(
+                                "  ✗ %s -> '%s' is already in the destination archive",
+                                res.name,
+                                id,
                             )
-                    except transfer.TransferError as err:
-                        log.error("  ✗ %s -> %s", res.name, err)
-                        n_failed += 1
-                        continue
-                    result = received.path if dest is not None else "OK"
-                    note = "" if received.verified else " (no registered hash to check)"
-                    log.info("  - %s -> %s%s", res.name, result, note)
+                            continue
+                        receive = (
+                            transfer.receive_directory
+                            if res.is_dir
+                            else transfer.receive_file
+                        )
+                        progress.start(res.name, res.size)
+                        try:
+                            received = receive(
+                                dest,
+                                id,
+                                res.name,
+                                res.data,
+                                res.record["sha1"],
+                                progress=progress,
+                            )
+                            if dest is not None:
+                                transfer.add_location(
+                                    session,
+                                    registry_url,
+                                    id,
+                                    archive_name,
+                                    received.path,
+                                )
+                        except transfer.TransferError as err:
+                            log.error("  ✗ %s -> %s", res.name, err)
+                            n_failed += 1
+                            continue
+                        result = received.path if dest is not None else "OK"
+                        note = (
+                            ""
+                            if received.verified
+                            else " (no registered hash to check)"
+                        )
+                        log.info("  - %s -> %s%s", res.name, result, note)
+        except (OSError, tarfile.TarError) as err:
+            log.error("error: unable to read %s: %s", args.tar, err)
+            n_failed += 1
     return 1 if n_failed else None
 
 

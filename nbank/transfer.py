@@ -15,9 +15,13 @@ The two directions work differently:
 Copyright (C) 2026 Dan Meliza <dan@meliza.org>
 """
 
+import errno
+import io
 import os
+import stat
 import tarfile
 from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO, NamedTuple
@@ -370,17 +374,64 @@ def receive_directory(
             nbank_archive.remove(partial)
 
 
-def open_tar(path: str | Path) -> tarfile.TarFile:
-    """Opens a tar file for reading in order, without seeking.
+# size of each read from a tar file or tape device
+tape_read_size = 1 << 20
+
+
+class _BlockReader(io.RawIOBase):
+    """Reads from raw in requests of a fixed size, however little the caller asks for.
+
+    A tape drive in variable-block mode fails (with ENOMEM) any read smaller
+    than the block on the tape, so each read has to ask for at least a whole
+    block. Each request returns at most one block.
+    """
+
+    def __init__(self, raw: BinaryIO, size: int):
+        self.raw = raw
+        self.size = size
+        self._buf = memoryview(b"")
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer) -> int:
+        if not self._buf:
+            self._buf = memoryview(self.raw.read(self.size) or b"")
+        n = min(len(buffer), len(self._buf))
+        buffer[:n] = self._buf[:n]
+        self._buf = self._buf[n:]
+        return n
+
+
+@contextmanager
+def open_tar(path: str | Path) -> Iterator[tarfile.TarFile]:
+    """Opens a tar file for reading in order, without seeking, as a context manager.
 
     path can be a file, a tape device, or '-' for standard input. Members have to
     be read in order: a member's data can't be read after moving on to the next.
+    Files and devices are read tape_read_size bytes at a time, which is enough
+    for tapes written with blocks up to that size.
     """
     import sys
 
     if str(path) == "-":
-        return tarfile.open(fileobj=sys.stdin.buffer, mode="r|*")
-    return tarfile.open(path, mode="r|*")
+        with tarfile.open(fileobj=sys.stdin.buffer, mode="r|*") as tar:
+            yield tar
+        return
+    with open(path, "rb", buffering=0) as raw:
+        is_device = stat.S_ISCHR(os.fstat(raw.fileno()).st_mode)
+        try:
+            reader = _BlockReader(raw, tape_read_size)
+            with tarfile.open(fileobj=reader, mode="r|*") as tar:
+                yield tar
+        except OSError as err:
+            if is_device and err.errno == errno.ENOMEM:
+                raise OSError(
+                    err.errno,
+                    f"the tape has blocks larger than {tape_read_size} bytes, "
+                    "the largest this can read",
+                ) from err
+            raise
 
 
 class TarResource(NamedTuple):
