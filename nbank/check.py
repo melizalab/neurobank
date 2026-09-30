@@ -75,14 +75,14 @@ class Finding:
         )
 
 
-def resources_without_locations(session: Client, registry_url: str) -> Iterator[str]:
+def _resources_without_locations(session: Client, registry_url: str) -> Iterator[str]:
     """Yields the names of resources in the registry that have no locations."""
     url, params = registry.find_resource(registry_url, has_location="false")
     for item in util.query_registry_paginated(session, url, params):
         yield item["name"]
 
 
-def archive_has_resources(
+def _archive_has_resources(
     session: Client, registry_url: str, archive_name: str
 ) -> bool:
     """True if the registry has any resources in archive_name. Stops at the first."""
@@ -97,11 +97,11 @@ def check_registry(session: Client, registry_url: str) -> Iterator[Finding]:
     Yields a Finding for each resource with no locations (an error) and each
     archive with no resources.
     """
-    for name in resources_without_locations(session, registry_url):
+    for name in _resources_without_locations(session, registry_url):
         yield Finding(Status.NO_LOCATION, name)
     url, params = registry.get_archives(registry_url)
     for item in util.query_registry_paginated(session, url, params):
-        if not archive_has_resources(session, registry_url, item["name"]):
+        if not _archive_has_resources(session, registry_url, item["name"]):
             yield Finding(Status.EMPTY_ARCHIVE, None, archive=item["name"])
 
 
@@ -403,11 +403,8 @@ def check_archive_permissions(
 __all__ = [
     "Finding",
     "Status",
-    "archive_has_resources",
     "check_archive_contents",
     "check_archive_permissions",
     "check_registry",
-    "recheck_unregistered",
     "registry_resources_in_archive",
-    "resources_without_locations",
 ]

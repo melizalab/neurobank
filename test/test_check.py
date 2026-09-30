@@ -321,7 +321,7 @@ def test_resources_without_locations(mocked_api):
         json=[resource_record("res_1", []), resource_record("res_2", [])]
     )
     with httpx.Client() as session:
-        names = list(check.resources_without_locations(session, base_url))
+        names = list(check._resources_without_locations(session, base_url))
     assert names == ["res_1", "res_2"]
 
 
@@ -335,7 +335,7 @@ def test_archive_has_resources_stops_at_first_match(respx_mock):
         headers={"Link": f'<{resource_url}?archive=arch&page=2>; rel="next"'},
     )
     with httpx.Client() as session:
-        assert check.archive_has_resources(session, base_url, "arch")
+        assert check._archive_has_resources(session, base_url, "arch")
     assert not page_2.called
 
 
@@ -344,7 +344,7 @@ def test_archive_has_resources_empty(mocked_api):
 
     mocked_api.get(resource_url, params={"archive": "arch"}).respond(json=[])
     with httpx.Client() as session:
-        assert not check.archive_has_resources(session, base_url, "arch")
+        assert not check._archive_has_resources(session, base_url, "arch")
 
 
 def test_check_registry(mocked_api):

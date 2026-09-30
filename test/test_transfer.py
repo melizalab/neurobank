@@ -286,7 +286,7 @@ def test_receive_file_already_in_archive(tmp_archive, tmp_path):
 def test_receive_file_keeps_leftover_partial(tmp_archive):
     stub = tmp_archive["path"] / "resources" / "re"
     stub.mkdir()
-    leftover = stub / transfer.partial_name("res_1.wav")
+    leftover = stub / transfer._partial_name("res_1.wav")
     leftover.write_text("from a crash")
     with pytest.raises(transfer.TransferError, match="left over"):
         transfer.receive_file(tmp_archive, "res_1", "f.wav", io.BytesIO(b"x"), None)
@@ -522,8 +522,8 @@ def test_add_location_unreachable_keeps_copy(respx_mock, tmp_archive):
 @pytest.mark.parametrize(
     "name, target",
     [
-        (transfer.partial_name("res_1.wav"), "res_1.wav"),
-        (transfer.partial_name("res_1"), "res_1"),
+        (transfer._partial_name("res_1.wav"), "res_1.wav"),
+        (transfer._partial_name("res_1"), "res_1"),
         ("res_1.partial", None),
         (".res_1.wav", None),
         (".partial", None),
@@ -717,7 +717,7 @@ def test_plain_tarfile_fails_on_tape():
 @pytest.mark.parametrize("block_size", [512, 10240, 262144])
 def test_block_reader_reads_tape(block_size):
     tape = FakeTape(tar_bytes(tape_members), block_size)
-    reader = transfer._BlockReader(tape, transfer.tape_read_size)
+    reader = transfer._BlockReader(tape, transfer._tape_read_size)
     with tarfile.open(fileobj=reader, mode="r|*") as tar:
         results = [
             (res.name, res.data.read())

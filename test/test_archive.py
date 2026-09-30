@@ -550,9 +550,9 @@ def test_cannot_remove_others_read_only_directory_resource(
     file_path = archive.store_resource(tmp_dir_archive, src)
     # pretend to be some other (non-root) user in the archive's group
     monkeypatch.setattr(os, "getuid", lambda: path.stat().st_uid + 1)
-    assert not archive.can_remove(path)
+    assert not archive._can_remove(path)
     # a file only needs its directory to be writable
-    assert archive.can_remove(file_path)
+    assert archive._can_remove(file_path)
 
 
 def test_fix_makes_existing_resources_read_only(tmp_path):

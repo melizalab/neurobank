@@ -228,7 +228,6 @@ __all__ = [
     "add_datatype",
     "add_resource",
     "default_registry",
-    "error_messages",
     "find_archive_by_path",
     "find_resource",
     "full_url",
@@ -242,6 +241,5 @@ __all__ = [
     "local_schemes",
     "log_error",
     "parse_resource_url",
-    "update_location",
     "update_resource_metadata",
 ]

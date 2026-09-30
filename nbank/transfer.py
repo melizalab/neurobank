@@ -143,7 +143,7 @@ class Received:
     verified: bool
 
 
-def partial_name(name: str) -> str:
+def _partial_name(name: str) -> str:
     """Returns the name a resource is written under until it's verified."""
     return f".{name}.partial"
 
@@ -151,7 +151,7 @@ def partial_name(name: str) -> str:
 def partial_target(name: str) -> str | None:
     """Returns the name a temporary transfer file was going to be given, or None.
 
-    This is the inverse of partial_name, for recognizing files left over from
+    This is the inverse of _partial_name, for recognizing files left over from
     transfers that didn't finish.
     """
     if name.startswith(".") and name.endswith(".partial") and len(name) > 9:
@@ -270,7 +270,7 @@ def receive_file(
         digest = util.hash_stream(source, progress=report)
         return Received(None, digest, _check_hash(digest, sha1))
     target = _destination(cfg, id, name)
-    partial = target.parent / partial_name(target.name)
+    partial = target.parent / _partial_name(target.name)
     created = False
     try:
         try:
@@ -335,7 +335,7 @@ def receive_directory(
         digest = hasher.hexdigest()
         return Received(None, digest, _check_hash(digest, sha1))
     target = _destination(cfg, id, name)
-    partial = target.parent / partial_name(target.name)
+    partial = target.parent / _partial_name(target.name)
     created = False
     try:
         try:
@@ -381,7 +381,7 @@ def receive_directory(
 
 
 # size of each read from a tar file or tape device
-tape_read_size = 1 << 20
+_tape_read_size = 1 << 20
 
 
 class _BlockReader(io.RawIOBase):
@@ -415,7 +415,7 @@ def open_tar(path: str | Path) -> Iterator[tarfile.TarFile]:
 
     path can be a file, a tape device, or '-' for standard input. Members have to
     be read in order: a member's data can't be read after moving on to the next.
-    Files and devices are read tape_read_size bytes at a time, which is enough
+    Files and devices are read _tape_read_size bytes at a time, which is enough
     for tapes written with blocks up to that size.
     """
     import sys
@@ -427,14 +427,14 @@ def open_tar(path: str | Path) -> Iterator[tarfile.TarFile]:
     with open(path, "rb", buffering=0) as raw:
         is_device = stat.S_ISCHR(os.fstat(raw.fileno()).st_mode)
         try:
-            reader = _BlockReader(raw, tape_read_size)
+            reader = _BlockReader(raw, _tape_read_size)
             with tarfile.open(fileobj=reader, mode="r|*") as tar:
                 yield tar
         except OSError as err:
             if is_device and err.errno == errno.ENOMEM:
                 raise OSError(
                     err.errno,
-                    f"the tape has blocks larger than {tape_read_size} bytes, "
+                    f"the tape has blocks larger than {_tape_read_size} bytes, "
                     "the largest this can read",
                 ) from err
             raise
@@ -556,7 +556,7 @@ class _HashingReader:
     def copy_to(self, dest: BinaryIO) -> None:
         """Writes the whole file to dest."""
         while self.nbytes < self.size:
-            dest.write(self.read(min(tape_read_size, self.size - self.nbytes)))
+            dest.write(self.read(min(_tape_read_size, self.size - self.nbytes)))
 
     def hexdigest(self) -> str:
         return self._hash.hexdigest()
@@ -620,7 +620,7 @@ class ExportWriter:
         raise NotImplementedError
 
 
-class TarWriter(ExportWriter):
+class _TarWriter(ExportWriter):
     """Writes to a tar file, which must be open for writing to a regular file
     (mode 'w' or 'x', not 'w|') so a resource that fails can be cut back out."""
 
@@ -663,7 +663,7 @@ class TarWriter(ExportWriter):
         del self.tar.members[self._n_members :]
 
 
-class ZipWriter(ExportWriter):
+class _ZipWriter(ExportWriter):
     """Writes to a zip file, which must be open for writing to a regular file
     (mode 'w' or 'x') so a resource that fails can be cut back out."""
 
@@ -708,7 +708,7 @@ class ZipWriter(ExportWriter):
         self.zf.start_dir = self._offset
 
 
-class DirectoryWriter(ExportWriter):
+class _DirectoryWriter(ExportWriter):
     """Writes to a directory. Each resource is written under a temporary name
     and moved into place once it's verified, never replacing anything."""
 
@@ -720,7 +720,7 @@ class DirectoryWriter(ExportWriter):
         self._target = self.root / name
         if self._target.exists() or self._target.is_symlink():
             raise TransferError(f"'{self._target}' already exists")
-        partial = self.root / partial_name(name)
+        partial = self.root / _partial_name(name)
         if partial.exists() or partial.is_symlink():
             raise TransferError(
                 f"'{partial}' is left over from an earlier export; remove it first"
@@ -774,15 +774,15 @@ def open_export(path: Path, compress: bool = False) -> Iterator[ExportWriter]:
     if suffix in (".gz", ".tgz", ".bz2", ".xz", ".zst", ".7z"):
         raise ValueError(f"can't export to a '{suffix}' file; use .tar or .zip")
     if suffix == ".tar":
-        with tarfile.open(path, "x", copybufsize=tape_read_size) as tar:
-            yield TarWriter(tar)
+        with tarfile.open(path, "x", copybufsize=_tape_read_size) as tar:
+            yield _TarWriter(tar)
     elif suffix == ".zip":
         compression = zipfile.ZIP_DEFLATED if compress else zipfile.ZIP_STORED
         with zipfile.ZipFile(path, "x", compression=compression) as zf:
-            yield ZipWriter(zf)
+            yield _ZipWriter(zf)
     else:
         path.mkdir(parents=True, exist_ok=True)
-        yield DirectoryWriter(path)
+        yield _DirectoryWriter(path)
 
 
 def write_resource(
@@ -855,7 +855,7 @@ def located_in(
     return found
 
 
-def directory_entries(root: Path) -> Iterator[tuple[str, BinaryIO | None]]:
+def _directory_entries(root: Path) -> Iterator[tuple[str, BinaryIO | None]]:
     """Yields (path, stream) for everything in a directory, as receive_directory
     takes. Each file is open only until the next entry is asked for."""
     for path in _walk(root):
@@ -883,7 +883,7 @@ def receive_source(
     name = source.path.name
     try:
         if source.path.is_dir():
-            entries = directory_entries(source.path)
+            entries = _directory_entries(source.path)
             return receive_directory(
                 cfg, source.id, name, entries, source.sha1, progress
             )
@@ -942,28 +942,4 @@ def add_location(
         raise TransferError(f"the registry refused the location ({detail})")
 
 
-__all__ = [
-    "DirectoryWriter",
-    "ExportWriter",
-    "Received",
-    "Source",
-    "TarResource",
-    "TarWriter",
-    "TransferError",
-    "ZipWriter",
-    "add_location",
-    "directory_entries",
-    "find_sources",
-    "iter_tar_resources",
-    "located_in",
-    "manifest_name",
-    "open_export",
-    "open_tar",
-    "partial_name",
-    "partial_target",
-    "receive_directory",
-    "receive_file",
-    "receive_source",
-    "write_manifest",
-    "write_resource",
-]
+__all__: list[str] = []

@@ -290,7 +290,7 @@ class Resource:
 
     @property
     def deletable(self) -> bool:
-        return can_remove(self.path)
+        return _can_remove(self.path)
 
     def fetch(self, target: Path) -> Path:
         if target.is_dir():
@@ -312,7 +312,7 @@ def _directories_in(path: Path) -> list[Path]:
     return [path] + [p for p in path.rglob("*") if p.is_dir() and not p.is_symlink()]
 
 
-def can_remove(path: Path) -> bool:
+def _can_remove(path: Path) -> bool:
     """True if this process can remove the resource at path.
 
     Removing anything requires write access to its parent directory. Removing a
@@ -539,16 +539,9 @@ def permission_fixer(cfg: ArchiveConfig, quiet: bool = False):
 
 
 __all__ = [
-    "can_remove",
     "create",
     "get_config",
     "id_stub",
-    "mode_policy",
-    "new_resource_path",
-    "remove",
     "resolve_extension",
     "store_resource",
-    "verify_can_create",
-    "verify_no_symlinks",
-    "verify_permissions",
 ]

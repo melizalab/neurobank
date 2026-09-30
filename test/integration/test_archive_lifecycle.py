@@ -374,7 +374,7 @@ def leftover(archive):
     stub = archive.path / "resources" / "re"
     stub.mkdir(exist_ok=True)
     nbank_archive.permission_fixer(archive.config)(stub)
-    path = stub / transfer.partial_name("res_1.wav")
+    path = stub / transfer._partial_name("res_1.wav")
     path.write_text("half a file")
     return path
 
