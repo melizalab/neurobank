@@ -14,7 +14,6 @@ from test.test_registry import (
     archives_url,
     base_url,
     bulk_url,
-    info_url,
     resource_url,
 )
 
@@ -121,29 +120,9 @@ def test_check_contents_duplicate(tmp_archive, tmp_path):
 
 
 @respx.mock(assert_all_called=True, assert_all_mocked=True)
-def test_registry_resources_in_archive_before_api_1_1(respx_mock):
+def test_registry_resources_in_archive(respx_mock):
     import httpx
 
-    respx_mock.get(resource_url, params={"location": "my-archive"}).respond(
-        json=[
-            {"name": "res_1", "sha1": "abc", "locations": ["my-archive"]},
-            {"name": "res_2", "sha1": None, "locations": ["other", "my-archive"]},
-            # the registry's location filter matches substrings
-            {"name": "res_3", "sha1": None, "locations": ["my-archive-copy"]},
-        ]
-    )
-    with httpx.Client() as session:
-        expected = check.registry_resources_in_archive(
-            session, base_url, "my-archive", api_version=(1, 0)
-        )
-    assert expected == {"res_1": "abc", "res_2": None}
-
-
-@respx.mock(assert_all_called=True, assert_all_mocked=True)
-def test_registry_resources_in_archive_looks_up_version(respx_mock):
-    import httpx
-
-    respx_mock.get(info_url).respond(json={"api_version": "1.1"})
     respx_mock.get(resource_url, params={"archive": "my-archive"}).respond(
         json=[{"name": "res_1", "sha1": "abc", "locations": ["my-archive"]}]
     )
@@ -346,50 +325,26 @@ def test_resources_without_locations(mocked_api):
     assert names == ["res_1", "res_2"]
 
 
-def test_resources_without_locations_unsupported(mocked_api):
-    import httpx
-
-    # an older registry ignores the filter and returns everything
-    mocked_api.get(resource_url, params={"has_location": "false"}).respond(
-        json=[resource_record("res_1", []), resource_record("res_2", ["archive"])]
-    )
-    with httpx.Client() as session, pytest.raises(RuntimeError, match="has_location"):
-        list(check.resources_without_locations(session, base_url))
-
-
 @respx.mock(assert_all_called=False, assert_all_mocked=True)
 def test_archive_has_resources_stops_at_first_match(respx_mock):
     import httpx
 
-    page_2 = respx_mock.get(resource_url, params={"location": "arch", "page": "2"})
-    respx_mock.get(resource_url, params={"location": "arch"}).respond(
+    page_2 = respx_mock.get(resource_url, params={"archive": "arch", "page": "2"})
+    respx_mock.get(resource_url, params={"archive": "arch"}).respond(
         json=[resource_record("res_1", ["arch"])],
-        headers={"Link": f'<{resource_url}?location=arch&page=2>; rel="next"'},
+        headers={"Link": f'<{resource_url}?archive=arch&page=2>; rel="next"'},
     )
     with httpx.Client() as session:
-        assert check.archive_has_resources(session, base_url, "arch", (1, 0))
+        assert check.archive_has_resources(session, base_url, "arch")
     assert not page_2.called
 
 
-def test_archive_has_resources_exact_match(mocked_api):
+def test_archive_has_resources_empty(mocked_api):
     import httpx
 
-    # before API version 1.1, the registry's location filter matches substrings
-    mocked_api.get(resource_url, params={"location": "arch"}).respond(
-        json=[resource_record("res_1", ["arch-copy"])]
-    )
+    mocked_api.get(resource_url, params={"archive": "arch"}).respond(json=[])
     with httpx.Client() as session:
-        assert not check.archive_has_resources(session, base_url, "arch", (1, 0))
-
-
-def test_archive_has_resources_exact_filter(mocked_api):
-    import httpx
-
-    mocked_api.get(resource_url, params={"archive": "arch"}).respond(
-        json=[resource_record("res_1", ["arch"])]
-    )
-    with httpx.Client() as session:
-        assert check.archive_has_resources(session, base_url, "arch", (1, 1))
+        assert not check.archive_has_resources(session, base_url, "arch")
 
 
 def test_check_registry(mocked_api):
@@ -398,7 +353,6 @@ def test_check_registry(mocked_api):
     mocked_api.get(resource_url, params={"has_location": "false"}).respond(
         json=[resource_record("orphan", [])]
     )
-    mocked_api.get(info_url).respond(json={"api_version": "1.1"})
     mocked_api.get(archives_url).respond(json=[{"name": "full"}, {"name": "empty"}])
     mocked_api.get(resource_url, params={"archive": "full"}).respond(
         json=[resource_record("res_1", ["full"])]

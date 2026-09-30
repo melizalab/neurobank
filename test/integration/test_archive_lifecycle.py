@@ -124,21 +124,7 @@ def test_check_unknown_archive_user(cli, archive, caplog):
     assert "unable to check: archive user 'no-such-user-xyzzy'" in caplog.text
 
 
-@pytest.fixture
-def has_location_filter(client, registry, register, archive):
-    """True if the registry supports the has_location filter."""
-    name = register(archive=archive.name)["name"]
-    url, params = nbank_registry.find_resource(
-        registry.url, name=name, has_location="false"
-    )
-    r = client.get(url, params=params)
-    r.raise_for_status()
-    return len(r.json()) == 0
-
-
-def test_check_registry(cli, register, make_archive, has_location_filter, caplog):
-    if not has_location_filter:
-        pytest.skip("registry doesn't support the has_location filter")
+def test_check_registry(cli, register, make_archive, caplog):
     full = make_archive()
     empty = make_archive()
     orphan = register()["name"]
@@ -151,12 +137,10 @@ def test_check_registry(cli, register, make_archive, has_location_filter, caplog
 
 
 def test_check_registry_similar_archive_names(
-    cli, client, registry, register, make_archive, has_location_filter, caplog
+    cli, client, registry, register, make_archive, caplog
 ):
-    if not has_location_filter:
-        pytest.skip("registry doesn't support the has_location filter")
     empty = make_archive()
-    # the registry's location filter matches this archive's resources too
+    # a substring match on the archive name would find this archive's resources
     other = f"{empty.name}-copy"
     url, body = nbank_registry.add_archive(
         registry.url, other, "neurobank", f"/nonexistent/{other}"
@@ -166,13 +150,6 @@ def test_check_registry_similar_archive_names(
     cli("check", "registry")
     assert f" - archive {empty.name}: has no resources" in caplog.text
     assert f" - archive {other}:" not in caplog.text
-
-
-def test_check_registry_unsupported(cli, has_location_filter, caplog):
-    if has_location_filter:
-        pytest.skip("registry supports the has_location filter")
-    assert cli("check", "registry") == 1
-    assert "doesn't support the has_location filter" in caplog.text
 
 
 def failed_checks(caplog):

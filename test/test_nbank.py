@@ -17,7 +17,6 @@ from test.test_registry import (
     base_url,
     bulk_url,
     datatypes_url,
-    info_url,
     resource_url,
 )
 
@@ -515,7 +514,6 @@ def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
     sha1 = util.hash(src)
     archive.store_resource(tmp_archive, src)
     mocked_api.get(resource_url, params={"has_location": "false"}).respond(json=[])
-    info = mocked_api.get(info_url).respond(json={"api_version": "1.1"})
     mocked_api.get(archives_url).respond(
         json=[
             {"name": archive_name, "scheme": "neurobank", "root": str(root)},
@@ -535,9 +533,6 @@ def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
     finally:
         log.handlers[:] = handlers
         log.setLevel(level)
-    # the version is looked up once for the registry check and once for the
-    # archives, not once per archive
-    assert info.call_count == 2
 
 
 def run_main(*argv):
@@ -616,17 +611,8 @@ def test_search_full_hash_is_exact(mocked_api, capsys):
     assert capsys.readouterr().out == "res_1\n"
 
 
-@pytest.mark.parametrize(
-    "info, param",
-    [
-        ({"api_version": "1.1"}, "sha1_contains"),
-        ({"api_version": "1.0"}, "sha1"),
-        ({"name": "django-neurobank"}, "sha1"),
-    ],
-)
-def test_search_partial_hash(mocked_api, capsys, info, param):
-    mocked_api.get(info_url).respond(json=info)
-    mocked_api.get(resource_url, params={param: "89abcdef"}).respond(
+def test_search_partial_hash(mocked_api, capsys):
+    mocked_api.get(resource_url, params={"sha1_contains": "89abcdef"}).respond(
         json=[{"name": "res_1"}]
     )
     run_main("search", "-H", "89abcdef")
