@@ -426,6 +426,12 @@ def main(argv=None):
     )
     pp.set_defaults(func=check_tar)
     pp.add_argument(
+        "-a",
+        "--archive",
+        help="also check that every resource the registry places in this archive "
+        "is in the tar file",
+    )
+    pp.add_argument(
         "tar",
         type=Path,
         help="the tar file: a file, a tape device, or '-' for standard input",
@@ -1354,19 +1360,46 @@ def check_tar(args):
 
     Reads the tar file once, in order, and checks each registered resource
     against its registered hash. Files that aren't registered are reported but
-    aren't errors. Returns 1 if any resource fails its check or the tar file
-    can't be read, 0 otherwise.
+    aren't errors. With --archive, also checks that every resource the registry
+    places in that archive is in the tar file, and reports resources in the tar
+    file that aren't registered to it (as warnings). Returns 1 if any resource
+    fails its check or is missing, or the tar file can't be read, 0 otherwise.
     """
     log.info("registry: %s", args.registry_url)
     log.info("source: %s", args.tar)
     counts = Counter()
     unregistered = []
     read_error = False
+    seen = set()
+    not_located = []
     with httpx.Client(auth=args.auth) as session:
+        expected = {}
+        if args.archive is not None:
+            url, _ = registry.get_archive(args.registry_url, args.archive)
+            if util.query_registry(session, url) is None:
+                log.error("error: no archive '%s' in the registry", args.archive)
+                return 1
+            expected = check.registry_resources_in_archive(
+                session, args.registry_url, args.archive
+            )
+            log.info(
+                "archive: %s (%d resources in the registry)",
+                args.archive,
+                len(expected),
+            )
         lookup = _tar_lookup(session, args.registry_url, unregistered)
         try:
             with transfer.open_tar(args.tar) as tarf, Progress() as progress:
                 for res in transfer.iter_tar_resources(tarf, lookup):
+                    seen.add(res.record["name"])
+                    if (
+                        args.archive is not None
+                        and args.archive not in res.record["locations"]
+                    ):
+                        log.warning(
+                            "  - %s -> not registered to %s", res.name, args.archive
+                        )
+                        not_located.append(res.record["name"])
                     receive = (
                         transfer.receive_directory
                         if res.is_dir
@@ -1396,6 +1429,11 @@ def check_tar(args):
         except (OSError, tarfile.TarError) as err:
             log.error("error: unable to read %s: %s", args.tar, err)
             read_error = True
+    missing = sorted(set(expected) - seen)
+    for name in missing:
+        log.error(
+            "  ✗ %s: registered to %s but MISSING from the tar file", name, args.archive
+        )
     log.info(
         "\nResources checked: %d; failed: %d; no registered hash: %d; "
         "files not in the registry: %d",
@@ -1404,7 +1442,14 @@ def check_tar(args):
         counts["unverified"],
         len(unregistered),
     )
-    return 1 if counts["failed"] or read_error else 0
+    if args.archive is not None:
+        log.info(
+            "Missing from the tar file: %d; not registered to %s: %d",
+            len(missing),
+            args.archive,
+            len(not_located),
+        )
+    return 1 if counts["failed"] or missing or read_error else 0
 
 
 def import_tar(args):

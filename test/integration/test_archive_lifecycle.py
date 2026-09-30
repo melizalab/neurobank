@@ -782,3 +782,54 @@ def test_import_tar_truncated(
     truncated.write_bytes(tar.read_bytes()[:50_000])
     assert cli("archive", "import-tar", str(truncated), str(b.path)) == 1
     assert "unable to read" in caplog.text
+
+
+@pytest.fixture
+def tape(cli, archive, dtype, deposit_file, unique, tmp_path):
+    """A tar file of two resources, registered as a tape archive."""
+    names = [deposit_file(archive, dtype, hash=True) for _ in range(2)]
+    tar = make_tar(tmp_path / "tape.tar", *(stored_path(archive, n) for n in names))
+    tape_name = unique("tape")
+    # archive roots (tape label and file number) must be unique too
+    label = unique("label")
+    assert cli("archive", "register-tar", "-n", tape_name, label, "1", str(tar)) == 0
+    return SimpleNamespace(name=tape_name, tar=tar, resources=names)
+
+
+def test_check_tar_archive_complete(cli, tape, caplog):
+    caplog.clear()
+    assert cli("check", "tar", "--archive", tape.name, str(tape.tar)) == 0
+    assert f"Missing from the tar file: 0; not registered to {tape.name}: 0" in (
+        caplog.text
+    )
+
+
+def test_check_tar_archive_missing(cli, register, tape, caplog):
+    # the registry says this resource is on the tape, but it isn't
+    lost = register(archive=tape.name)["name"]
+    caplog.clear()
+    assert cli("check", "tar", "--archive", tape.name, str(tape.tar)) == 1
+    assert f"  ✗ {lost}: registered to {tape.name} but MISSING" in caplog.text
+    assert "Missing from the tar file: 1" in caplog.text
+
+
+def test_check_tar_archive_not_registered(
+    cli, archive, dtype, deposit_file, tape, tmp_path, caplog
+):
+    extra = deposit_file(archive, dtype, hash=True)
+    tar = make_tar(
+        tmp_path / "more.tar",
+        *(stored_path(archive, n) for n in [*tape.resources, extra]),
+    )
+    caplog.clear()
+    assert cli("check", "tar", "--archive", tape.name, str(tar)) == 0
+    assert (
+        f"{stored_path(archive, extra).name} -> not registered to {tape.name}"
+    ) in caplog.text
+    assert f"not registered to {tape.name}: 1" in caplog.text
+
+
+def test_check_tar_unknown_archive(cli, tape, unique, caplog):
+    missing = unique("tape")
+    assert cli("check", "tar", "--archive", missing, str(tape.tar)) == 1
+    assert f"no archive '{missing}' in the registry" in caplog.text
