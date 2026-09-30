@@ -677,6 +677,85 @@ def test_export_zip_and_directory(
         )
 
 
+def test_copy(
+    cli, registry, dir_archives, dtype, deposit_file, unique, tmp_path, caplog
+):
+    a, b = dir_archives
+    file_name = deposit_file(a, dtype)
+    src = tmp_path / unique("res")
+    (src / "sub").mkdir(parents=True)
+    (src / "sub" / "data").write_text(unique("inside"))
+    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
+    dir_name = item["id"]
+    missing = unique("missing")
+
+    assert cli("copy", "-y", str(b.path), file_name, dir_name) == 0
+    assert core.describe(registry.url, file_name)["locations"] == [a.name]
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, file_name)
+
+    assert cli("copy", str(b.path), file_name, dir_name, missing) == 1
+    assert f"{missing} -> not in the registry" in caplog.text
+    assert "copied: 2" in caplog.text
+    assert (
+        stored_path(b, file_name).read_bytes() == stored_path(a, file_name).read_bytes()
+    )
+    assert util.hash_directory(stored_path(b, dir_name)) == util.hash_directory(
+        stored_path(a, dir_name)
+    )
+    for name in (file_name, dir_name):
+        assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
+    assert cli("check", "archive", str(b.path)) == 0
+
+    caplog.clear()
+    assert cli("copy", str(b.path), file_name, dir_name) == 0
+    assert "already in destination: 2" in caplog.text
+
+
+def test_copy_from_archive(
+    cli, registry, make_archive, dtype, deposit_file, replicate, caplog
+):
+    a, b, empty, dest = (make_archive(require_hash=False) for _ in range(4))
+    name = deposit_file(a, dtype)
+    replicate(name, a, b)
+    assert cli("copy", "-a", empty.name, str(dest.path), name) == 1
+    assert f"not in archive '{empty.name}'" in caplog.text
+    assert cli("copy", "-a", dest.name, str(dest.path), name) == 1
+    assert "the source and destination archives are the same" in caplog.text
+    assert cli("copy", "-a", b.name, str(dest.path), name) == 0
+    assert set(core.describe(registry.url, name)["locations"]) == {
+        a.name,
+        b.name,
+        dest.name,
+    }
+
+
+def test_copy_changed_source(cli, registry, two_archives, dtype, deposit_file, caplog):
+    a, b = two_archives
+    name = deposit_file(a, dtype, hash=True)
+    stored = stored_path(a, name)
+    stored.chmod(0o644)
+    stored.write_text("changed")
+    assert cli("copy", str(b.path), name) == 1
+    assert "don't match" in caplog.text
+    assert core.describe(registry.url, name)["locations"] == [a.name]
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, name)
+
+
+def test_copy_directory_to_archive_without_directories(
+    cli, registry, dir_archives, make_archive, dtype, unique, tmp_path, caplog
+):
+    a, _ = dir_archives
+    b = make_archive(require_hash=False)
+    src = tmp_path / unique("res")
+    src.mkdir()
+    (src / "data").write_text(unique("inside"))
+    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
+    assert cli("copy", str(b.path), item["id"]) == 1
+    assert "doesn't allow directory resources" in caplog.text
+
+
 def changed_tar(archive, name, tmp_path):
     """A tar file holding a changed copy of a resource under its own name."""
     stored = stored_path(archive, name)

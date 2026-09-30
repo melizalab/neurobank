@@ -223,6 +223,8 @@ Managing archives
 
 You can check whether an archive contains all the files it's supposed to by running ``nbank archive check <path_to_archive>``. This command will compare each resource in the archive to its record in the registry and provide a summary of any resources missing from the archive and files that don't have matches in the registry (which might indicate corrupted data).
 
+To copy resources into another archive, run ``nbank copy <path_of_archive> id-1 [id-2 ...]`` on a host that can read both archives. Each resource is checked against its registered hash as it's stored, and the new copy is added to the resource's locations in the registry. Resources the registry already lists in the destination are skipped, so the same list can be run again after a failure. Use ``-f`` to read identifiers from a file, ``-a`` to read only from one archive, and ``-y`` to check the resources without copying them. To move resources, copy them and then remove them from the old archive with ``nbank archive prune``.
+
 Some resources, like raw extracellular data, can be moved to cold storage when they are no longer needed. The Meliza lab uses tape for this because of its long shelf life, low cost, and low environmental impact (no need for power). Moving resources to cold storage is a multi-step process:
 
 - Identify the resources to archive, using lists of identifiers from project directories or ``nbank search``.

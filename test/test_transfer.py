@@ -1050,3 +1050,74 @@ def test_tar_resources_skip_manifest():
         ("res_1", "res_1", b"one"),
         ("manifest", "manifest.json", b""),
     ]
+
+
+@respx.mock(assert_all_mocked=True)
+def test_located_in(respx_mock, tmp_path):
+    fake = FakeBulkLocations(
+        respx_mock,
+        [
+            record("res_1", None, location("dest", tmp_path, "res_1")),
+            record("res_2", None, location("other", tmp_path, "res_2")),
+        ],
+    )
+    with httpx.Client() as session:
+        found = transfer.located_in(
+            session, base_url, ["res_1", "res_2", "res_3"], "dest"
+        )
+    assert found == {"res_1"}
+    assert fake.requests[0]["archive"] == "dest"
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_receive_source_file(tmp_archive, tmp_path, dry_run):
+    path = tmp_path / "res_1.wav"
+    path.write_bytes(b"one")
+    dest = None if dry_run else tmp_archive
+    received = transfer.receive_source(dest, source_for(path, sha1_of(b"one")))
+    assert received.verified
+    if not dry_run:
+        assert received.path.read_bytes() == b"one"
+        assert received.path.name == "res_1.wav"
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_receive_source_directory(tmp_archive, tmp_path, dir_resource, dry_run):
+    sha1 = directory_hash(tmp_path)
+    dest = None if dry_run else tmp_archive
+    received = transfer.receive_source(dest, source_for(dir_resource, sha1))
+    assert received.verified
+    if not dry_run:
+        assert util.hash_directory(received.path) == sha1
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_receive_source_mismatch(tmp_archive, tmp_path, dir_resource, dry_run):
+    dest = None if dry_run else tmp_archive
+    with pytest.raises(transfer.TransferError, match="don't match"):
+        transfer.receive_source(dest, source_for(dir_resource, sha1_of(b"wrong")))
+    assert leftovers(tmp_archive) == []
+
+
+@pytest.mark.skipif(os.getuid() == 0, reason="root can read anything")
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_receive_source_unreadable(tmp_archive, tmp_path, dir_resource, dry_run):
+    (dir_resource / "sub" / "b.bin").chmod(0)
+    dest = None if dry_run else tmp_archive
+    with pytest.raises(transfer.TransferError):
+        transfer.receive_source(dest, source_for(dir_resource, None))
+    assert leftovers(tmp_archive) == []
+
+
+def test_receive_source_refuses_link(tmp_archive, tmp_path, dir_resource):
+    (dir_resource / "link").symlink_to("a.txt")
+    with pytest.raises(transfer.TransferError, match="not a file or directory"):
+        transfer.receive_source(tmp_archive, source_for(dir_resource, None))
+    assert leftovers(tmp_archive) == []
+
+
+def test_receive_directory_needs_policy(tmp_path):
+    cfg = archive.create(tmp_path / "no_dirs", base_url)
+    with pytest.raises(transfer.TransferError, match="doesn't allow directory"):
+        transfer.receive_directory(cfg, "res_1", "res_1", directory_entries(), None)
+    assert list((cfg["path"] / "resources").iterdir()) == []

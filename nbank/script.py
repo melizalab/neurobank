@@ -354,6 +354,33 @@ def main(argv=None):
     )
     pp.add_argument("ids", nargs="*", help="identifier(s) of the resource(s) to export")
 
+    pp = sub.add_parser(
+        "copy",
+        help="copy resources from neurobank archives on this host into another one",
+    )
+    pp.set_defaults(func=copy_resources)
+    pp.add_argument(
+        "-y",
+        "--dry-run",
+        help="check the resources against the registry without copying any files "
+        "or changing the registry",
+        action="store_true",
+    )
+    pp.add_argument(
+        "-a",
+        "--archive",
+        help="only read copies in this archive",
+    )
+    pp.add_argument(
+        "-f",
+        "--from-file",
+        type=Path,
+        help="read identifiers from FILE, one per line ('-' for standard input)",
+        metavar="FILE",
+    )
+    pp.add_argument("dest", type=Path, help="path of the destination neurobank archive")
+    pp.add_argument("ids", nargs="*", help="identifier(s) of the resource(s) to copy")
+
     pp = sub.add_parser("dtype", help="list and add data types")
     ppsub = pp.add_subparsers(title="subcommands")
 
@@ -1655,15 +1682,8 @@ def export_resources(args):
     if args.compress and args.out.suffix.lower() != ".zip":
         log.error("error: --compress only applies to zip files")
         return 1
-    ids = list(args.ids)
-    if args.from_file is not None:
-        try:
-            ids += _read_ids(args.from_file)
-        except OSError as err:
-            log.error("error: unable to read %s: %s", args.from_file, err)
-            return 1
-    if not ids:
-        log.error("error: no identifiers to export")
+    ids = _requested_ids(args)
+    if ids is None:
         return 1
     log.info("registry: %s", args.registry_url)
     n_failed = n_written = total = 0
@@ -1743,6 +1763,117 @@ def export_resources(args):
         log.error("error: unable to export to %s: %s", args.out, err)
         return 1
     summarize()
+    return 1 if n_failed else None
+
+
+def _requested_ids(args) -> list[str] | None:
+    """Returns the ids from the command line and --from-file, or None, after
+    logging why, if there aren't any."""
+    ids = list(args.ids)
+    if args.from_file is not None:
+        try:
+            ids += _read_ids(args.from_file)
+        except OSError as err:
+            log.error("error: unable to read %s: %s", args.from_file, err)
+            return None
+    if not ids:
+        log.error("error: no identifiers given")
+        return None
+    return list(dict.fromkeys(ids))
+
+
+def copy_resources(args):
+    """Copy resources from the neurobank archives on this host into another one.
+
+    Each resource is checked against its registered hash as it's stored, and
+    then added as a location in the destination. Resources that the registry
+    already places in the destination are skipped. With --dry-run, the sources
+    are only read and checked.
+
+    Returns 1 if the copy can't be run or any resource fails to be copied.
+    """
+    ids = _requested_ids(args)
+    if ids is None:
+        return 1
+    try:
+        archive_cfg = archive.get_config(args.dest)
+    except FileNotFoundError:
+        log.error("error: %s is not a valid neurobank archive", args.dest)
+        return 1
+    registry_url = args.registry_url or archive_cfg["registry"]
+    archive_path = archive_cfg["path"]
+    log.info("registry: %s", registry_url)
+    n_failed = n_copied = total = 0
+    with httpx.Client(auth=args.auth) as session:
+        url, params = registry.find_archive_by_path(registry_url, archive_path)
+        archive_info = util.query_registry_first(session, url, params)
+        if archive_info is None:
+            log.error("No archive associated with '%s' in the registry", archive_path)
+            return 1
+        dest_name = archive_info["name"]
+        if args.archive == dest_name:
+            log.error("error: the source and destination archives are the same")
+            return 1
+        log.info("destination archive: %s (%s)", dest_name, archive_path)
+        if args.dry_run:
+            log.info("DRY RUN: checking resources without copying them")
+        already = transfer.located_in(session, registry_url, ids, dest_name)
+        for id in ids:
+            if id in already:
+                log.info("  - %s -> already in the destination archive", id)
+        sources = list(
+            transfer.find_sources(
+                session,
+                registry_url,
+                [id for id in ids if id not in already],
+                archive=args.archive,
+            )
+        )
+        for source in sources:
+            if not source.ok:
+                log.error("  ✗ %s -> %s", source.id, source.error)
+                n_failed += 1
+        dest = None if args.dry_run else archive_cfg
+        with Progress() as progress:
+            for source in sources:
+                if not source.ok:
+                    continue
+                try:
+                    size = None if source.path.is_dir() else source.path.stat().st_size
+                except OSError:
+                    size = None
+                progress.start(source.path.name, size)
+                try:
+                    received = transfer.receive_source(dest, source, progress)
+                    if dest is not None:
+                        transfer.add_location(
+                            session, registry_url, source.id, dest_name, received.path
+                        )
+                except transfer.TransferError as err:
+                    log.error("  ✗ %s -> %s", source.id, err)
+                    n_failed += 1
+                    continue
+                n_copied += 1
+                total += progress.nbytes
+                result = received.path if dest is not None else "OK"
+                note = "" if received.verified else " (no registered hash to check)"
+                log.info(
+                    "  - %s -> %s%s  (%s)",
+                    source.id,
+                    result,
+                    note,
+                    progress.summary(),
+                )
+    text = (
+        f"Resources requested: {len(ids)}; "
+        f"{'checked' if args.dry_run else 'copied'}: {n_copied} "
+        f"({_human_size(total)}); already in destination: {len(already)}; "
+        f"failed: {n_failed}"
+    )
+    if n_failed:
+        log.error("%s (marked with ✗ above)", text)
+    else:
+        log.info("%s", text)
     return 1 if n_failed else None
 
 

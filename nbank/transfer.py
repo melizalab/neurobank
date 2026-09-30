@@ -319,6 +319,8 @@ def receive_directory(
     its path and the number of bytes read so far. Raises TransferError if the
     resource can't be stored.
     """
+    if cfg is not None and not cfg["policy"]["allow_directories"]:
+        raise TransferError("the archive doesn't allow directory resources")
     hasher = util.DirectoryHasher()
     if cfg is None:
         for relpath, source in entries:
@@ -839,6 +841,58 @@ def write_resource(
         raise
 
 
+def located_in(
+    session: Client, registry_url: str, ids: Iterable[str], archive: str
+) -> set[str]:
+    """Returns the ids in ids that the registry has a location for in archive."""
+    ids = list(dict.fromkeys(ids))
+    found = set()
+    for i in range(0, len(ids), util.bulk_batch_size):
+        url, query = registry.get_locations_bulk(
+            registry_url, ids[i : i + util.bulk_batch_size], archive=archive
+        )
+        found.update(r["name"] for r in util.query_registry_bulk(session, url, query))
+    return found
+
+
+def directory_entries(root: Path) -> Iterator[tuple[str, BinaryIO | None]]:
+    """Yields (path, stream) for everything in a directory, as receive_directory
+    takes. Each file is open only until the next entry is asked for."""
+    for path in _walk(root):
+        relpath = path.relative_to(root).as_posix()
+        if stat.S_ISDIR(_stat(path).st_mode):
+            yield relpath, None
+        else:
+            with open(path, "rb") as fp:
+                yield relpath, fp
+
+
+def receive_source(
+    cfg: nbank_archive.ArchiveConfig | None,
+    source: Source,
+    progress: Progress | None = None,
+) -> Received:
+    """Stores a resource found by find_sources in a neurobank archive, checking
+    its hash. See receive_file and receive_directory, which this calls.
+
+    Errors reading the source raise TransferError, as with any other problem
+    with the resource, including in a dry run (cfg None).
+    """
+    if source.path is None:
+        raise TransferError(source.error or "no copy to read")
+    name = source.path.name
+    try:
+        if source.path.is_dir():
+            entries = directory_entries(source.path)
+            return receive_directory(
+                cfg, source.id, name, entries, source.sha1, progress
+            )
+        with open(source.path, "rb") as fp:
+            return receive_file(cfg, source.id, name, fp, source.sha1, progress)
+    except OSError as err:
+        raise TransferError(f"unable to read '{source.path}': {err}") from err
+
+
 # name of the manifest in an export, which tar readers skip
 manifest_name = "manifest.json"
 
@@ -898,8 +952,10 @@ __all__ = [
     "TransferError",
     "ZipWriter",
     "add_location",
+    "directory_entries",
     "find_sources",
     "iter_tar_resources",
+    "located_in",
     "manifest_name",
     "open_export",
     "open_tar",
@@ -907,6 +963,7 @@ __all__ = [
     "partial_target",
     "receive_directory",
     "receive_file",
+    "receive_source",
     "write_manifest",
     "write_resource",
 ]
