@@ -1735,9 +1735,9 @@ def export_resources(args):
                     writer,
                     {
                         "registry": args.registry_url,
-                        "exported": datetime.datetime.now(
-                            datetime.timezone.utc
-                        ).isoformat(timespec="seconds"),
+                        "exported": datetime.datetime.now(datetime.UTC).isoformat(
+                            timespec="seconds"
+                        ),
                         "nbank_version": __version__,
                         "resources": exported,
                     },

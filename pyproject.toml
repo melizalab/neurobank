@@ -19,10 +19,10 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Topic :: Scientific/Engineering",
@@ -31,7 +31,7 @@ classifiers = [
     "Operating System :: MacOS :: MacOS X",
     "Natural Language :: English",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.24",
 ]
@@ -60,7 +60,7 @@ path = "nbank/__init__.py"
 
 [tool.black]
 line-length = 88
-target-version = ["py310"]
+target-version = ["py311"]
 include = '\.pyi?$'
 
 [tool.pytest.ini_options]
@@ -73,7 +73,7 @@ markers = [
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py311"
 extend-exclude = ["attic"]
 
 [tool.ruff.lint]
@@ -93,7 +93,7 @@ ignore = ["E221", "E501", "E701"]
 "__init__.py" = ["F401"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 ignore_missing_imports = true
 strict_optional = true
 check_untyped_defs = true
