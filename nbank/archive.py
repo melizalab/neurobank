@@ -182,18 +182,34 @@ def id_stub(id: str) -> str:
 
 
 def resource_path(
-    cfg: ArchiveConfig | Path | str, id: str, resolve_ext: bool = False
+    cfg: ArchiveConfig | Path | str, name: str, resolve_ext: bool = False
 ) -> Path:
-    """Returns path of the resource specified by id"""
+    """Returns the path in the archive for name, a resource id or a stored file name.
+
+    With resolve_ext, looks up the file actually stored for the resource, which
+    may have an extension (see resolve_extension), and raises FileNotFoundError
+    if there isn't one. To choose the name for a new file, use new_resource_path.
+    """
     try:
         root = cfg["path"]
     except TypeError:
         root = Path(cfg)
-    partial = root / _resource_subdir / id_stub(id) / id
+    partial = root / _resource_subdir / id_stub(name) / name
     if not resolve_ext:
         return partial
     else:
         return resolve_extension(partial)
+
+
+def new_resource_path(cfg: ArchiveConfig, id: str, source_name: str) -> Path:
+    """Returns the path a new resource will be stored at.
+
+    The file name is the id, plus the extension of source_name if the archive's
+    policy keeps extensions. Doesn't check whether the resource is already stored.
+    """
+    if cfg["policy"]["keep_extensions"]:
+        return resource_path(cfg, Path(id).stem + Path(source_name).suffix)
+    return resource_path(cfg, id)
 
 
 def resolve_extension(path: Path) -> Path:
@@ -415,9 +431,6 @@ def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path
     if id is None:
         id = src.name
 
-    if cfg["policy"]["keep_extensions"]:
-        id = Path(id).stem + src.suffix
-
     # check for any file already stored for this resource, whatever its extension
     try:
         existing = resource_path(cfg, Path(id).stem, resolve_ext=True)
@@ -425,19 +438,19 @@ def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path
         pass
     else:
         raise KeyError(f"'{existing}' is already stored for this resource")
-    log.debug("%s -> %s", src, id)
+    tgt_file = new_resource_path(cfg, id, src.name)
+    log.debug("%s -> %s", src, tgt_file.name)
 
     # execute commands in this order to prevent data loss; source file is not
     # renamed unless it's copied
     pfix = permission_fixer(cfg)
-    tgt_dir = cfg["path"] / _resource_subdir / id_stub(id)
+    tgt_dir = tgt_file.parent
     try:
         tgt_dir.mkdir(parents=True)
         pfix(tgt_dir)
     except FileExistsError:
         pass
 
-    tgt_file = tgt_dir / id
     if os.access(src.parent, os.W_OK | os.X_OK):
         shutil.move(src, tgt_file)
     else:
@@ -531,6 +544,7 @@ __all__ = [
     "get_config",
     "id_stub",
     "mode_policy",
+    "new_resource_path",
     "remove",
     "resolve_extension",
     "store_resource",

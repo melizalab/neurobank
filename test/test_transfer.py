@@ -1,12 +1,15 @@
 # -*- mode: python -*-
+import errno
+import io
 import json
 import os
+import stat
 
 import httpx
 import pytest
 import respx
 
-from nbank import archive, transfer, util
+from nbank import archive, check, transfer, util
 from test.test_registry import base_url, bulk_url
 
 bulk_locations_url = bulk_url + "locations/"
@@ -213,3 +216,302 @@ def test_find_keeps_order_and_drops_duplicates(
     assert [s.ok for s in sources] == [True, True, False, True]
     # four distinct ids, two per request
     assert [len(q["names"]) for q in fake.requests] == [2, 2]
+
+
+def sha1_of(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha1(data).hexdigest()
+
+
+def leftovers(cfg):
+    """Temporary files or directories left in the archive."""
+    return [p for p in (cfg["path"] / "resources").rglob(".*.partial")]
+
+
+def test_receive_file(tmp_archive):
+    data = b"the contents"
+    received = transfer.receive_file(
+        tmp_archive, "res_1", "original.wav", io.BytesIO(data), sha1_of(data)
+    )
+    target = tmp_archive["path"] / "resources" / "re" / "res_1.wav"
+    assert received == transfer.Received(target, sha1_of(data), True)
+    assert target.read_bytes() == data
+    assert stat.S_IMODE(target.stat().st_mode) & 0o222 == 0
+    assert leftovers(tmp_archive) == []
+    assert list(check.check_archive_permissions(tmp_archive)) == []
+
+
+def test_receive_file_without_extension(tmp_path):
+    cfg = archive.create(tmp_path / "archive", base_url, keep_extensions=False)
+    received = transfer.receive_file(
+        cfg, "res_1", "original.wav", io.BytesIO(b"x"), None
+    )
+    assert received.path.name == "res_1"
+
+
+def test_receive_file_without_registered_hash(tmp_archive):
+    received = transfer.receive_file(tmp_archive, "res_1", "f", io.BytesIO(b"x"), None)
+    assert received.path.exists()
+    assert not received.verified
+
+
+def test_receive_file_hash_mismatch(tmp_archive):
+    with pytest.raises(transfer.TransferError, match="don't match"):
+        transfer.receive_file(
+            tmp_archive, "res_1", "f.wav", io.BytesIO(b"x"), sha1_of(b"other")
+        )
+    with pytest.raises(FileNotFoundError):
+        archive.resource_path(tmp_archive, "res_1", resolve_ext=True)
+    assert leftovers(tmp_archive) == []
+
+
+def test_receive_file_upper_case_registered_hash(tmp_archive):
+    received = transfer.receive_file(
+        tmp_archive, "res_1", "f", io.BytesIO(b"x"), sha1_of(b"x").upper()
+    )
+    assert received.verified
+
+
+def test_receive_file_already_in_archive(tmp_archive, tmp_path):
+    existing, _ = store(tmp_archive, tmp_path, "res_1.json")
+    with pytest.raises(transfer.TransferError, match="already in the archive"):
+        transfer.receive_file(tmp_archive, "res_1", "f.wav", io.BytesIO(b"x"), None)
+    assert existing.read_text() == "contents"
+    assert leftovers(tmp_archive) == []
+
+
+def test_receive_file_keeps_leftover_partial(tmp_archive):
+    stub = tmp_archive["path"] / "resources" / "re"
+    stub.mkdir()
+    leftover = stub / transfer.partial_name("res_1.wav")
+    leftover.write_text("from a crash")
+    with pytest.raises(transfer.TransferError, match="left over"):
+        transfer.receive_file(tmp_archive, "res_1", "f.wav", io.BytesIO(b"x"), None)
+    assert leftover.read_text() == "from a crash"
+
+
+def test_receive_file_cleans_up_after_read_error(tmp_archive):
+    class Broken(io.RawIOBase):
+        def readable(self):
+            return True
+
+        def readinto(self, buffer):
+            raise OSError("tape read error")
+
+    with pytest.raises(transfer.TransferError, match="tape read error"):
+        transfer.receive_file(tmp_archive, "res_1", "f.wav", Broken(), None)
+    assert leftovers(tmp_archive) == []
+
+
+def test_receive_file_interrupted(tmp_archive):
+    class Interrupted(io.RawIOBase):
+        def readable(self):
+            return True
+
+        def readinto(self, buffer):
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        transfer.receive_file(tmp_archive, "res_1", "f.wav", Interrupted(), None)
+    assert leftovers(tmp_archive) == []
+
+
+def test_receive_file_without_hard_links(tmp_archive, monkeypatch):
+    def no_links(src, dst):
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "link", no_links)
+    received = transfer.receive_file(tmp_archive, "res_1", "f", io.BytesIO(b"x"), None)
+    assert received.path.read_bytes() == b"x"
+    assert leftovers(tmp_archive) == []
+
+
+@pytest.mark.parametrize("hard_links", [True, False])
+def test_receive_file_never_replaces(tmp_archive, monkeypatch, hard_links):
+    # another process stores the resource while this one is writing it
+    target = tmp_archive["path"] / "resources" / "re" / "res_1.wav"
+
+    class Racing(io.RawIOBase):
+        done = False
+
+        def readable(self):
+            return True
+
+        def readinto(self, buffer):
+            if self.done:
+                return 0
+            target.write_text("stored by someone else")
+            buffer[:1] = b"x"
+            self.done = True
+            return 1
+
+    if not hard_links:
+
+        def no_links(src, dst):
+            raise OSError(errno.EPERM, "Operation not permitted")
+
+        monkeypatch.setattr(os, "link", no_links)
+    with pytest.raises(transfer.TransferError, match="appeared"):
+        transfer.receive_file(tmp_archive, "res_1", "f.wav", Racing(), None)
+    assert target.read_text() == "stored by someone else"
+    assert leftovers(tmp_archive) == []
+
+
+def test_receive_directory_never_replaces(tmp_archive):
+    # another process stores the resource while this one is writing it
+    target = tmp_archive["path"] / "resources" / "re" / "res_1"
+
+    def racing_entries():
+        yield ("a.txt", io.BytesIO(b"first"))
+        target.mkdir()
+        (target / "theirs").write_text("stored by someone else")
+        yield ("b.txt", io.BytesIO(b"second"))
+
+    with pytest.raises(transfer.TransferError, match="appeared"):
+        transfer.receive_directory(
+            tmp_archive, "res_1", "res_1", racing_entries(), None
+        )
+    assert [p.name for p in target.iterdir()] == ["theirs"]
+    assert leftovers(tmp_archive) == []
+
+
+def test_receive_flushes_to_disk(tmp_archive, monkeypatch):
+    synced = []
+    real_fsync = os.fsync
+
+    def fsync(fd):
+        synced.append(fd)
+        real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    transfer.receive_file(tmp_archive, "res_1", "f", io.BytesIO(b"x"), None)
+    # the file, then the directory entry for its new name
+    assert len(synced) == 2
+    synced.clear()
+    transfer.receive_directory(tmp_archive, "res_2", "res_2", directory_entries(), None)
+    assert len(synced) == len(directory_contents) + 1
+
+
+def test_receive_file_dry_run(tmp_archive):
+    data = b"the contents"
+    received = transfer.receive_file(
+        None, "res_1", "f.wav", io.BytesIO(data), sha1_of(data)
+    )
+    assert received == transfer.Received(None, sha1_of(data), True)
+    assert not (tmp_archive["path"] / "resources" / "re").exists()
+    with pytest.raises(transfer.TransferError, match="don't match"):
+        transfer.receive_file(None, "res_1", "f.wav", io.BytesIO(data), sha1_of(b"x"))
+
+
+directory_contents = {"a.txt": b"first", "sub/b.bin": b"second", "sub/deeper/c": b""}
+
+
+def directory_entries(contents=directory_contents):
+    entries = [("sub", None)]
+    entries += [(rel, io.BytesIO(data)) for rel, data in contents.items()]
+    return entries
+
+
+def directory_hash(tmp_path, contents=directory_contents):
+    root = tmp_path / "reference"
+    for rel, data in contents.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return util.hash_directory(root)
+
+
+def test_receive_directory(tmp_archive, tmp_path):
+    sha1 = directory_hash(tmp_path)
+    entries = list(reversed(directory_entries()))
+    received = transfer.receive_directory(tmp_archive, "res_1", "res_1", entries, sha1)
+    target = tmp_archive["path"] / "resources" / "re" / "res_1"
+    assert received == transfer.Received(target, sha1, True)
+    assert util.hash_directory(target) == sha1
+    assert (target / "sub" / "b.bin").read_bytes() == b"second"
+    for path in (target, target / "sub", target / "sub" / "b.bin"):
+        assert stat.S_IMODE(path.stat().st_mode) & 0o222 == 0
+    assert leftovers(tmp_archive) == []
+    assert list(check.check_archive_permissions(tmp_archive)) == []
+
+
+def test_receive_directory_hash_mismatch(tmp_archive):
+    with pytest.raises(transfer.TransferError, match="don't match"):
+        transfer.receive_directory(
+            tmp_archive, "res_1", "res_1", directory_entries(), sha1_of(b"x")
+        )
+    assert not (tmp_archive["path"] / "resources" / "re" / "res_1").exists()
+    assert leftovers(tmp_archive) == []
+
+
+@pytest.mark.parametrize(
+    "relpath", ["../escape", "/etc/passwd", "sub/../../escape", "", "."]
+)
+def test_receive_directory_refuses_paths_outside(tmp_archive, tmp_path, relpath):
+    entries = [*directory_entries(), (relpath, io.BytesIO(b"x"))]
+    with pytest.raises(transfer.TransferError, match="not a path inside"):
+        transfer.receive_directory(tmp_archive, "res_1", "res_1", entries, None)
+    assert leftovers(tmp_archive) == []
+    assert not (tmp_archive["path"] / "resources" / "escape").exists()
+    with pytest.raises(transfer.TransferError, match="not a path inside"):
+        transfer.receive_directory(None, "res_1", "res_1", entries, None)
+
+
+def test_receive_directory_refuses_repeated_path(tmp_archive):
+    entries = [*directory_entries(), ("a.txt", io.BytesIO(b"again"))]
+    with pytest.raises(transfer.TransferError, match="more than once"):
+        transfer.receive_directory(tmp_archive, "res_1", "res_1", entries, None)
+    assert leftovers(tmp_archive) == []
+
+
+def test_receive_directory_dry_run(tmp_archive, tmp_path):
+    sha1 = directory_hash(tmp_path)
+    received = transfer.receive_directory(
+        None, "res_1", "res_1", directory_entries(), sha1
+    )
+    assert received == transfer.Received(None, sha1, True)
+    assert not (tmp_archive["path"] / "resources" / "re").exists()
+
+
+add_location_url = f"{base_url}resources/res_1/locations/"
+
+
+def stored_file(cfg):
+    return transfer.receive_file(cfg, "res_1", "f", io.BytesIO(b"x"), None).path
+
+
+@respx.mock(assert_all_mocked=True)
+def test_add_location(respx_mock, tmp_archive):
+    path = stored_file(tmp_archive)
+    route = respx_mock.post(add_location_url).respond(201, json={})
+    with httpx.Client() as session:
+        transfer.add_location(session, base_url, "res_1", "arch", path)
+    assert json.loads(route.calls.last.request.content) == {"archive_name": "arch"}
+    assert path.exists()
+
+
+@respx.mock(assert_all_mocked=True)
+def test_add_location_refused_removes_copy(respx_mock, tmp_archive):
+    path = stored_file(tmp_archive)
+    respx_mock.post(add_location_url).respond(
+        400, json={"archive_name": ["no such archive 'arch'"]}
+    )
+    with (
+        httpx.Client() as session,
+        pytest.raises(transfer.TransferError, match="no such archive"),
+    ):
+        transfer.add_location(session, base_url, "res_1", "arch", path)
+    assert not path.exists()
+
+
+@respx.mock(assert_all_mocked=True)
+def test_add_location_unreachable_keeps_copy(respx_mock, tmp_archive):
+    path = stored_file(tmp_archive)
+    respx_mock.post(add_location_url).mock(side_effect=httpx.ConnectError("refused"))
+    with (
+        httpx.Client() as session,
+        pytest.raises(transfer.TransferError, match="nbank check archive"),
+    ):
+        transfer.add_location(session, base_url, "res_1", "arch", path)
+    assert path.exists()
