@@ -197,8 +197,8 @@ You may be able to add datatypes to the registry with:
 
    nbank [-a user:pass] [-r registry-url] dtype add dtype-name content-type
 
-Retrieving resources
---------------------
+Accessing archived resources
+----------------------------
 
 The ``deposit`` command moves resource files to the archive under the
 ``resources`` directory, so you can always manually locate your files
@@ -216,7 +216,7 @@ perform the following operations:
 -  ``nbank search [options] query``: searches the database for resources that match ``query``. The default is to search by identifier, but you can also search by hash, dtype, archive, or any metadata fields. The default is to return only the identifiers of the resources, but you can use the ``-j`` flag to output json instead, which is useful if you want to distribute the metadata with the archive.
 -  ``nbank verify [options] files``: computes a SHA1 hash for each file and searches the registry for a match. Running this is a good idea before starting an experiment, as you’ll be able to tell if any of your stimulus files have changed. It’s also useful if the same identifier is used in more than one domain or if you have a data file that was inadvertently renamed.
 -  ``nbank modify [-k key=value] id``: update the metadata for ``id``. Multiple ``-k`` flags can be used.
--  ``nbank export [options] out id-1 [id-2 ...]``: copy resources from the archives on this host to a tar file (``out.tar``), a zip file (``out.zip``), or a directory (anything else), for example to share them or put them in cold storage. Each resource is checked against its registered hash as it's copied, and any that don't match or can't be read are reported and left out. Use ``-f`` to read identifiers from a file, ``-a`` to read only from one archive, and ``--compress`` to compress the members of a zip file (they're stored as-is by default, since most data files don't compress well).
+-  ``nbank export [options] out id-1 [id-2 ...]``: copy resources from the archives on this host to a tar file (``out.tar``), a zip file (``out.zip``), or a directory (anything else), for example to share them or put them in cold storage. Don't use this for local copies (use ``nbank locate -L`` to create symbolic links instead). Each resource is checked against its registered hash as it's copied, and any that don't match or can't be read are reported and left out. Use ``-f`` to read identifiers from a file, ``-a`` to read only from one archive, and ``--compress`` to compress the members of a zip file (they're stored as-is by default, since most data files don't compress well). Add ``--manifest`` to include the registry records of the exported resources (identifier, path, hash, datatype, metadata, and when and by whom they were created) as ``manifest.json``.
 
 Managing archives
 -----------------

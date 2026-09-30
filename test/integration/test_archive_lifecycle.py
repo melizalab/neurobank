@@ -627,8 +627,18 @@ def test_export_and_import(
     dir_name = item["id"]
     missing = unique("missing")
     tar = tmp_path / "export.tar"
-    assert cli("export", str(tar), file_name, dir_name, missing) == 1
+    assert cli("export", "--manifest", str(tar), file_name, dir_name, missing) == 1
     assert f"{missing} -> not in the registry" in caplog.text
+    with tarfile.open(tar) as t:
+        assert t.getnames()[-1] == "manifest.json"
+        manifest = json.load(t.extractfile("manifest.json"))
+    assert manifest["registry"] == registry.url
+    entries = {e["name"]: e for e in manifest["resources"]}
+    assert set(entries) == {file_name, dir_name}
+    assert entries[file_name]["dtype"] == dtype
+    assert entries[dir_name]["path"] == dir_name
+    assert "locations" not in entries[file_name]
+    assert cli("check", "tar", str(tar)) == 0
 
     assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
     assert (

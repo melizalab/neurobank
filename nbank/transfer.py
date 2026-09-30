@@ -18,6 +18,7 @@ Copyright (C) 2026 Dan Meliza <dan@meliza.org>
 import errno
 import hashlib
 import io
+import json
 import os
 import stat
 import tarfile
@@ -464,8 +465,8 @@ def iter_tar_resources(
     receive_directory takes, made from the members that follow it with its name
     as a prefix; a stream of None is a subdirectory. Each resource's data has to
     be read before asking for the next; data that isn't read is skipped.
-    Directories that aren't registered resources, and members that aren't files
-    or directories, are ignored. A directory resource containing links or
+    Directories that aren't registered resources, members that aren't files
+    or directories, and a manifest.json at the top level are ignored. A directory resource containing links or
     other special members raises TransferError from its entries, after they've
     been read to the end of the resource.
     """
@@ -497,7 +498,9 @@ def iter_tar_resources(
 
     while (member := next_member()) is not None:
         path = PurePosixPath(member.name)
-        if not (member.isdir() or member.isreg()):
+        if not (member.isdir() or member.isreg()) or path == PurePosixPath(
+            manifest_name
+        ):
             continue
         record = lookup(path.stem, member)
         if record is None:
@@ -604,6 +607,10 @@ class ExportWriter:
     def add_file(self, name: str, st: os.stat_result, reader: _HashingReader) -> None:
         raise NotImplementedError
 
+    def add_bytes(self, name: str, data: bytes) -> None:
+        """Adds a file that isn't a resource, such as a manifest."""
+        raise NotImplementedError
+
     def commit(self) -> None:
         pass
 
@@ -638,6 +645,13 @@ class TarWriter(ExportWriter):
         info = self._info(name, st)
         info.size = st.st_size
         self.tar.addfile(info, reader)
+
+    def add_bytes(self, name: str, data: bytes) -> None:
+        info = tarfile.TarInfo(name)
+        info.mode = 0o644
+        info.mtime = int(time.time())
+        info.size = len(data)
+        self.tar.addfile(info, io.BytesIO(data))
 
     def abort(self) -> None:
         # tarfile can't remove members, so this uses its internals
@@ -675,6 +689,12 @@ class ZipWriter(ExportWriter):
         info.file_size = st.st_size
         with self.zf.open(info, "w", force_zip64=True) as dest:
             reader.copy_to(dest)
+
+    def add_bytes(self, name: str, data: bytes) -> None:
+        info = zipfile.ZipInfo(name, time.localtime()[:6])
+        info.external_attr = (stat.S_IFREG | 0o644) << 16
+        info.compress_type = self.zf.compression
+        self.zf.writestr(info, data)
 
     def abort(self) -> None:
         # zipfile can't remove members, so this uses its internals
@@ -718,6 +738,12 @@ class DirectoryWriter(ExportWriter):
             fp.flush()
             os.fsync(fp.fileno())
         os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
+
+    def add_bytes(self, name: str, data: bytes) -> None:
+        with open(self._path(name), "xb") as fp:
+            fp.write(data)
+            fp.flush()
+            os.fsync(fp.fileno())
 
     def commit(self) -> None:
         _move_into_place(self._partial, self._target)
@@ -813,6 +839,26 @@ def write_resource(
         raise
 
 
+# name of the manifest in an export, which tar readers skip
+manifest_name = "manifest.json"
+
+
+def write_manifest(writer: ExportWriter, manifest: dict) -> None:
+    """Writes manifest to an export as JSON, under manifest_name.
+
+    Raises TransferError if a directory export already has a manifest, and
+    OSError if the export can't be written.
+    """
+    data = json.dumps(manifest, indent=2).encode("utf-8") + b"\n"
+    writer.begin(manifest_name)
+    try:
+        writer.add_bytes(manifest_name, data)
+        writer.commit()
+    except BaseException:
+        writer.abort()
+        raise
+
+
 def add_location(
     session: Client, registry_url: str, id: str, archive_name: str, path: Path
 ) -> None:
@@ -854,11 +900,13 @@ __all__ = [
     "add_location",
     "find_sources",
     "iter_tar_resources",
+    "manifest_name",
     "open_export",
     "open_tar",
     "partial_name",
     "partial_target",
     "receive_directory",
     "receive_file",
+    "write_manifest",
     "write_resource",
 ]

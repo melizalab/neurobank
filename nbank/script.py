@@ -16,7 +16,7 @@ import tarfile
 import time
 from collections import Counter, deque
 from netrc import NetrcParseError
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlunparse
 
 import httpx
@@ -338,6 +338,12 @@ def main(argv=None):
     pp.add_argument(
         "--compress",
         help="compress the members of a zip file (default is to store them as-is)",
+        action="store_true",
+    )
+    pp.add_argument(
+        "--manifest",
+        help=f"add the registry records of the exported resources, as "
+        f"{transfer.manifest_name}",
         action="store_true",
     )
     pp.add_argument(
@@ -1152,6 +1158,9 @@ def register_tar(args):
         last_path = None
         for tarinfo in tarf:
             path = Path(tarinfo.name)
+            if PurePosixPath(tarinfo.name) == PurePosixPath(transfer.manifest_name):
+                log.info("  - %s -> manifest, skipping", tarinfo.name)
+                continue
             # don't check contents in directories that are resources
             if last_path and path.is_relative_to(last_path):
                 log.debug("  - %s -> in a directory resource, skipping", tarinfo.name)
@@ -1591,13 +1600,55 @@ def _read_ids(path: Path) -> list[str]:
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
+def _manifest_records(args, sources) -> dict | None:
+    """Returns the registry records of sources for a manifest, by id.
+
+    Returns None, after logging why, if a manifest can't be written.
+    """
+    for source in sources:
+        if source.path.name == transfer.manifest_name:
+            log.error(
+                "error: '%s' is stored as %s, so there can't be a manifest",
+                source.id,
+                transfer.manifest_name,
+            )
+            return None
+    existing = args.out / transfer.manifest_name
+    if args.out.is_dir() and (existing.exists() or existing.is_symlink()):
+        log.error("error: '%s' already exists", existing)
+        return None
+    ids = [source.id for source in sources]
+    records = {}
+    with httpx.Client(auth=args.auth) as session:
+        for i in range(0, len(ids), util.bulk_batch_size):
+            url, query = registry.get_resource_bulk(
+                args.registry_url, ids[i : i + util.bulk_batch_size]
+            )
+            for record in util.query_registry_bulk(session, url, query):
+                records[record["name"]] = record
+    return records
+
+
+def _manifest_entry(source, record: dict | None) -> dict:
+    """Returns the manifest entry for an exported resource.
+
+    Locations are left out, as they describe where the resource is stored here.
+    """
+    entry = {"name": source.id, "path": source.path.name, "sha1": source.sha1}
+    if record is not None:
+        entry.update((k, v) for k, v in record.items() if k != "locations")
+    return entry
+
+
 def export_resources(args):
     """Write resources from the neurobank archives on this host to a tar file, zip
     file, or directory.
 
     Each resource is checked against its registered hash as it's read, and one
     that doesn't match or can't be read is left out. A tar file can then be
-    written to tape and registered with `archive register-tar`.
+    written to tape and registered with `archive register-tar`. With
+    --manifest, the registry records of the resources that were exported are
+    written last, as manifest.json.
 
     Returns 1 if the export can't be run or any resource is left out.
     """
@@ -1640,6 +1691,11 @@ def export_resources(args):
     if not sources:
         summarize()
         return 1
+    if args.manifest:
+        records = _manifest_records(args, sources)
+        if records is None:
+            return 1
+        exported = []
     log.info("writing %d resource(s) to %s", len(sources), args.out)
     try:
         with (
@@ -1660,6 +1716,8 @@ def export_resources(args):
                     continue
                 n_written += 1
                 total += progress.nbytes
+                if args.manifest:
+                    exported.append(_manifest_entry(source, records.get(source.id)))
                 note = "" if verified else " (no registered hash to check)"
                 log.info(
                     "  - %s -> %s%s  (%s)",
@@ -1668,7 +1726,20 @@ def export_resources(args):
                     note,
                     progress.summary(),
                 )
-    except (OSError, ValueError) as err:
+            if args.manifest:
+                transfer.write_manifest(
+                    writer,
+                    {
+                        "registry": args.registry_url,
+                        "exported": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat(timespec="seconds"),
+                        "nbank_version": __version__,
+                        "resources": exported,
+                    },
+                )
+                log.info("  - %s", transfer.manifest_name)
+    except (OSError, ValueError, transfer.TransferError) as err:
         log.error("error: unable to export to %s: %s", args.out, err)
         return 1
     summarize()

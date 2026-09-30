@@ -1016,3 +1016,37 @@ def test_export_reports_progress(tmp_path, export_format, dir_resource):
             progress=lambda path, n: calls.append((path, n)),
         )
     assert calls == [("a.txt", 5), ("sub/b.bin", 6)]
+
+
+def test_export_manifest(tmp_path, export_format):
+    path = tmp_path / "res_1"
+    path.write_bytes(b"one")
+    manifest = {"resources": [{"name": "res_1", "path": "res_1"}]}
+    out = tmp_path / export_names[export_format]
+    with transfer.open_export(out) as writer:
+        transfer.write_resource(writer, source_for(path, None))
+        transfer.write_manifest(writer, manifest)
+    contents = export_contents(out)
+    if export_format != "dir":
+        # written last, once the resources are known
+        assert [name for name, _ in contents] == ["res_1", "manifest.json"]
+    assert json.loads(dict(contents)["manifest.json"]) == manifest
+
+
+def test_export_manifest_never_replaces(tmp_path):
+    out = tmp_path / "export"
+    out.mkdir()
+    (out / "manifest.json").write_text("already here")
+    with transfer.open_export(out) as writer:
+        with pytest.raises(transfer.TransferError, match="already exists"):
+            transfer.write_manifest(writer, {})
+    assert (out / "manifest.json").read_text() == "already here"
+
+
+def test_tar_resources_skip_manifest():
+    # even if 'manifest' is a registered id
+    members = [("res_1", b"one"), ("manifest.json", b"{}"), ("sub/manifest.json", b"")]
+    assert read_tar(members, {"res_1", "manifest"}) == [
+        ("res_1", "res_1", b"one"),
+        ("manifest", "manifest.json", b""),
+    ]

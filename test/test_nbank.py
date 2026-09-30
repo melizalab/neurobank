@@ -776,6 +776,13 @@ def exportable(respx_mock, tmp_path):
         archive.store_resource(cfg, src, id=name)
         records.append(record(name, sha1, location("arch", cfg["path"], name)))
     FakeBulkLocations(respx_mock, records)
+    full = [
+        {**r, "dtype": "txt", "metadata": {"n": i}, "locations": ["arch"]}
+        for i, r in enumerate(records)
+    ]
+    respx_mock.post(bulk_url + "resources/").respond(
+        200, content="".join(json.dumps(r) + "\n" for r in full).encode()
+    )
     return cfg
 
 
@@ -889,3 +896,69 @@ def test_export_refuses_compressed_tar(exportable, tmp_path, caplog):
     assert run_main("export", str(out), "res_1") == 1
     assert not out.exists()
     assert "use .tar or .zip" in caplog.text
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_manifest(exportable, tmp_path):
+    import zipfile
+
+    path = archive.resource_path(exportable, "res_2", resolve_ext=True)
+    path.chmod(0o644)
+    path.write_text("changed")
+    out = tmp_path / "export.zip"
+    assert run_main("export", "--manifest", str(out), "res_1", "res_2") == 1
+    with zipfile.ZipFile(out) as zf:
+        assert zf.namelist() == ["res_1.txt", "manifest.json"]
+        manifest = json.loads(zf.read("manifest.json"))
+    assert manifest["registry"] == base_url
+    [entry] = manifest["resources"]
+    assert entry["name"] == "res_1"
+    assert entry["path"] == "res_1.txt"
+    assert entry["metadata"] == {"n": 0}
+    assert entry["dtype"] == "txt"
+    assert "locations" not in entry
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_manifest_name_taken(respx_mock, tmp_path, caplog):
+    from test.test_transfer import FakeBulkLocations, location, record
+
+    cfg = archive.create(tmp_path / "archive", base_url)
+    src = tmp_path / "manifest.json"
+    src.write_text("a resource called manifest")
+    archive.store_resource(cfg, src, id="manifest")
+    FakeBulkLocations(
+        respx_mock,
+        [record("manifest", None, location("arch", cfg["path"], "manifest"))],
+    )
+    out = tmp_path / "export.tar"
+    assert run_main("export", "--manifest", str(out), "manifest") == 1
+    assert "there can't be a manifest" in caplog.text
+    assert not out.exists()
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_manifest_already_in_directory(exportable, tmp_path, caplog):
+    out = tmp_path / "exported"
+    out.mkdir()
+    (out / "manifest.json").write_text("already here")
+    assert run_main("export", "--manifest", str(out), "res_1") == 1
+    assert "already exists" in caplog.text
+    assert sorted(p.name for p in out.iterdir()) == ["manifest.json"]
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+def test_register_tar_skips_manifest(respx_mock, tmp_path, caplog):
+    import tarfile
+
+    looked_up = respx_mock.get(resource_url + "manifest/").respond(
+        200, json={"name": "manifest", "locations": []}
+    )
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}")
+    tar = tmp_path / "export.tar"
+    with tarfile.open(tar, "w") as t:
+        t.add(manifest, arcname="manifest.json")
+    run_main("archive", "register-tar", "-y", "tape01", "1", str(tar))
+    assert not looked_up.called
+    assert "manifest.json -> manifest, skipping" in caplog.text
