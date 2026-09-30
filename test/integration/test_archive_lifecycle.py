@@ -2,6 +2,7 @@
 """Tests of the commands that keep an archive and the registry consistent."""
 
 import json
+import re
 import shutil
 import tarfile
 from types import SimpleNamespace
@@ -709,6 +710,11 @@ def test_check_tar(cli, two_archives, dtype, deposit_file, unique, tmp_path, cap
     )
     assert cli("check", "tar", str(tar)) == 0
     assert f"{stored_path(a, hashed).name} -> OK" in caplog.text
+    size = stored_path(a, hashed).stat().st_size
+    assert re.search(
+        rf"{re.escape(stored_path(a, hashed).name)} -> OK  \({size} B, [\d.]+ .?B/s\)",
+        caplog.text,
+    )
     assert (
         f"{stored_path(b, unhashed).name} -> OK (no registered hash to check)"
         in caplog.text

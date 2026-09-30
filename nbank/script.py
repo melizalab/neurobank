@@ -14,7 +14,7 @@ import logging
 import sys
 import tarfile
 import time
-from collections import Counter
+from collections import Counter, deque
 from netrc import NetrcParseError
 from pathlib import Path
 from urllib.parse import urlunparse
@@ -1249,12 +1249,15 @@ class Progress:
 
     Call start() for each resource, then pass the object as the progress
     callback of the transfer functions. Writes to stderr only if it's a
-    terminal, and updates at most every `interval` seconds. Used as a context
-    manager, it clears its line before any message from the nbank logger, so
-    the two don't overwrite each other.
+    terminal, and updates at most every `interval` seconds. The rate shown is
+    over about the last `window` seconds, so a stall shows up as it happens.
+    summary() gives the size and average rate of the resource once it's read,
+    on a terminal or not. Used as a context manager, it clears its line before
+    any message from the nbank logger, so the two don't overwrite each other.
     """
 
     interval = 0.2
+    window = 5.0
 
     def __init__(self, stream=None):
         self.stream = stream if stream is not None else sys.stderr
@@ -1267,26 +1270,39 @@ class Progress:
         self.label = label
         self.total = total
         self._path = None
-        self._last = None
+        self._read: dict[str, int] = {}
+        self._started = time.monotonic()
+
+    def summary(self) -> str:
+        """Returns the size of the resource read so far and its average rate."""
+        nbytes = sum(self._read.values())
+        elapsed = time.monotonic() - self._started
+        if elapsed <= 0:
+            return _human_size(nbytes)
+        return f"{_human_size(nbytes)}, {_human_size(nbytes / elapsed)}/s"
 
     def __call__(self, path: str, nbytes: int) -> None:
+        self._read[path] = nbytes
         if not self.enabled:
             return
         now = time.monotonic()
         if path != self._path:
             self._path = path
-            self._started = now
-            self._last = None
-        if self._last is not None and now - self._last < self.interval:
+            self._samples = deque()
+        if self._samples and now - self._samples[-1][0] < self.interval:
             return
-        self._last = now
+        self._samples.append((now, nbytes))
+        # keep the newest sample that's at least a window old, as the baseline
+        while len(self._samples) > 1 and now - self._samples[1][0] >= self.window:
+            self._samples.popleft()
         whole = path == self.label
         text = f"  {self.label if whole else f'{self.label}/{path}'}  "
         text += _human_size(nbytes)
         if whole and self.total:
             text += f" / {_human_size(self.total)} ({100 * nbytes / self.total:.0f}%)"
-        if now > self._started:
-            text += f"  {_human_size(nbytes / (now - self._started))}/s"
+        then, then_bytes = self._samples[0]
+        if now > then:
+            text += f"  {_human_size((nbytes - then_bytes) / (now - then))}/s"
         self.clear()
         self.stream.write(text)
         self.stream.flush()
@@ -1371,11 +1387,12 @@ def check_tar(args):
                         counts["failed"] += 1
                         continue
                     if received.verified:
-                        log.info("  - %s -> OK", res.name)
+                        note = ""
                         counts["ok"] += 1
                     else:
-                        log.info("  - %s -> OK (no registered hash to check)", res.name)
+                        note = " (no registered hash to check)"
                         counts["unverified"] += 1
+                    log.info("  - %s -> OK%s  (%s)", res.name, note, progress.summary())
         except (OSError, tarfile.TarError) as err:
             log.error("error: unable to read %s: %s", args.tar, err)
             read_error = True
@@ -1471,7 +1488,13 @@ def import_tar(args):
                             if received.verified
                             else " (no registered hash to check)"
                         )
-                        log.info("  - %s -> %s%s", res.name, result, note)
+                        log.info(
+                            "  - %s -> %s%s  (%s)",
+                            res.name,
+                            result,
+                            note,
+                            progress.summary(),
+                        )
         except (OSError, tarfile.TarError) as err:
             log.error("error: unable to read %s: %s", args.tar, err)
             n_failed += 1

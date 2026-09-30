@@ -665,33 +665,77 @@ def test_progress_not_a_terminal():
     assert stream.getvalue() == ""
 
 
-def test_progress_line(monkeypatch):
-    clock = iter([0.0, 1.0, 1.1, 2.0])
-    monkeypatch.setattr(script.time, "monotonic", lambda: next(clock))
+class FakeClock:
+    now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    fake = FakeClock()
+    monkeypatch.setattr(script.time, "monotonic", fake)
+    return fake
+
+
+def shown(stream):
+    return [line for line in stream.getvalue().split("\r") if line.strip()]
+
+
+def test_progress_line(clock):
     stream = FakeTerminal()
     progress = script.Progress(stream)
     progress.start("res_1.wav", 4_000_000_000)
-    progress("res_1.wav", 1_000_000)  # t=0: first report is shown
-    progress("res_1.wav", 1_000_000_000)  # t=1: shown
-    progress("res_1.wav", 1_100_000_000)  # t=1.1: too soon, skipped
-    progress("res_1.wav", 2_000_000_000)  # t=2: shown
-    lines = [line for line in stream.getvalue().split("\r") if line.strip()]
-    assert lines == [
-        "  res_1.wav  1.0 MB / 4.0 GB (0%)",
+    for clock.now, nbytes in (
+        (0.0, 0),  # the first report is shown
+        (1.0, 1_000_000_000),
+        (1.1, 1_100_000_000),  # too soon after the last, skipped
+        (2.0, 2_000_000_000),
+    ):
+        progress("res_1.wav", nbytes)
+    assert shown(stream) == [
+        "  res_1.wav  0 B / 4.0 GB (0%)",
         "  res_1.wav  1.0 GB / 4.0 GB (25%)  1.0 GB/s",
         "  res_1.wav  2.0 GB / 4.0 GB (50%)  1.0 GB/s",
     ]
 
 
-def test_progress_directory_entries(monkeypatch):
-    clock = iter([0.0, 2.0])
-    monkeypatch.setattr(script.time, "monotonic", lambda: next(clock))
+def test_progress_rate_shows_stalls(clock):
+    stream = FakeTerminal()
+    progress = script.Progress(stream)
+    progress.start("res_1.wav", None)
+    for clock.now, nbytes in ((0.0, 0), (1.0, 1_000_000_000)):
+        progress("res_1.wav", nbytes)
+    # nothing arrives for 9 seconds
+    clock.now = 10.0
+    progress("res_1.wav", 1_010_000_000)
+    assert shown(stream)[-1].endswith("  1.1 MB/s")
+    # full speed again; once the stall is more than a window ago, it's forgotten
+    clock.now = 15.2
+    progress("res_1.wav", 1_610_000_000)
+    assert shown(stream)[-1].endswith("  115.4 MB/s")
+
+
+def test_progress_directory_entries(clock):
     stream = FakeTerminal()
     progress = script.Progress(stream)
     progress.start("res_2", None)
     progress("sub/a", 500)
+    clock.now = 2.0
     progress("sub/a", 2_000_500)
-    assert stream.getvalue().split("\r")[-1] == "  res_2/sub/a  2.0 MB  1.0 MB/s"
+    assert shown(stream)[-1] == "  res_2/sub/a  2.0 MB  1.0 MB/s"
+
+
+@pytest.mark.parametrize("terminal", [True, False])
+def test_progress_summary(clock, terminal):
+    progress = script.Progress(FakeTerminal() if terminal else io.StringIO())
+    progress.start("res_2", None)
+    progress("sub/a", 1_000_000_000)
+    progress("sub/b", 500_000_000)
+    progress("sub/b", 1_000_000_000)
+    clock.now = 2.0
+    assert progress.summary() == "2.0 GB, 1.0 GB/s"
 
 
 def test_progress_clears_line_before_log_messages():
