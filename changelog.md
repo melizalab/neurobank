@@ -50,6 +50,9 @@ These may break scripts or code that calls nbank:
   isn't writable.
 - `archive.iter_resources` is deprecated; use `check.check_archive_contents`.
 - nbank versions before 0.12 can't deposit into shared archives as root.
+- With django-neurobank 0.11, searching for part of a hash (`nbank search -H`, or
+  `core.search(sha1=...)`) finds nothing in nbank versions before 0.12, which send
+  it as an exact match. Full hashes work in every version.
 
 ### Fixed
 

@@ -39,11 +39,11 @@ def test_can_read_config(tmp_archive):
 
 
 def test_archive_umask(tmp_archive):
-    # cfgtmpl = json.loads(archive._nbank_json)
     root = tmp_archive["path"]
     mode = (root / archive._resource_subdir).stat().st_mode
     assert tmp_archive["policy"]["access"]["umask"] == archive._default_umask
-    assert mode & 0o7000 == 0o2000
+    # setgid only on Linux; BSD and macOS always inherit the directory's group
+    assert mode & 0o7000 == archive._setgid
     assert mode & archive._default_umask == 0
 
 
