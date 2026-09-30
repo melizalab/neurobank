@@ -1141,9 +1141,12 @@ class FailingFile(io.RawIOBase):
     def readinto(self, buffer):
         if self.nbytes >= self.limit:
             raise OSError(errno.EIO, "Input/output error")
-        n = self._fp.readinto(memoryview(buffer)[: self.limit - self.nbytes])
-        self.nbytes += n
-        return n
+        # copied, not read through a view, which PyPy may not release before
+        # the caller resizes buffer
+        data = self._fp.read(min(len(buffer), self.limit - self.nbytes))
+        buffer[: len(data)] = data
+        self.nbytes += len(data)
+        return len(data)
 
     def close(self):
         self._fp.close()
@@ -1168,4 +1171,23 @@ def test_receive_passes_on_tar_read_error(failing_tar, tmp_archive, dry_run):
         with transfer.open_tar(path) as tar:
             res = next(transfer.iter_tar_resources(tar, lambda id, m: {"name": id}))
             transfer.receive_file(dest, "res_1", res.name, res.data, None)
+    assert leftovers(tmp_archive) == []
+
+
+def test_receive_directory_where_renaming_needs_write_access(tmp_archive, monkeypatch):
+    # macOS refuses to rename a directory the caller can't write to; Linux doesn't
+    real_rename = os.rename
+
+    def rename(src, dst, *args, **kwargs):
+        if os.path.isdir(src) and not os.access(src, os.W_OK):
+            raise PermissionError(errno.EACCES, "Permission denied", str(src))
+        return real_rename(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(os, "rename", rename)
+    received = transfer.receive_directory(
+        tmp_archive, "res_1", "res_1", directory_entries(), None
+    )
+    assert (received.path / "sub" / "b.bin").read_bytes() == b"second"
+    # read-only once it's in place
+    assert stat.S_IMODE(received.path.stat().st_mode) & 0o222 == 0
     assert leftovers(tmp_archive) == []

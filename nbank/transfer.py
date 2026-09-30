@@ -348,9 +348,10 @@ def receive_directory(
         # contents first, so read-only directories can still be entered
         for path in sorted(partial.rglob("*"), reverse=True):
             pfix(path)
-        pfix(partial)
+        # after the move, as macOS can't rename a directory that isn't writable
         _move_into_place(partial, target)
         created = False
+        pfix(target)
         return Received(target, digest, verified)
     except TarReadError:
         raise
