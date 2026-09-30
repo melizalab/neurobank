@@ -16,6 +16,7 @@ Copyright (C) 2026 Dan Meliza <dan@meliza.org>
 """
 
 import errno
+import hashlib
 import io
 import os
 import stat
@@ -514,6 +515,139 @@ def iter_tar_resources(
             pass
 
 
+class _HashingReader:
+    """Reads a file of known size for tarfile, hashing what's read.
+
+    Raises TransferError for read errors and for a file that ends early, so
+    they can be told apart from errors writing the tar file.
+    """
+
+    def __init__(self, path: Path, size: int, progress: Callable[[int], None] | None):
+        self.path = path
+        self.size = size
+        self.progress = progress
+        self.nbytes = 0
+        self._hash = hashlib.sha1()
+        try:
+            self._fp = open(path, "rb")
+        except OSError as err:
+            raise TransferError(f"unable to read '{path}': {err}") from err
+
+    def read(self, size: int = -1) -> bytes:
+        try:
+            data = self._fp.read(size)
+        except OSError as err:
+            raise TransferError(f"unable to read '{self.path}': {err}") from err
+        if len(data) < size and self.nbytes + len(data) < self.size:
+            raise TransferError(f"'{self.path}' got shorter while it was being read")
+        self._hash.update(data)
+        self.nbytes += len(data)
+        if self.progress is not None:
+            self.progress(self.nbytes)
+        return data
+
+    def hexdigest(self) -> str:
+        return self._hash.hexdigest()
+
+    def close(self) -> None:
+        self._fp.close()
+
+
+def _tarinfo(path: Path, name: str) -> tuple[tarfile.TarInfo, bool]:
+    """Returns a tar header for path, stored as name, and whether it's a directory.
+
+    Raises TransferError for anything other than a file or directory.
+    """
+    st = path.lstat()
+    info = tarfile.TarInfo(name)
+    info.mode = stat.S_IMODE(st.st_mode)
+    info.mtime = int(st.st_mtime)
+    info.uid, info.gid = st.st_uid, st.st_gid
+    if stat.S_ISDIR(st.st_mode):
+        info.type = tarfile.DIRTYPE
+        return info, True
+    if not stat.S_ISREG(st.st_mode):
+        raise TransferError(f"'{path}' is not a file or directory")
+    info.size = st.st_size
+    return info, False
+
+
+def _add_file(
+    tar: tarfile.TarFile,
+    path: Path,
+    info: tarfile.TarInfo,
+    progress: Callable[[int], None] | None,
+) -> str:
+    """Adds a file to tar, returning the hash of what was written."""
+    reader = _HashingReader(path, info.size, progress)
+    try:
+        tar.addfile(info, reader)
+    finally:
+        reader.close()
+    return reader.hexdigest()
+
+
+def _walk(root: Path) -> Iterator[Path]:
+    """Yields everything under root in sorted order, each directory before its contents."""
+    for child in sorted(root.iterdir()):
+        yield child
+        if child.is_dir() and not child.is_symlink():
+            yield from _walk(child)
+
+
+def write_tar_resource(
+    tar: tarfile.TarFile, source: Source, progress: Progress | None = None
+) -> bool:
+    """Adds a resource to a tar file, checking its hash as it's read.
+
+    The resource is stored under the name of its file in the archive, and a
+    directory resource as that directory and everything in it, which is how
+    iter_tar_resources and `nbank archive register-tar` expect to find it. If
+    the hash doesn't match, or the resource can't be read, the tar file is cut
+    back to where it was before, so it only ever holds verified resources; tar
+    must be open for writing to a regular file (mode 'w' or 'x', not 'w|').
+    progress is called as each file is read with its path (the resource's name,
+    or a path inside a directory resource) and the number of bytes read so far.
+
+    Returns True if the hash was checked, and False if the registry has no hash
+    to check against. Raises TransferError if the resource can't be read or
+    doesn't match, and OSError if the tar file can't be written.
+    """
+    if source.path is None:
+        raise TransferError(source.error or "no copy to read")
+    name = source.path.name
+    offset, n_members = tar.offset, len(tar.members)
+    try:
+        info, is_dir = _tarinfo(source.path, name)
+        if not is_dir:
+            digest = _add_file(tar, source.path, info, _progress_for(progress, name))
+        else:
+            tar.addfile(info)
+            hasher = util.DirectoryHasher()
+            for path in _walk(source.path):
+                relpath = path.relative_to(source.path).as_posix()
+                info, is_dir = _tarinfo(path, f"{name}/{relpath}")
+                if is_dir:
+                    tar.addfile(info)
+                else:
+                    progress_fn = _progress_for(progress, relpath)
+                    hasher.add(relpath, _add_file(tar, path, info, progress_fn))
+            digest = hasher.hexdigest()
+        return _check_hash(digest, source.sha1)
+    except BaseException as err:
+        # tarfile doesn't support removing members, so this uses its internals
+        tar.fileobj.seek(offset)
+        tar.fileobj.truncate()
+        tar.offset = offset
+        del tar.members[n_members:]
+        if isinstance(err, OSError) and err.filename is not None:
+            # stat or listing the source failed; writing the tar has no filename
+            raise TransferError(
+                f"unable to read '{err.filename}': {err.strerror}"
+            ) from err
+        raise
+
+
 def add_location(
     session: Client, registry_url: str, id: str, archive_name: str, path: Path
 ) -> None:
@@ -556,4 +690,5 @@ __all__ = [
     "partial_target",
     "receive_directory",
     "receive_file",
+    "write_tar_resource",
 ]

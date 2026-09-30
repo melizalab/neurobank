@@ -317,6 +317,26 @@ def main(argv=None):
         help="identifier(s) of the resource(s) to fetch",
     )
 
+    pp = sub.add_parser(
+        "export",
+        help="write resources from neurobank archives on this host to a tar file",
+    )
+    pp.set_defaults(func=export_resources)
+    pp.add_argument(
+        "-a",
+        "--archive",
+        help="only read copies in this archive",
+    )
+    pp.add_argument(
+        "-f",
+        "--from-file",
+        type=Path,
+        help="read identifiers from FILE, one per line ('-' for standard input)",
+        metavar="FILE",
+    )
+    pp.add_argument("tar", type=Path, help="the tar file to create")
+    pp.add_argument("ids", nargs="*", help="identifier(s) of the resource(s) to export")
+
     pp = sub.add_parser("dtype", help="list and add data types")
     ppsub = pp.add_subparsers(title="subcommands")
 
@@ -1279,9 +1299,14 @@ class Progress:
         self._read: dict[str, int] = {}
         self._started = time.monotonic()
 
+    @property
+    def nbytes(self) -> int:
+        """Returns the number of bytes of the resource read so far."""
+        return sum(self._read.values())
+
     def summary(self) -> str:
         """Returns the size of the resource read so far and its average rate."""
-        nbytes = sum(self._read.values())
+        nbytes = self.nbytes
         elapsed = time.monotonic() - self._started
         if elapsed <= 0:
             return _human_size(nbytes)
@@ -1543,6 +1568,94 @@ def import_tar(args):
         except (OSError, tarfile.TarError) as err:
             log.error("error: unable to read %s: %s", args.tar, err)
             n_failed += 1
+    return 1 if n_failed else None
+
+
+def _read_ids(path: Path) -> list[str]:
+    """Returns the identifiers in a file, one per line, or in stdin if path is '-'."""
+    if str(path) == "-":
+        text = sys.stdin.read()
+    else:
+        text = path.read_text()
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def export_resources(args):
+    """Write resources from the neurobank archives on this host to a new tar file.
+
+    Each resource is checked against its registered hash as it's read, and one
+    that doesn't match or can't be read is left out of the tar file. The tar
+    file can then be written to tape and registered with `archive register-tar`.
+
+    Returns 1 if the export can't be run or any resource is left out.
+    """
+    ids = list(args.ids)
+    if args.from_file is not None:
+        try:
+            ids += _read_ids(args.from_file)
+        except OSError as err:
+            log.error("error: unable to read %s: %s", args.from_file, err)
+            return 1
+    if not ids:
+        log.error("error: no identifiers to export")
+        return 1
+    log.info("registry: %s", args.registry_url)
+    n_failed = n_written = total = 0
+    with httpx.Client(auth=args.auth) as session:
+        sources = list(
+            transfer.find_sources(session, args.registry_url, ids, archive=args.archive)
+        )
+    n_requested = len(sources)
+
+    def summarize():
+        text = (
+            f"Resources requested: {n_requested}; "
+            f"exported: {n_written} ({_human_size(total)}); failed: {n_failed}"
+        )
+        if n_failed:
+            log.error("%s (marked with ✗ above)", text)
+        else:
+            log.info("%s", text)
+
+    for source in sources:
+        if not source.ok:
+            log.error("  ✗ %s -> %s", source.id, source.error)
+            n_failed += 1
+    sources = [source for source in sources if source.ok]
+    if not sources:
+        summarize()
+        return 1
+    try:
+        tarf = tarfile.open(args.tar, "x", copybufsize=transfer.tape_read_size)
+    except OSError as err:
+        log.error("error: unable to create %s: %s", args.tar, err)
+        return 1
+    log.info("writing %d resource(s) to %s", len(sources), args.tar)
+    try:
+        with tarf, Progress() as progress:
+            for source in sources:
+                size = None if source.path.is_dir() else source.path.stat().st_size
+                progress.start(source.path.name, size)
+                try:
+                    verified = transfer.write_tar_resource(tarf, source, progress)
+                except transfer.TransferError as err:
+                    log.error("  ✗ %s -> %s", source.id, err)
+                    n_failed += 1
+                    continue
+                n_written += 1
+                total += progress.nbytes
+                note = "" if verified else " (no registered hash to check)"
+                log.info(
+                    "  - %s -> %s%s  (%s)",
+                    source.id,
+                    source.path.name,
+                    note,
+                    progress.summary(),
+                )
+    except OSError as err:
+        log.error("error: unable to write %s: %s", args.tar, err)
+        return 1
+    summarize()
     return 1 if n_failed else None
 
 

@@ -753,3 +753,150 @@ def test_open_tar_file(tmp_path):
         items = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
         results = [(res.name, res.data.read()) for res in items]
     assert results == tape_members
+
+
+def source_for(path, sha1):
+    return transfer.Source(path.name, sha1=sha1, path=path, archive="arch")
+
+
+def write_tar(tmp_path, *sources):
+    """Writes sources to a new tar file; returns its path and a result per source."""
+    out = tmp_path / "export.tar"
+    results = []
+    with tarfile.open(out, "x") as tar:
+        for source in sources:
+            try:
+                results.append(transfer.write_tar_resource(tar, source))
+            except transfer.TransferError as err:
+                results.append(err)
+    return out, results
+
+
+def tar_contents(path):
+    """Returns the (name, contents) of each member of a tar file; None for directories."""
+    with tarfile.open(path) as tar:
+        return [
+            (m.name, tar.extractfile(m).read() if m.isreg() else None)
+            for m in tar.getmembers()
+        ]
+
+
+@pytest.fixture
+def dir_resource(tmp_path):
+    root = tmp_path / "src" / "res_d"
+    for rel, data in directory_contents.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return root
+
+
+def test_write_tar_file_resource(tmp_path):
+    path = tmp_path / "res_1.wav"
+    path.write_bytes(b"one")
+    out, results = write_tar(tmp_path, source_for(path, sha1_of(b"one")))
+    assert results == [True]
+    assert tar_contents(out) == [("res_1.wav", b"one")]
+
+
+def test_write_tar_directory_resource(tmp_path, dir_resource):
+    sha1 = directory_hash(tmp_path)
+    out, results = write_tar(tmp_path, source_for(dir_resource, sha1))
+    assert results == [True]
+    assert tar_contents(out) == [
+        ("res_d", None),
+        ("res_d/a.txt", b"first"),
+        ("res_d/sub", None),
+        ("res_d/sub/b.bin", b"second"),
+        ("res_d/sub/deeper", None),
+        ("res_d/sub/deeper/c", b""),
+    ]
+    # and reads back as the same resource, with the same hash
+    with transfer.open_tar(out) as tar:
+        res = next(transfer.iter_tar_resources(tar, lambda id, m: {"name": id}))
+        received = transfer.receive_directory(None, "res_d", res.name, res.data, sha1)
+    assert received.verified
+
+
+def test_write_tar_without_registered_hash(tmp_path):
+    path = tmp_path / "res_1"
+    path.write_bytes(b"one")
+    out, results = write_tar(tmp_path, source_for(path, None))
+    assert results == [False]
+    assert tar_contents(out) == [("res_1", b"one")]
+
+
+def test_write_tar_leaves_out_mismatched_file(tmp_path):
+    paths = [tmp_path / name for name in ("res_1", "res_2", "res_3")]
+    for path in paths:
+        path.write_bytes(path.name.encode())
+    out, results = write_tar(
+        tmp_path,
+        source_for(paths[0], sha1_of(b"res_1")),
+        source_for(paths[1], sha1_of(b"something else")),
+        source_for(paths[2], sha1_of(b"res_3")),
+    )
+    assert results[0] is True and results[2] is True
+    assert "don't match" in str(results[1])
+    assert tar_contents(out) == [("res_1", b"res_1"), ("res_3", b"res_3")]
+
+
+def test_write_tar_leaves_out_mismatched_directory(tmp_path, dir_resource):
+    last = tmp_path / "res_2"
+    last.write_bytes(b"two")
+    out, results = write_tar(
+        tmp_path,
+        source_for(dir_resource, sha1_of(b"wrong")),
+        source_for(last, sha1_of(b"two")),
+    )
+    assert isinstance(results[0], transfer.TransferError)
+    assert tar_contents(out) == [("res_2", b"two")]
+
+
+def test_write_tar_refuses_link_in_directory(tmp_path, dir_resource):
+    (dir_resource / "link").symlink_to("a.txt")
+    out, results = write_tar(tmp_path, source_for(dir_resource, None))
+    assert "not a file or directory" in str(results[0])
+    assert tar_contents(out) == []
+    # nothing is left of the resource after the end of the tar file
+    assert out.stat().st_size == tarfile.RECORDSIZE
+
+
+@pytest.mark.skipif(os.getuid() == 0, reason="root can read anything")
+def test_write_tar_unreadable_file(tmp_path, dir_resource):
+    (dir_resource / "sub" / "b.bin").chmod(0)
+    out, results = write_tar(tmp_path, source_for(dir_resource, None))
+    assert "unable to read" in str(results[0])
+    assert tar_contents(out) == []
+
+
+def test_write_tar_file_that_shrinks(tmp_path, monkeypatch):
+    path = tmp_path / "res_1"
+    path.write_bytes(b"x" * 100)
+    tarinfo = transfer._tarinfo
+
+    def grown(path, name):
+        info, is_dir = tarinfo(path, name)
+        info.size += 10
+        return info, is_dir
+
+    monkeypatch.setattr(transfer, "_tarinfo", grown)
+    out, results = write_tar(tmp_path, source_for(path, None))
+    assert "got shorter" in str(results[0])
+    assert tar_contents(out) == []
+
+
+def test_write_tar_without_a_copy(tmp_path):
+    _, results = write_tar(tmp_path, transfer.Source("res_1", error="no copy"))
+    assert str(results[0]) == "no copy"
+
+
+def test_write_tar_reports_progress(tmp_path, dir_resource):
+    calls = []
+    with tarfile.open(tmp_path / "export.tar", "x") as tar:
+        transfer.write_tar_resource(
+            tar,
+            source_for(dir_resource, None),
+            progress=lambda path, n: calls.append((path, n)),
+        )
+    assert calls == [("a.txt", 5), ("sub/b.bin", 6)]

@@ -760,3 +760,88 @@ def test_progress_clears_line_before_log_messages():
 def test_check_tar_missing_file(tmp_path, caplog):
     assert run_main("check", "tar", str(tmp_path / "missing.tar")) == 1
     assert "unable to read" in caplog.text
+
+
+@pytest.fixture
+def exportable(respx_mock, tmp_path):
+    """Two resources in a local archive, registered with their hashes."""
+    from test.test_transfer import FakeBulkLocations, location, record
+
+    cfg = archive.create(tmp_path / "archive", base_url)
+    records = []
+    for name in ("res_1", "res_2"):
+        src = tmp_path / f"{name}.txt"
+        src.write_text(f"contents of {name}")
+        sha1 = util.hash(src)
+        archive.store_resource(cfg, src, id=name)
+        records.append(record(name, sha1, location("arch", cfg["path"], name)))
+    FakeBulkLocations(respx_mock, records)
+    return cfg
+
+
+def tar_names(path):
+    import tarfile
+
+    with tarfile.open(path) as tar:
+        return tar.getnames()
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export(exportable, tmp_path, caplog):
+    out = tmp_path / "export.tar"
+    assert run_main("export", str(out), "res_1", "res_2") is None
+    assert tar_names(out) == ["res_1.txt", "res_2.txt"]
+    assert "Resources requested: 2; exported: 2 (" in caplog.text
+    assert "failed: 0" in caplog.text
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_ids_from_file(exportable, tmp_path):
+    ids = tmp_path / "ids"
+    ids.write_text("res_2\n\nres_1\n")
+    out = tmp_path / "export.tar"
+    assert run_main("export", "-f", str(ids), str(out)) is None
+    assert tar_names(out) == ["res_2.txt", "res_1.txt"]
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_reports_missing(exportable, tmp_path, caplog):
+    out = tmp_path / "export.tar"
+    assert run_main("export", str(out), "res_1", "missing") == 1
+    assert tar_names(out) == ["res_1.txt"]
+    assert "missing -> not in the registry" in caplog.text
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_leaves_out_changed_file(exportable, tmp_path, caplog):
+    path = archive.resource_path(exportable, "res_1", resolve_ext=True)
+    path.chmod(0o644)
+    path.write_text("changed")
+    out = tmp_path / "export.tar"
+    assert run_main("export", str(out), "res_1", "res_2") == 1
+    assert tar_names(out) == ["res_2.txt"]
+    assert "res_1 -> contents don't match" in caplog.text
+    assert "exported: 1 (" in caplog.text
+    assert "failed: 1 (marked with ✗ above)" in caplog.text
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_never_overwrites(exportable, tmp_path, caplog):
+    out = tmp_path / "export.tar"
+    out.write_text("already here")
+    assert run_main("export", str(out), "res_1") == 1
+    assert out.read_text() == "already here"
+    assert "unable to create" in caplog.text
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_nothing_found(exportable, tmp_path, caplog):
+    out = tmp_path / "export.tar"
+    assert run_main("export", str(out), "missing", "missing", "gone") == 1
+    assert "Resources requested: 2; exported: 0 (0 B); failed: 2" in caplog.text
+    assert not out.exists()
+
+
+def test_export_no_ids(tmp_path, caplog):
+    assert run_main("export", str(tmp_path / "export.tar")) == 1
+    assert "no identifiers" in caplog.text

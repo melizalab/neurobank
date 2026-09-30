@@ -615,6 +615,31 @@ def test_import_tar_directory_resource(
     assert cli("check", "archive", str(b.path)) == 0
 
 
+def test_export_and_import(
+    cli, registry, dir_archives, dtype, deposit_file, unique, tmp_path, caplog
+):
+    a, b = dir_archives
+    file_name = deposit_file(a, dtype, contents=unique("file contents"))
+    src = tmp_path / unique("res")
+    (src / "sub").mkdir(parents=True)
+    (src / "sub" / "data").write_text(unique("inside"))
+    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
+    dir_name = item["id"]
+    missing = unique("missing")
+    tar = tmp_path / "export.tar"
+    assert cli("export", str(tar), file_name, dir_name, missing) == 1
+    assert f"{missing} -> not in the registry" in caplog.text
+
+    assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
+    assert (
+        stored_path(b, file_name).read_bytes() == stored_path(a, file_name).read_bytes()
+    )
+    assert (stored_path(b, dir_name) / "sub" / "data").read_text().startswith("inside")
+    for name in (file_name, dir_name):
+        assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
+    assert cli("check", "archive", str(b.path)) == 0
+
+
 def changed_tar(archive, name, tmp_path):
     """A tar file holding a changed copy of a resource under its own name."""
     stored = stored_path(archive, name)
