@@ -814,11 +814,15 @@ def _check_archive(
     counts = Counter()
     n_errors = 0
     unregistered = []  # looked up in the registry after the main pass
+    incomplete = []  # left over from transfers; may be deleted after the main pass
     for finding in check.check_archive_contents(
         archive_path, expected, check_hash=not args.no_hash
     ):
         if finding.status == check.Status.MISSING_FROM_REGISTRY:
             unregistered.append(finding)
+            continue
+        if finding.status == check.Status.INCOMPLETE:
+            incomplete.append(finding)
             continue
         counts[finding.status] += 1
         n_errors += not finding.ok
@@ -836,12 +840,26 @@ def _check_archive(
             log.info(
                 " - %s : %s - %s", finding.resource, finding.path, finding.status.value
             )
+    prompting = args.fix and _interactive()
+    if args.fix and (unregistered or incomplete) and not prompting:
+        log.info("not an interactive terminal, so not asking how to resolve problems")
+    n_deleted = 0
+    for finding in incomplete:
+        log.error(" - %s - %s (%s)", finding.path, finding.status.value, finding.detail)
+        if prompting and _ask("   [d]elete, [s]kip? ", "ds") == "d":
+            try:
+                archive.remove(finding.path)
+            except OSError as err:
+                log.error("   unable to delete %s: %s", finding.path, err)
+            else:
+                log.info("   - deleted %s", finding.path)
+                n_deleted += 1
+                continue
+        counts[finding.status] += 1
+        n_errors += 1
     n_resolved = 0
     if unregistered:
         log.info("looking up files that aren't in this archive's registry records:")
-    prompting = args.fix and _interactive()
-    if args.fix and unregistered and not prompting:
-        log.info(" - not an interactive terminal, so not asking how to resolve them")
     for finding in check.recheck_unregistered(session, registry_url, unregistered):
         if finding.status == check.Status.MISSING_FROM_REGISTRY:
             log.error(
@@ -869,7 +887,8 @@ def _check_archive(
         counts[check.Status.MISPLACED]
         + counts[check.Status.DUPLICATE]
         + counts[check.Status.UNEXPECTED]
-        + counts[check.Status.SYMLINK],
+        + counts[check.Status.SYMLINK]
+        + counts[check.Status.INCOMPLETE],
         perm_counts.total() - n_fixed,
         counts[check.Status.REGISTERED_ELSEWHERE]
         + counts[check.Status.UNVERIFIED_ELSEWHERE]
@@ -878,6 +897,7 @@ def _check_archive(
     if args.fix:
         log.info("Permission errors fixed: %d", n_fixed)
         log.info("Files registered elsewhere resolved: %d", n_resolved)
+        log.info("Incomplete transfers deleted: %d", n_deleted)
     n_errors += perm_counts.total() - n_fixed
     return n_errors == 0 and not unable_to_check
 

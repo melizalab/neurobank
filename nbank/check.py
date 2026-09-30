@@ -16,7 +16,7 @@ from pathlib import Path
 
 from httpx import Client
 
-from nbank import archive, registry, util
+from nbank import archive, registry, transfer, util
 
 
 class Status(enum.Enum):
@@ -36,6 +36,7 @@ class Status(enum.Enum):
     DUPLICATE = "DUPLICATE file for the same resource"
     UNEXPECTED = "UNEXPECTED file outside a resource subdirectory"
     SYMLINK = "SYMBOLIC link"
+    INCOMPLETE = "INCOMPLETE transfer (safe to delete)"
     WRONG_OWNER = "WRONG owner"
     WRONG_GROUP = "WRONG group"
     WRONG_MODE = "WRONG permissions"
@@ -188,8 +189,31 @@ def _scan_archive(archive_path: Path) -> tuple[dict[str, list[Path]], list[Findi
             )
             continue
         for resource_file in contents:
+            target = transfer.partial_target(resource_file.name)
+            if target is not None:
+                problems.append(
+                    Finding(
+                        Status.INCOMPLETE,
+                        Path(target).stem,
+                        resource_file,
+                        f"last modified {_age(resource_file)} ago",
+                    )
+                )
+                continue
             files[resource_file.stem].append(resource_file)
     return files, problems
+
+
+def _age(path: Path) -> str:
+    """Returns how long ago path was last modified, roughly, e.g. '3 days'."""
+    import time
+
+    seconds = max(0, time.time() - path.lstat().st_mtime)
+    for unit, size in (("day", 86400), ("hour", 3600), ("minute", 60)):
+        if seconds >= size:
+            count = int(seconds // size)
+            return f"{count} {unit}{'s' if count != 1 else ''}"
+    return "less than a minute"
 
 
 def _symlinks_in(path: Path) -> Iterator[Path]:
@@ -363,7 +387,8 @@ def _archive_tree(base: Path) -> Iterator[tuple[Path, str | None]]:
 
     The resource name is None for the resources directory and its
     subdirectories. Directories are listed only after they have been yielded.
-    Symbolic links and files directly under base are skipped.
+    Symbolic links, files directly under base, and files left over from
+    unfinished transfers are skipped.
     """
     yield base, None
     for stub_dir in _listdir(base):
@@ -371,8 +396,11 @@ def _archive_tree(base: Path) -> Iterator[tuple[Path, str | None]]:
             continue
         yield stub_dir, None
         for resource_path in _listdir(stub_dir):
-            if not resource_path.is_symlink():
-                yield from _resource_tree(resource_path, resource_path.stem)
+            if resource_path.is_symlink():
+                continue
+            if transfer.partial_target(resource_path.name) is not None:
+                continue
+            yield from _resource_tree(resource_path, resource_path.stem)
 
 
 def check_archive_permissions(
@@ -384,8 +412,9 @@ def check_archive_permissions(
     user and group and have the mode bits given by archive.mode_policy. If the
     policy's user is null (a shared archive, where users deposit under their
     own accounts), ownership by user isn't checked.
-    Symbolic links and files directly under resources/ are skipped, because
-    check_archive_contents reports them. Directories that can't be listed are
+    Symbolic links, files directly under resources/, and files left over from
+    unfinished transfers are skipped, because check_archive_contents reports
+    them. Directories that can't be listed are
     skipped too.
 
     If fix is True, tries to fix each problem with archive.permission_fixer

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from nbank import archive as nbank_archive
-from nbank import check, core, script
+from nbank import check, core, script, transfer
 from nbank import registry as nbank_registry
 
 
@@ -388,6 +388,43 @@ def test_check_fix_not_interactive(cli, copied, monkeypatch, caplog):
     assert cli("check", "archive", "--fix", str(copied.archive.path)) == 1
     assert "not an interactive terminal" in caplog.text
     assert copied.path.exists()
+
+
+@pytest.fixture
+def leftover(archive):
+    """A file left over from an unfinished transfer into archive."""
+    stub = archive.path / "resources" / "re"
+    stub.mkdir(exist_ok=True)
+    nbank_archive.permission_fixer(archive.config)(stub)
+    path = stub / transfer.partial_name("res_1.wav")
+    path.write_text("half a file")
+    return path
+
+
+def test_check_incomplete_transfer(cli, archive, leftover, caplog):
+    assert cli("check", "archive", str(archive.path)) == 1
+    assert f" - {leftover} - INCOMPLETE transfer (safe to delete)" in caplog.text
+    assert "permission errors: 0" in caplog.text
+    assert "MISSING from the registry" not in caplog.text
+
+
+@pytest.mark.parametrize("answer, deleted", [("d", True), ("s", False)])
+def test_check_fix_incomplete_transfer(
+    cli, archive, leftover, answers, answer, deleted
+):
+    prompts = answers(answer)
+    status = cli("check", "archive", "--fix", str(archive.path))
+    assert status == (0 if deleted else 1)
+    assert prompts == ["   [d]elete, [s]kip? "]
+    assert leftover.exists() != deleted
+
+
+def test_check_fix_incomplete_transfer_not_interactive(
+    cli, archive, leftover, monkeypatch
+):
+    monkeypatch.setattr(script, "_interactive", lambda: False)
+    assert cli("check", "archive", "--fix", str(archive.path)) == 1
+    assert leftover.exists()
 
 
 def test_check_resource_without_hash(cli, archive, dtype, deposit_file, caplog):

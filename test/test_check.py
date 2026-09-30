@@ -3,6 +3,7 @@ import grp
 import json
 import os
 import pwd
+import time
 
 import pytest
 import respx
@@ -487,3 +488,32 @@ def test_recheck_unregistered_nothing_to_look_up(mocked_api, tmp_archive, tmp_pa
     findings = [check.Finding(Status.MISSING_FROM_ARCHIVE, "res_1")]
     with httpx.Client() as session:
         assert list(check.recheck_unregistered(session, base_url, findings)) == findings
+
+
+def test_check_contents_incomplete_transfers(tmp_archive, tmp_path):
+    path, sha1 = store(tmp_archive, tmp_path, "res_1")
+    stub = path.parent
+    leftover_file = stub / ".res_2.wav.partial"
+    leftover_file.write_text("half")
+    leftover_dir = stub / ".res_3.partial"
+    (leftover_dir / "sub").mkdir(parents=True)
+    three_days_ago = time.time() - 3 * 86400 - 60
+    os.utime(leftover_file, (three_days_ago, three_days_ago))
+    findings = list(check.check_archive_contents(tmp_archive["path"], {"res_1": sha1}))
+    incomplete = {f.path: f for f in findings if f.status == Status.INCOMPLETE}
+    assert set(incomplete) == {leftover_file, leftover_dir}
+    assert incomplete[leftover_file].resource == "res_2"
+    assert incomplete[leftover_file].detail == "last modified 3 days ago"
+    assert incomplete[leftover_dir].resource == "res_3"
+    assert not any(f.ok for f in incomplete.values())
+    assert statuses(f for f in findings if f.status != Status.INCOMPLETE) == {
+        "res_1": Status.OK
+    }
+
+
+def test_check_permissions_skips_incomplete_transfers(tmp_archive, tmp_path):
+    path, _ = store(tmp_archive, tmp_path, "res_1")
+    leftover = path.parent / ".res_2.partial"
+    leftover.write_text("half")
+    leftover.chmod(0o666)
+    assert permission_findings(tmp_archive) == []

@@ -139,6 +139,17 @@ def partial_name(name: str) -> str:
     return f".{name}.partial"
 
 
+def partial_target(name: str) -> str | None:
+    """Returns the name a temporary transfer file was going to be given, or None.
+
+    This is the inverse of partial_name, for recognizing files left over from
+    transfers that didn't finish.
+    """
+    if name.startswith(".") and name.endswith(".partial") and len(name) > 9:
+        return name[1 : -len(".partial")]
+    return None
+
+
 def _check_hash(sha1: str, registered: str | None) -> bool:
     """Returns whether sha1 was checked; raises TransferError if it doesn't match."""
     if registered is None:
@@ -372,6 +383,7 @@ __all__ = [
     "add_location",
     "find_sources",
     "partial_name",
+    "partial_target",
     "receive_directory",
     "receive_file",
 ]

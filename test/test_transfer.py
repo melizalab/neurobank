@@ -515,3 +515,18 @@ def test_add_location_unreachable_keeps_copy(respx_mock, tmp_archive):
     ):
         transfer.add_location(session, base_url, "res_1", "arch", path)
     assert path.exists()
+
+
+@pytest.mark.parametrize(
+    "name, target",
+    [
+        (transfer.partial_name("res_1.wav"), "res_1.wav"),
+        (transfer.partial_name("res_1"), "res_1"),
+        ("res_1.partial", None),
+        (".res_1.wav", None),
+        (".partial", None),
+        ("..partial", None),
+    ],
+)
+def test_partial_target(name, target):
+    assert transfer.partial_target(name) == target
