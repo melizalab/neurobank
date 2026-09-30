@@ -1121,3 +1121,51 @@ def test_receive_directory_needs_policy(tmp_path):
     with pytest.raises(transfer.TransferError, match="doesn't allow directory"):
         transfer.receive_directory(cfg, "res_1", "res_1", directory_entries(), None)
     assert list((cfg["path"] / "resources").iterdir()) == []
+
+
+class FailingFile(io.RawIOBase):
+    """A file that fails with EIO once limit bytes have been read, like a tape
+    with a damaged stretch."""
+
+    def __init__(self, path, limit):
+        self._fp = io.FileIO(path, "rb")
+        self.limit = limit
+        self.nbytes = 0
+
+    def fileno(self):
+        return self._fp.fileno()
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        if self.nbytes >= self.limit:
+            raise OSError(errno.EIO, "Input/output error")
+        n = self._fp.readinto(memoryview(buffer)[: self.limit - self.nbytes])
+        self.nbytes += n
+        return n
+
+    def close(self):
+        self._fp.close()
+        super().close()
+
+
+def test_tar_read_error_says_where(failing_tar):
+    path = failing_tar(tape_members, 3 * 10240)
+    with pytest.raises(transfer.TarReadError) as err:
+        with transfer.open_tar(path) as tar:
+            for res in transfer.iter_tar_resources(tar, lambda id, m: {"name": id}):
+                res.data.read()
+    assert err.value.errno == errno.EIO
+    assert "after reading 30720 bytes in 3 blocks" in str(err.value)
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_receive_passes_on_tar_read_error(failing_tar, tmp_archive, dry_run):
+    path = failing_tar(tape_members, 3 * 10240)
+    dest = None if dry_run else tmp_archive
+    with pytest.raises(transfer.TarReadError):
+        with transfer.open_tar(path) as tar:
+            res = next(transfer.iter_tar_resources(tar, lambda id, m: {"name": id}))
+            transfer.receive_file(dest, "res_1", res.name, res.data, None)
+    assert leftovers(tmp_archive) == []

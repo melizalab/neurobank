@@ -289,6 +289,8 @@ def receive_file(
         _move_into_place(partial, target)
         created = False
         return Received(target, digest, verified)
+    except TarReadError:
+        raise
     except OSError as err:
         raise TransferError(str(err)) from err
     finally:
@@ -373,6 +375,8 @@ def receive_directory(
         _move_into_place(partial, target)
         created = False
         return Received(target, digest, verified)
+    except TarReadError:
+        raise
     except OSError as err:
         raise TransferError(str(err)) from err
     finally:
@@ -384,17 +388,28 @@ def receive_directory(
 _tape_read_size = 1 << 20
 
 
+class TarReadError(OSError):
+    """The tar file couldn't be read. The message says how far into it the error was.
+
+    receive_file and receive_directory pass this on, instead of reporting it as
+    a problem with the resource being read, as reading can't go on after it.
+    """
+
+
 class _BlockReader(io.RawIOBase):
     """Reads from raw in requests of a fixed size, however little the caller asks for.
 
     A tape drive in variable-block mode fails (with ENOMEM) any read smaller
     than the block on the tape, so each read has to ask for at least a whole
-    block. Each request returns at most one block.
+    block. Each request returns at most one block, so the number of requests
+    is the tape block number. Read errors are raised as TarReadError.
     """
 
     def __init__(self, raw: BinaryIO, size: int):
         self.raw = raw
         self.size = size
+        self.nbytes = 0
+        self.nblocks = 0
         self._buf = memoryview(b"")
 
     def readable(self) -> bool:
@@ -402,7 +417,17 @@ class _BlockReader(io.RawIOBase):
 
     def readinto(self, buffer) -> int:
         if not self._buf:
-            self._buf = memoryview(self.raw.read(self.size) or b"")
+            try:
+                data = self.raw.read(self.size) or b""
+            except OSError as err:
+                raise TarReadError(
+                    err.errno,
+                    f"{err.strerror} after reading {self.nbytes} bytes "
+                    f"in {self.nblocks} blocks",
+                ) from err
+            self.nbytes += len(data)
+            self.nblocks += bool(data)
+            self._buf = memoryview(data)
         n = min(len(buffer), len(self._buf))
         buffer[:n] = self._buf[:n]
         self._buf = self._buf[n:]
@@ -416,7 +441,8 @@ def open_tar(path: str | Path) -> Iterator[tarfile.TarFile]:
     path can be a file, a tape device, or '-' for standard input. Members have to
     be read in order: a member's data can't be read after moving on to the next.
     Files and devices are read _tape_read_size bytes at a time, which is enough
-    for tapes written with blocks up to that size.
+    for tapes written with blocks up to that size, and errors reading them are
+    raised as TarReadError, saying how far into the file or tape they happened.
     """
     import sys
 
@@ -432,7 +458,7 @@ def open_tar(path: str | Path) -> Iterator[tarfile.TarFile]:
                 yield tar
         except OSError as err:
             if is_device and err.errno == errno.ENOMEM:
-                raise OSError(
+                raise TarReadError(
                     err.errno,
                     f"the tape has blocks larger than {_tape_read_size} bytes, "
                     "the largest this can read",

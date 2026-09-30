@@ -948,3 +948,35 @@ def test_register_tar_skips_manifest(respx_mock, tmp_path, caplog):
     run_main("archive", "register-tar", "-y", "tape01", "1", str(tar))
     assert not looked_up.called
     assert "manifest.json -> manifest, skipping" in caplog.text
+
+
+@pytest.mark.parametrize("with_archive", [False, True])
+def test_check_tar_read_error(mocked_api, failing_tar, caplog, with_archive):
+    members = [("res_1", b"one"), ("res_2", b"x" * 50_000), ("res_3", b"three")]
+    for name in ("res_1", "res_2"):
+        mocked_api.get(resource_url + f"{name}/").respond(
+            json={"name": name, "sha1": None, "locations": ["tape"]}
+        )
+    argv = ["check", "tar"]
+    if with_archive:
+        mocked_api.get(archives_url + "tape/").respond(json={"name": "tape"})
+        mocked_api.get(resource_url, params={"archive": "tape"}).respond(
+            json=[
+                {"name": name, "sha1": None, "locations": ["tape"]}
+                for name in ("res_1", "res_2", "res_3")
+            ]
+        )
+        argv += ["--archive", "tape"]
+    # fails partway through res_2
+    path = failing_tar(members, 3 * 10240)
+    assert run_main(*argv, str(path)) == 1
+    assert "res_1 -> OK" in caplog.text
+    assert "✗ res_2 -> unable to read; stopping" in caplog.text
+    assert "Input/output error after reading 30720 bytes in 3 blocks" in caplog.text
+    assert "Resources checked: 2; failed: 1" in caplog.text
+    assert "MISSING" not in caplog.text
+    if with_archive:
+        assert "res_3: not checked, as reading stopped before it" in caplog.text
+        assert "Missing from the tar file: 0; not checked (reading stopped): 1" in (
+            caplog.text
+        )

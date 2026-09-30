@@ -733,6 +733,28 @@ def test_copy_directory_to_archive_without_directories(
     assert "doesn't allow directory resources" in caplog.text
 
 
+def test_import_tar_read_error(
+    cli, registry, two_archives, dtype, deposit_file, unique, failing_tar, caplog
+):
+    a, b = two_archives
+    first = deposit_file(a, dtype)
+    second = deposit_file(a, dtype, contents=unique("big") + "x" * 50_000)
+    members = [
+        (stored_path(a, name).name, stored_path(a, name).read_bytes())
+        for name in (first, second)
+    ]
+    # fails partway through the second resource
+    path = failing_tar(members, 3 * 10240)
+    assert cli("archive", "import-tar", str(path), str(b.path)) == 1
+    assert f"✗ {members[1][0]} -> unable to read; stopping" in caplog.text
+    assert "Input/output error after reading 30720 bytes in 3 blocks" in caplog.text
+    assert stored_path(b, first).read_bytes() == members[0][1]
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, second)
+    assert core.describe(registry.url, second)["locations"] == [a.name]
+    assert cli("check", "archive", str(b.path)) == 0
+
+
 def changed_tar(archive, name, tmp_path):
     """A tar file holding a changed copy of a resource under its own name."""
     stored = stored_path(archive, name)

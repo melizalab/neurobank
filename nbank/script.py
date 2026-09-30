@@ -1471,6 +1471,10 @@ def check_tar(args):
                             res.record["sha1"],
                             progress=progress,
                         )
+                    except transfer.TarReadError:
+                        log.error("  ✗ %s -> unable to read; stopping", res.name)
+                        counts["failed"] += 1
+                        raise
                     except transfer.TransferError as err:
                         log.error("  ✗ %s -> %s", res.name, err)
                         counts["failed"] += 1
@@ -1485,11 +1489,15 @@ def check_tar(args):
         except (OSError, tarfile.TarError) as err:
             log.error("error: unable to read %s: %s", args.tar, err)
             read_error = True
-    missing = sorted(set(expected) - seen)
+    unread = sorted(set(expected) - seen)
+    # after a read error, resources that weren't reached may still be there
+    missing, not_checked = ([], unread) if read_error else (unread, [])
     for name in missing:
         log.error(
             "  ✗ %s: registered to %s but MISSING from the tar file", name, args.archive
         )
+    for name in not_checked:
+        log.warning("  ? %s: not checked, as reading stopped before it", name)
     log.info(
         "\nResources checked: %d; failed: %d; no registered hash: %d; "
         "files not in the registry: %d",
@@ -1499,9 +1507,13 @@ def check_tar(args):
         len(unregistered),
     )
     if args.archive is not None:
+        stopped = (
+            f"; not checked (reading stopped): {len(not_checked)}" if read_error else ""
+        )
         log.info(
-            "Missing from the tar file: %d; not registered to %s: %d",
+            "Missing from the tar file: %d%s; not registered to %s: %d",
             len(missing),
+            stopped,
             args.archive,
             len(not_located),
         )
@@ -1579,6 +1591,10 @@ def import_tar(args):
                                     archive_name,
                                     received.path,
                                 )
+                        except transfer.TarReadError:
+                            log.error("  ✗ %s -> unable to read; stopping", res.name)
+                            n_failed += 1
+                            raise
                         except transfer.TransferError as err:
                             log.error("  ✗ %s -> %s", res.name, err)
                             n_failed += 1
