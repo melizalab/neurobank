@@ -8,10 +8,8 @@ Created Tue Jul  8 14:23:35 2014
 import json
 import logging
 from collections.abc import Iterator, Mapping, Sequence
-from pathlib import Path, PurePath
-from typing import (
-    Any,
-)
+from pathlib import Path, PurePath, PurePosixPath
+from typing import Any, BinaryIO
 
 from httpx import Client
 
@@ -125,6 +123,69 @@ def id_from_fname(fname: Path | str) -> str:
     return id
 
 
+_hash_block_size = 1 << 20
+
+
+def hash_stream(
+    source: BinaryIO, method: str = "sha1", copy_to: BinaryIO | None = None
+) -> str:
+    """Returns the hash of everything read from source, using method.
+
+    Reads in fixed-size blocks, so memory use doesn't depend on the size of the
+    data. If copy_to is given, each block is also written to it, so data can be
+    copied and hashed in one pass.
+    """
+    import hashlib
+
+    digest = hashlib.new(method)
+    while True:
+        data = source.read(_hash_block_size)
+        if not data:
+            break
+        digest.update(data)
+        if copy_to is not None:
+            copy_to.write(data)
+    return digest.hexdigest()
+
+
+class DirectoryHasher:
+    """Computes the hash of a directory resource from the hashes of its files.
+
+    Files can be added in any order, so the hash can be computed from a
+    directory on disk or from a stream such as a tar file. Each file is
+    identified by its path relative to the directory, with '/' separators. The
+    result is the hash of the lines `<path>=<file hash>`, sorted by path
+    component and joined with newlines. Directories themselves (including empty
+    ones) don't contribute to the hash.
+    """
+
+    def __init__(self, method: str = "sha1"):
+        self.method = method
+        self._files: dict[PurePosixPath, str] = {}
+
+    def add(self, relpath: str | PurePath, file_hash: str) -> None:
+        """Records the hash of the file at relpath. Raises ValueError on a repeat."""
+        key = PurePosixPath(relpath)
+        if key in self._files:
+            raise ValueError(f"'{key}' was added more than once")
+        self._files[key] = file_hash
+
+    def add_stream(self, relpath: str | PurePath, source: BinaryIO) -> str:
+        """Hashes a file read from source and records it. Returns the file's hash."""
+        file_hash = hash_stream(source, self.method)
+        self.add(relpath, file_hash)
+        return file_hash
+
+    def hexdigest(self) -> str:
+        import hashlib
+
+        lines = [
+            f"{path}={self._files[path]}"
+            for path in sorted(self._files, key=lambda p: p.parts)
+        ]
+        return hashlib.new(self.method, "\n".join(lines).encode("utf-8")).hexdigest()
+
+
 def hash(fname: Path, method: str = "sha1") -> str:
     """Returns a hash of the contents of fname using method.
 
@@ -134,41 +195,29 @@ def hash(fname: Path, method: str = "sha1") -> str:
     Raises errors for invalid files or methods.
 
     """
-    import hashlib
-
     p = fname.resolve(strict=True)
-    block_size = 65536
     if p.is_dir():
         return hash_directory(p, method)
-    hash = hashlib.new(method)
     with open(p, "rb") as fp:
-        while True:
-            data = fp.read(block_size)
-            if not data:
-                break
-            hash.update(data)
-    return hash.hexdigest()
+        return hash_stream(fp, method)
 
 
 def hash_directory(path: Path, method: str = "sha1") -> str:
     """Return hash of the contents of the directory at path using method.
 
-    Any secure hash method supported by python's hashlib
-    library is supported. Raises errors for invalid files or methods.
+    See DirectoryHasher for how the hash is computed. Any secure hash method
+    supported by python's hashlib library is supported. Raises errors for
+    invalid files or methods.
 
     """
-    import hashlib
-
     p = path.resolve(strict=True)
-    hashes = []
-    for fn in sorted(p.rglob("*")):
+    hasher = DirectoryHasher(method)
+    for fn in p.rglob("*"):
         if not fn.is_file():
             continue
-        fn_rel = fn.relative_to(p)
         with open(fn, "rb") as fp:
-            hashes.append(f"{fn_rel}={hashlib.new(method, fp.read()).hexdigest()}")
-    # log.debug("directory hashes of %s: %s", path, hashes)
-    return hashlib.new(method, "\n".join(hashes).encode("utf-8")).hexdigest()
+            hasher.add_stream(fn.relative_to(p).as_posix(), fp)
+    return hasher.hexdigest()
 
 
 def query_registry(

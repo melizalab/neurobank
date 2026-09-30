@@ -33,6 +33,68 @@ def test_id_from_invalid_fname():
         _ = util.id_from_fname(test)
 
 
+# names whose order differs when sorted by path component rather than as strings
+directory_files = {
+    "a.txt": "first",
+    "a/b": "nested",
+    "a-b": "dash",
+    "a/c/d.bin": "deeper",
+    "B": "upper",
+    "z": "",
+}
+
+
+def make_directory(root):
+    for rel, contents in directory_files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents)
+    (root / "empty_dir").mkdir()
+    return root
+
+
+def test_hash_directory_is_unchanged(tmp_path):
+    # registered hashes of existing directory resources depend on this format,
+    # so these values must not change
+    root = make_directory(tmp_path / "res")
+    assert util.hash_directory(root) == "c080a1a8c60ebd275493b8e90bd7f0c90624e798"
+    assert util.hash_directory(root, "md5") == "99d607a5053c7272e12c9a91cba4ee0c"
+
+
+def test_directory_hasher_matches_hash_directory(tmp_path):
+    import io
+
+    root = make_directory(tmp_path / "res")
+    hasher = util.DirectoryHasher()
+    for rel in reversed(list(directory_files)):
+        hasher.add_stream(rel, io.BytesIO(directory_files[rel].encode()))
+    assert hasher.hexdigest() == util.hash_directory(root)
+
+
+def test_directory_hasher_rejects_repeated_path():
+    import io
+
+    hasher = util.DirectoryHasher()
+    hasher.add_stream("a/b", io.BytesIO(b"x"))
+    with pytest.raises(ValueError, match="a/b"):
+        hasher.add_stream("a/b", io.BytesIO(b"y"))
+
+
+def test_hash_stream_reads_in_blocks_and_copies(tmp_path, monkeypatch):
+    import hashlib
+    import io
+
+    monkeypatch.setattr(util, "_hash_block_size", 7)
+    data = bytes(range(256)) * 3
+    copy = io.BytesIO()
+    digest = util.hash_stream(io.BytesIO(data), copy_to=copy)
+    assert digest == hashlib.sha1(data).hexdigest()
+    assert copy.getvalue() == data
+    src = tmp_path / "data"
+    src.write_bytes(data)
+    assert util.hash(src) == digest
+
+
 def test_hash_directory_with_multiple_files(tmp_path):
     d = tmp_path / "sub"
     d.mkdir()
