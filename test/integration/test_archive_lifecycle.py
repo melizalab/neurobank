@@ -566,20 +566,110 @@ def test_import_tar_refused(
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     assert cli("archive", "import-tar", str(tar), str(b.path)) == 1
-    assert "unable to add location" in caplog.text
+    assert "the registry refused the location" in caplog.text
     assert "Authentication credentials were not provided." in caplog.text
     with pytest.raises(FileNotFoundError):
         stored_path(b, name)
 
 
 def test_import_tar_file_already_there(
-    cli, registry, two_archives, dtype, deposit_file, replicate, tmp_path, caplog
+    cli, registry, two_archives, dtype, deposit_file, tmp_path, caplog
 ):
+    # a file for the resource is in the destination, but not registered there
     a, b = two_archives
     name = deposit_file(a, dtype)
     tar = make_tar(tmp_path / "archive.tar", stored_path(a, name))
     copy = tmp_path / "copy.txt"
     copy.write_text(name)
     nbank_archive.store_resource(b.config, copy, id=name)
-    cli("archive", "import-tar", str(tar), str(b.path))
-    assert "file is already there but not in registry" in caplog.text
+    assert cli("archive", "import-tar", str(tar), str(b.path)) == 1
+    assert "is already in the archive" in caplog.text
+    assert core.describe(registry.url, name)["locations"] == [a.name]
+
+
+@pytest.fixture
+def dir_archives(make_archive):
+    return (
+        make_archive(allow_directories=True, require_hash=True),
+        make_archive(allow_directories=True, require_hash=False),
+    )
+
+
+def test_import_tar_directory_resource(
+    cli, registry, dir_archives, dtype, unique, tmp_path, caplog
+):
+    a, b = dir_archives
+    src = tmp_path / unique("res")
+    (src / "sub").mkdir(parents=True)
+    (src / "sub" / "data").write_text("inside")
+    (src / "top").write_text("top")
+    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
+    name = item["id"]
+    tar = tmp_path / "archive.tar"
+    with tarfile.open(tar, "w") as t:
+        t.add(stored_path(a, name), arcname=name)
+    assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
+    assert (stored_path(b, name) / "sub" / "data").read_text() == "inside"
+    assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
+    assert cli("check", "archive", str(b.path)) == 0
+
+
+def changed_tar(archive, name, tmp_path):
+    """A tar file holding a changed copy of a resource under its own name."""
+    stored = stored_path(archive, name)
+    changed = tmp_path / stored.name
+    changed.write_text("changed")
+    return make_tar(tmp_path / "archive.tar", changed)
+
+
+def test_import_tar_hash_mismatch(
+    cli, registry, two_archives, dtype, deposit_file, tmp_path, caplog
+):
+    a, b = two_archives
+    name = deposit_file(a, dtype, hash=True)
+    tar = changed_tar(a, name, tmp_path)
+    assert cli("archive", "import-tar", str(tar), str(b.path)) == 1
+    assert "don't match the registered hash" in caplog.text
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, name)
+    assert core.describe(registry.url, name)["locations"] == [a.name]
+
+
+def test_import_tar_dry_run_checks_hashes(
+    cli, two_archives, dtype, deposit_file, tmp_path, caplog
+):
+    a, b = two_archives
+    name = deposit_file(a, dtype, hash=True)
+    tar = make_tar(tmp_path / "good.tar", stored_path(a, name))
+    assert cli("archive", "import-tar", "-y", str(tar), str(b.path)) == 0
+    assert f"{stored_path(a, name).name} -> OK" in caplog.text
+    (tmp_path / "bad").mkdir()
+    bad = changed_tar(a, name, tmp_path / "bad")
+    assert cli("archive", "import-tar", "-y", str(bad), str(b.path)) == 1
+    assert "don't match the registered hash" in caplog.text
+
+
+def test_import_tar_from_stdin(
+    cli, registry, two_archives, dtype, deposit_file, tmp_path, monkeypatch
+):
+    a, b = two_archives
+    name = deposit_file(a, dtype, hash=True)
+    tar = make_tar(tmp_path / "archive.tar", stored_path(a, name))
+    with open(tar, "rb") as fp:
+        monkeypatch.setattr("sys.stdin", type("Stdin", (), {"buffer": fp}))
+        assert cli("archive", "import-tar", "-", str(b.path)) == 0
+    assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
+
+
+def test_import_tar_full_paths(
+    cli, registry, two_archives, dtype, deposit_file, tmp_path
+):
+    # as written by `nbank locate -0 | xargs -0 tar -cf`
+    a, b = two_archives
+    name = deposit_file(a, dtype, hash=True)
+    stored = stored_path(a, name)
+    tar = tmp_path / "archive.tar"
+    with tarfile.open(tar, "w") as t:
+        t.add(stored, arcname=str(stored).lstrip("/"))
+    assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
+    assert stored_path(b, name).read_text() == stored.read_text()

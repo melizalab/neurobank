@@ -4,6 +4,7 @@ import io
 import json
 import os
 import stat
+import tarfile
 
 import httpx
 import pytest
@@ -530,3 +531,131 @@ def test_add_location_unreachable_keeps_copy(respx_mock, tmp_archive):
 )
 def test_partial_target(name, target):
     assert transfer.partial_target(name) == target
+
+
+def tar_bytes(members):
+    """A tar file of (name, contents) members; contents None is a directory, and
+    'link' a symbolic link."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for name, data in members:
+            info = tarfile.TarInfo(name)
+            if data is None:
+                info.type = tarfile.DIRTYPE
+                tar.addfile(info)
+            elif data == "link":
+                info.type = tarfile.SYMTYPE
+                info.linkname = "elsewhere"
+                tar.addfile(info)
+            else:
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def read_tar(members, registered, read=True):
+    """Runs iter_tar_resources over members; returns what it yields, read."""
+    tar = tarfile.open(fileobj=io.BytesIO(tar_bytes(members)), mode="r|")
+
+    def lookup(id, member):
+        return {"name": id} if id in registered else None
+
+    results = []
+    for record, name, data, is_dir in transfer.iter_tar_resources(tar, lookup):
+        if not read:
+            results.append((record["name"], name, is_dir))
+        elif is_dir:
+            entries = [(rel, None if s is None else s.read()) for rel, s in data]
+            results.append((record["name"], name, entries))
+        else:
+            results.append((record["name"], name, data.read()))
+    return results
+
+
+def test_tar_resources_files():
+    members = [
+        ("res_1.wav", b"one"),
+        ("other.txt", b"not registered"),
+        ("res_2", b"two"),
+    ]
+    assert read_tar(members, {"res_1", "res_2"}) == [
+        ("res_1", "res_1.wav", b"one"),
+        ("res_2", "res_2", b"two"),
+    ]
+
+
+def test_tar_resources_full_paths():
+    # as written by `nbank locate -0 | xargs -0 tar -cf`
+    members = [
+        ("home/data/arch/resources/re/res_1.wav", b"one"),
+        ("home/data/arch/resources/re/res_2", None),
+        ("home/data/arch/resources/re/res_2/data", b"two"),
+    ]
+    assert read_tar(members, {"res_1", "res_2"}) == [
+        ("res_1", "res_1.wav", b"one"),
+        ("res_2", "res_2", [("data", b"two")]),
+    ]
+
+
+def test_tar_resources_directory():
+    members = [
+        ("unregistered_dir", None),
+        ("res_d", None),
+        ("res_d/sub", None),
+        ("res_d/sub/f", b"inside"),
+        ("res_d/g", b"top"),
+        ("res_f.txt", b"after"),
+    ]
+    assert read_tar(members, {"res_d", "res_f"}) == [
+        ("res_d", "res_d", [("sub", None), ("sub/f", b"inside"), ("g", b"top")]),
+        ("res_f", "res_f.txt", b"after"),
+    ]
+
+
+def test_tar_resources_skips_unread_directory():
+    members = [
+        ("res_d", None),
+        ("res_d/f", b"inside"),
+        ("res_d/g", b"inside"),
+        ("res_f.txt", b"after"),
+    ]
+    tar = tarfile.open(fileobj=io.BytesIO(tar_bytes(members)), mode="r|")
+    items = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
+    record, _, _, is_dir = next(items)
+    assert (record["name"], is_dir) == ("res_d", True)
+    # the directory's entries are never read
+    record, name, data, is_dir = next(items)
+    assert (record["name"], name, data.read()) == ("res_f", "res_f.txt", b"after")
+    assert next(items, None) is None
+
+
+def test_tar_resources_directory_with_link():
+    members = [
+        ("res_d", None),
+        ("res_d/f", b"inside"),
+        ("res_d/link", "link"),
+        ("res_f.txt", b"after"),
+    ]
+    tar = tarfile.open(fileobj=io.BytesIO(tar_bytes(members)), mode="r|")
+    items = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
+    _, _, entries, _ = next(items)
+    with pytest.raises(transfer.TransferError, match="res_d/link"):
+        list(entries)
+    record, _, data, _ = next(items)
+    assert (record["name"], data.read()) == ("res_f", b"after")
+
+
+def test_open_tar_from_stdin(monkeypatch):
+    # a pipe can't seek, like a tape drive
+    read_fd, write_fd = os.pipe()
+    os.write(write_fd, tar_bytes([("res_1.wav", b"one")]))
+    os.close(write_fd)
+
+    class Stdin:
+        buffer = open(read_fd, "rb")
+
+    monkeypatch.setattr("sys.stdin", Stdin)
+    with Stdin.buffer, transfer.open_tar("-") as tar:
+        items = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
+        results = [(name, data.read()) for _, name, data, _ in items]
+    assert results == [("res_1.wav", b"one")]

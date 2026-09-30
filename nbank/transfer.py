@@ -16,7 +16,8 @@ Copyright (C) 2026 Dan Meliza <dan@meliza.org>
 """
 
 import os
-from collections.abc import Iterable, Iterator
+import tarfile
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO
@@ -347,6 +348,86 @@ def receive_directory(
             nbank_archive.remove(partial)
 
 
+def open_tar(path: str | Path) -> tarfile.TarFile:
+    """Opens a tar file for reading in order, without seeking.
+
+    path can be a file, a tape device, or '-' for standard input. Members have to
+    be read in order: a member's data can't be read after moving on to the next.
+    """
+    import sys
+
+    if str(path) == "-":
+        return tarfile.open(fileobj=sys.stdin.buffer, mode="r|*")
+    return tarfile.open(path, mode="r|*")
+
+
+def iter_tar_resources(
+    tar: tarfile.TarFile, lookup: Callable[[str, tarfile.TarInfo], dict | None]
+) -> Iterator[tuple[dict, str, BinaryIO | Iterator, bool]]:
+    """Yields the registered resources in a tar file, reading it in order.
+
+    lookup(id, member) returns the registry record for a resource id, or None if
+    it isn't registered. A member is a resource if the stem of its name (without
+    any directories or extension) is a registered id, so members can be stored
+    under their bare names or under full paths.
+
+    Yields (record, name, data, is_dir) for each resource, where name is the
+    member's base name. For a file resource, data is a stream of its contents.
+    For a directory resource, data is an iterator of (path, stream) entries, as
+    receive_directory takes, made from the members that follow it with its name
+    as a prefix; a stream of None is a subdirectory. Each resource's data has to
+    be read before asking for the next; data that isn't read is skipped.
+    Directories that aren't registered resources, and members that aren't files
+    or directories, are ignored. A directory resource containing links or
+    other special members raises TransferError from its entries, after they've
+    been read to the end of the resource.
+    """
+    members = iter(tar)
+    pending: list[tarfile.TarInfo] = []
+
+    def next_member() -> tarfile.TarInfo | None:
+        if pending:
+            return pending.pop()
+        return next(members, None)
+
+    def directory_entries(prefix: str) -> Iterator:
+        special = []
+        while (member := next_member()) is not None:
+            if not member.name.startswith(prefix):
+                pending.append(member)
+                break
+            relpath = member.name[len(prefix) :].rstrip("/")
+            if member.isdir():
+                yield relpath, None
+            elif member.isreg():
+                yield relpath, tar.extractfile(member)
+            else:
+                special.append(member.name)
+        if special:
+            raise TransferError(
+                f"contains members that aren't files or directories: {', '.join(special)}"
+            )
+
+    while (member := next_member()) is not None:
+        path = PurePosixPath(member.name)
+        if not (member.isdir() or member.isreg()):
+            continue
+        record = lookup(path.stem, member)
+        if record is None:
+            continue
+        if member.isreg():
+            yield record, path.name, tar.extractfile(member), False
+            continue
+        entries = directory_entries(member.name.rstrip("/") + "/")
+        yield record, path.name, entries, True
+        # skip whatever the caller didn't read
+        try:
+            for _ in entries:
+                pass
+        except TransferError:
+            pass
+
+
 def add_location(
     session: Client, registry_url: str, id: str, archive_name: str, path: Path
 ) -> None:
@@ -382,6 +463,8 @@ __all__ = [
     "TransferError",
     "add_location",
     "find_sources",
+    "iter_tar_resources",
+    "open_tar",
     "partial_name",
     "partial_target",
     "receive_directory",

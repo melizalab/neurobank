@@ -229,7 +229,7 @@ Some resources, like raw extracellular data, can be moved to cold storage when t
 - Write the tar file to tape (or some other media)
 - Register the tar file with neurobank using ``nbank archive register-tar -n <name_of_archive> <name_of_tape> <tape_index> <tar_file>``. This will create a record for the tape archive and update the records for the resources in the tar file.
 - To remove the tape-archived resources from live storage, run ``nbank archive prune <live_archive_name> <list_of_identifiers>``. This command will delete files from the local filesystem archive and update records for the resources. It will only do this for resources that have another location.
-- To copy data back to live storage, extract the tar file from the tape and run ``nbank archive import-tar <tar_file> <path_of_archive>``
+- To copy data back to live storage, run ``nbank archive import-tar <tar_file> <path_of_archive>``. The tar file can be read straight from the tape drive (e.g. ``/dev/nst0`` after positioning the tape with ``mt fsf``) or from standard input (``-``), so it doesn't need to be extracted first. Each resource is checked against its registered hash before it's stored. To check a tape without importing anything, add ``-y``.
 
 Development
 -----------

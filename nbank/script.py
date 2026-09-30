@@ -11,8 +11,6 @@ import datetime
 import grp
 import json
 import logging
-import os
-import shutil
 import sys
 import tarfile
 from collections import Counter
@@ -22,7 +20,7 @@ from urllib.parse import urlunparse
 
 import httpx
 
-from nbank import __version__, archive, check, core, registry, util
+from nbank import __version__, archive, check, core, registry, transfer, util
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -386,10 +384,16 @@ def main(argv=None):
     pp.add_argument(
         "-y",
         "--dry-run",
-        help="don't copy any files or make any changes to the registry",
+        help="check the resources against the registry without copying any files "
+        "or changing the registry",
         action="store_true",
     )
-    pp.add_argument("tar", type=Path, help="tar file with the resources to import")
+    pp.add_argument(
+        "tar",
+        type=Path,
+        help="tar file with the resources to import: a file, a tape device, or "
+        "'-' for standard input",
+    )
     pp.add_argument("dest", type=Path, help="path of the destination neurobank archive")
 
     pp = sub.add_parser("check", help="check integrity of the registry and archives")
@@ -1220,7 +1224,13 @@ def prune_archive(args):
 
 
 def import_tar(args):
-    """Import files from a tar file into a neurobank archive.
+    """Import resources from a tar file, tape, or standard input into a neurobank archive.
+
+    The tar file is read once, in order, so it can come straight from a tape
+    device or a pipe. Each registered resource in it is checked against its
+    registered hash as it's read and stored, and then added as a location. With
+    --dry-run, resources are only read and checked, which verifies a tape
+    without importing it.
 
     Returns 1 if the import can't be run or any resource fails to be imported.
     Files that aren't registered resources, or that are already in the
@@ -1234,9 +1244,8 @@ def import_tar(args):
         return 1
     registry_url = args.registry_url or archive_cfg["registry"]
     archive_path = archive_cfg["path"]  # this will resolve the path
-    pfix = archive.permission_fixer(archive_cfg)  # used to fix permissions
     log.info("registry: %s", registry_url)
-    with httpx.Client(auth=args.auth) as session, tarfile.open(args.tar) as tarf:
+    with httpx.Client(auth=args.auth) as session:
         url, params = registry.find_archive_by_path(registry_url, archive_path)
         archive_info = util.query_registry_first(session, url, params)
         if archive_info is None:
@@ -1244,74 +1253,44 @@ def import_tar(args):
             return 1
         archive_name = archive_info["name"]
         log.info("destination archive: %s (%s)", archive_name, archive_path)
-        log.info("source archive file: %s", args.tar)
-        for tarinfo in tarf:
-            file_path = Path(tarinfo.name)
-            # regardless of keep_extension policy, the resource will not have
-            # the extension
-            resource_name = file_path.stem
-            url, _ = registry.get_resource(registry_url, resource_name)
-            resource_info = util.query_registry(session, url)
-            if resource_info is None:
-                log.info("  ✗ %s -> '%s' not in the registry", file_path, resource_name)
-                continue
-            elif archive_name in resource_info["locations"]:
-                log.info(
-                    "  ✗ %s -> '%s' is already in the destination archive",
-                    file_path,
-                    resource_name,
-                )
-                continue
-            dest_dir = archive.resource_path(
-                archive_cfg, resource_name, resolve_ext=False
-            ).parent
-            if not tarinfo.isreg():
-                log.info(
-                    "  ✗ %s: '%s' is a directory resource; import is not implemented yet",
-                    tarinfo.name,
-                    resource_name,
-                )
-                n_failed += 1
-                continue
-            if not args.dry_run:
-                # make the target directory if it doesn't exist and set permissions
-                try:
-                    dest_dir.mkdir()
-                    pfix(dest_dir)
-                    log.debug("  - (created destination directory %s)", dest_dir)
-                except FileExistsError:
-                    pass
-                if not os.access(dest_dir, os.W_OK):
+        log.info("source: %s", args.tar)
+        if args.dry_run:
+            log.info("DRY RUN: checking resources without importing them")
+
+        def lookup(id, member):
+            url, _ = registry.get_resource(registry_url, id)
+            record = util.query_registry(session, url)
+            if record is None and member.isreg():
+                log.info("  ✗ %s -> '%s' not in the registry", member.name, id)
+            return record
+
+        dest = None if args.dry_run else archive_cfg
+        with transfer.open_tar(args.tar) as tarf:
+            for record, name, data, is_dir in transfer.iter_tar_resources(tarf, lookup):
+                id = record["name"]
+                if archive_name in record["locations"]:
                     log.info(
-                        "  ✗ %s -> unable to write to destination directory (%s)",
-                        file_path,
-                        dest_dir,
+                        "  ✗ %s -> '%s' is already in the destination archive",
+                        name,
+                        id,
                     )
+                    continue
+                receive = (
+                    transfer.receive_directory if is_dir else transfer.receive_file
+                )
+                try:
+                    received = receive(dest, id, name, data, record["sha1"])
+                    if dest is not None:
+                        transfer.add_location(
+                            session, registry_url, id, archive_name, received.path
+                        )
+                except transfer.TransferError as err:
+                    log.error("  ✗ %s -> %s", name, err)
                     n_failed += 1
                     continue
-            url, query = registry.add_location(
-                registry_url, resource_name, archive_name
-            )
-            req = session.build_request("POST", url, json=query)
-            dest_path = dest_dir / file_path.name
-            if not args.dry_run:
-                r = session.send(req)
-                if r.status_code != httpx.codes.CREATED:
-                    log.info("  ✗ %s -> unable to add location: %s", file_path, r.text)
-                    n_failed += 1
-                elif dest_path.exists():
-                    log.warning(
-                        "  - %s -> file is already there but not in registry, skipping",
-                        file_path,
-                    )
-                else:
-                    reader = tarf.extractfile(tarinfo)
-                    log.info("  - %s -> %s", file_path, dest_path)
-                    with open(dest_path, "wb") as dest_file:
-                        shutil.copyfileobj(reader, dest_file)
-                    pfix(dest_path)
-            else:
-                log.info("  - %s -> %s (dry run)", file_path, dest_path)
+                result = received.path if dest is not None else "OK"
+                note = "" if received.verified else " (no registered hash to check)"
+                log.info("  - %s -> %s%s", name, result, note)
     return 1 if n_failed else None
 
 
