@@ -21,6 +21,8 @@ import io
 import os
 import stat
 import tarfile
+import time
+import zipfile
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -516,10 +518,10 @@ def iter_tar_resources(
 
 
 class _HashingReader:
-    """Reads a file of known size for tarfile, hashing what's read.
+    """Reads a source file of known size, hashing what's read.
 
     Raises TransferError for read errors and for a file that ends early, so
-    they can be told apart from errors writing the tar file.
+    they can be told apart from errors writing the export.
     """
 
     def __init__(self, path: Path, size: int, progress: Callable[[int], None] | None):
@@ -546,6 +548,11 @@ class _HashingReader:
             self.progress(self.nbytes)
         return data
 
+    def copy_to(self, dest: BinaryIO) -> None:
+        """Writes the whole file to dest."""
+        while self.nbytes < self.size:
+            dest.write(self.read(min(tape_read_size, self.size - self.nbytes)))
+
     def hexdigest(self) -> str:
         return self._hash.hexdigest()
 
@@ -553,98 +560,256 @@ class _HashingReader:
         self._fp.close()
 
 
-def _tarinfo(path: Path, name: str) -> tuple[tarfile.TarInfo, bool]:
-    """Returns a tar header for path, stored as name, and whether it's a directory.
+def _stat(path: Path) -> os.stat_result:
+    """Returns the status of a file or directory to export.
 
-    Raises TransferError for anything other than a file or directory.
+    Raises TransferError if it can't be read or is anything else.
     """
-    st = path.lstat()
-    info = tarfile.TarInfo(name)
-    info.mode = stat.S_IMODE(st.st_mode)
-    info.mtime = int(st.st_mtime)
-    info.uid, info.gid = st.st_uid, st.st_gid
-    if stat.S_ISDIR(st.st_mode):
-        info.type = tarfile.DIRTYPE
-        return info, True
-    if not stat.S_ISREG(st.st_mode):
-        raise TransferError(f"'{path}' is not a file or directory")
-    info.size = st.st_size
-    return info, False
-
-
-def _add_file(
-    tar: tarfile.TarFile,
-    path: Path,
-    info: tarfile.TarInfo,
-    progress: Callable[[int], None] | None,
-) -> str:
-    """Adds a file to tar, returning the hash of what was written."""
-    reader = _HashingReader(path, info.size, progress)
     try:
-        tar.addfile(info, reader)
-    finally:
-        reader.close()
-    return reader.hexdigest()
+        st = path.lstat()
+    except OSError as err:
+        raise TransferError(f"unable to read '{path}': {err.strerror}") from err
+    if not (stat.S_ISDIR(st.st_mode) or stat.S_ISREG(st.st_mode)):
+        raise TransferError(f"'{path}' is not a file or directory")
+    return st
 
 
 def _walk(root: Path) -> Iterator[Path]:
     """Yields everything under root in sorted order, each directory before its contents."""
-    for child in sorted(root.iterdir()):
+    try:
+        children = sorted(root.iterdir())
+    except OSError as err:
+        raise TransferError(f"unable to read '{root}': {err.strerror}") from err
+    for child in children:
         yield child
         if child.is_dir() and not child.is_symlink():
             yield from _walk(child)
 
 
-def write_tar_resource(
-    tar: tarfile.TarFile, source: Source, progress: Progress | None = None
+class ExportWriter:
+    """Writes resources to an export, one at a time.
+
+    For each resource, begin() is called with its name, then add_dir() and
+    add_file() for the resource and everything in it, with member names that
+    start with the resource's name. Then commit() keeps it, or abort() removes
+    every trace of it. Errors writing the export are raised as OSError.
+    """
+
+    def begin(self, name: str) -> None:
+        pass
+
+    def add_dir(self, name: str, st: os.stat_result) -> None:
+        raise NotImplementedError
+
+    def add_file(self, name: str, st: os.stat_result, reader: _HashingReader) -> None:
+        raise NotImplementedError
+
+    def commit(self) -> None:
+        pass
+
+    def abort(self) -> None:
+        raise NotImplementedError
+
+
+class TarWriter(ExportWriter):
+    """Writes to a tar file, which must be open for writing to a regular file
+    (mode 'w' or 'x', not 'w|') so a resource that fails can be cut back out."""
+
+    def __init__(self, tar: tarfile.TarFile):
+        self.tar = tar
+
+    def begin(self, name: str) -> None:
+        self._offset, self._n_members = self.tar.offset, len(self.tar.members)
+
+    def _info(self, name: str, st: os.stat_result) -> tarfile.TarInfo:
+        # built by hand, as gettarinfo stores hard-linked files as links
+        info = tarfile.TarInfo(name)
+        info.mode = stat.S_IMODE(st.st_mode)
+        info.mtime = int(st.st_mtime)
+        info.uid, info.gid = st.st_uid, st.st_gid
+        return info
+
+    def add_dir(self, name: str, st: os.stat_result) -> None:
+        info = self._info(name, st)
+        info.type = tarfile.DIRTYPE
+        self.tar.addfile(info)
+
+    def add_file(self, name: str, st: os.stat_result, reader: _HashingReader) -> None:
+        info = self._info(name, st)
+        info.size = st.st_size
+        self.tar.addfile(info, reader)
+
+    def abort(self) -> None:
+        # tarfile can't remove members, so this uses its internals
+        self.tar.fileobj.seek(self._offset)
+        self.tar.fileobj.truncate()
+        self.tar.offset = self._offset
+        del self.tar.members[self._n_members :]
+
+
+class ZipWriter(ExportWriter):
+    """Writes to a zip file, which must be open for writing to a regular file
+    (mode 'w' or 'x') so a resource that fails can be cut back out."""
+
+    def __init__(self, zf: zipfile.ZipFile):
+        self.zf = zf
+
+    def begin(self, name: str) -> None:
+        self._offset, self._n_members = self.zf.start_dir, len(self.zf.filelist)
+
+    def _info(self, name: str, st: os.stat_result) -> zipfile.ZipInfo:
+        # zip timestamps can't be earlier than 1980
+        mtime = time.localtime(max(st.st_mtime, 315532800))
+        info = zipfile.ZipInfo(name, mtime[:6])
+        info.external_attr = (st.st_mode & 0xFFFF) << 16
+        return info
+
+    def add_dir(self, name: str, st: os.stat_result) -> None:
+        info = self._info(name + "/", st)
+        info.external_attr |= 0x10  # MS-DOS directory flag
+        self.zf.writestr(info, b"")
+
+    def add_file(self, name: str, st: os.stat_result, reader: _HashingReader) -> None:
+        info = self._info(name, st)
+        info.compress_type = self.zf.compression
+        info.file_size = st.st_size
+        with self.zf.open(info, "w", force_zip64=True) as dest:
+            reader.copy_to(dest)
+
+    def abort(self) -> None:
+        # zipfile can't remove members, so this uses its internals
+        for info in self.zf.filelist[self._n_members :]:
+            del self.zf.NameToInfo[info.filename]
+        del self.zf.filelist[self._n_members :]
+        self.zf.fp.seek(self._offset)
+        self.zf.fp.truncate()
+        self.zf.start_dir = self._offset
+
+
+class DirectoryWriter(ExportWriter):
+    """Writes to a directory. Each resource is written under a temporary name
+    and moved into place once it's verified, never replacing anything."""
+
+    def __init__(self, root: Path):
+        self.root = root
+        self._partial: Path | None = None
+
+    def begin(self, name: str) -> None:
+        self._target = self.root / name
+        if self._target.exists() or self._target.is_symlink():
+            raise TransferError(f"'{self._target}' already exists")
+        partial = self.root / partial_name(name)
+        if partial.exists() or partial.is_symlink():
+            raise TransferError(
+                f"'{partial}' is left over from an earlier export; remove it first"
+            )
+        self._partial = partial
+
+    def _path(self, name: str) -> Path:
+        return self._partial.joinpath(*PurePosixPath(name).parts[1:])
+
+    def add_dir(self, name: str, st: os.stat_result) -> None:
+        self._path(name).mkdir()
+
+    def add_file(self, name: str, st: os.stat_result, reader: _HashingReader) -> None:
+        path = self._path(name)
+        with open(path, "xb") as fp:
+            reader.copy_to(fp)
+            fp.flush()
+            os.fsync(fp.fileno())
+        os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
+
+    def commit(self) -> None:
+        _move_into_place(self._partial, self._target)
+        self._partial = None
+
+    def abort(self) -> None:
+        if self._partial is not None and (
+            self._partial.exists() or self._partial.is_symlink()
+        ):
+            nbank_archive.remove(self._partial)
+        self._partial = None
+
+
+@contextmanager
+def open_export(path: Path, compress: bool = False) -> Iterator[ExportWriter]:
+    """Opens an export for writing, as a tar file, a zip file, or a directory.
+
+    The format comes from the extension of path: '.tar' or '.zip', and anything
+    else is a directory, which is created if needed. A tar or zip file must not
+    exist already. compress applies to zip files, whose members are otherwise
+    stored uncompressed. Raises ValueError for compressed tar extensions and
+    other archive formats, which would otherwise be taken as directory names,
+    and OSError if the export can't be created.
+    """
+    suffix = path.suffix.lower()
+    if suffix in (".gz", ".tgz", ".bz2", ".xz", ".zst", ".7z"):
+        raise ValueError(f"can't export to a '{suffix}' file; use .tar or .zip")
+    if suffix == ".tar":
+        with tarfile.open(path, "x", copybufsize=tape_read_size) as tar:
+            yield TarWriter(tar)
+    elif suffix == ".zip":
+        compression = zipfile.ZIP_DEFLATED if compress else zipfile.ZIP_STORED
+        with zipfile.ZipFile(path, "x", compression=compression) as zf:
+            yield ZipWriter(zf)
+    else:
+        path.mkdir(parents=True, exist_ok=True)
+        yield DirectoryWriter(path)
+
+
+def write_resource(
+    writer: ExportWriter, source: Source, progress: Progress | None = None
 ) -> bool:
-    """Adds a resource to a tar file, checking its hash as it's read.
+    """Writes a resource to an export, checking its hash as it's read.
 
     The resource is stored under the name of its file in the archive, and a
     directory resource as that directory and everything in it, which is how
-    iter_tar_resources and `nbank archive register-tar` expect to find it. If
-    the hash doesn't match, or the resource can't be read, the tar file is cut
-    back to where it was before, so it only ever holds verified resources; tar
-    must be open for writing to a regular file (mode 'w' or 'x', not 'w|').
-    progress is called as each file is read with its path (the resource's name,
-    or a path inside a directory resource) and the number of bytes read so far.
+    iter_tar_resources and `nbank archive register-tar` expect to find it in a
+    tar file. If the hash doesn't match, or the resource can't be read, the
+    writer removes what was written of it, so the export only ever holds
+    verified resources. progress is called as each file is read with its path
+    (the resource's name, or a path inside a directory resource) and the number
+    of bytes read so far.
 
     Returns True if the hash was checked, and False if the registry has no hash
-    to check against. Raises TransferError if the resource can't be read or
-    doesn't match, and OSError if the tar file can't be written.
+    to check against. Raises TransferError if the resource can't be read, doesn't
+    match, or is already in a directory export, and OSError if the export can't
+    be written.
     """
     if source.path is None:
         raise TransferError(source.error or "no copy to read")
     name = source.path.name
-    offset, n_members = tar.offset, len(tar.members)
+    writer.begin(name)
+
+    def add_file(member: str, path: Path, st: os.stat_result, label: str) -> str:
+        reader = _HashingReader(path, st.st_size, _progress_for(progress, label))
+        try:
+            writer.add_file(member, st, reader)
+        finally:
+            reader.close()
+        return reader.hexdigest()
+
     try:
-        info, is_dir = _tarinfo(source.path, name)
-        if not is_dir:
-            digest = _add_file(tar, source.path, info, _progress_for(progress, name))
+        st = _stat(source.path)
+        if not stat.S_ISDIR(st.st_mode):
+            digest = add_file(name, source.path, st, name)
         else:
-            tar.addfile(info)
+            writer.add_dir(name, st)
             hasher = util.DirectoryHasher()
             for path in _walk(source.path):
                 relpath = path.relative_to(source.path).as_posix()
-                info, is_dir = _tarinfo(path, f"{name}/{relpath}")
-                if is_dir:
-                    tar.addfile(info)
+                member = f"{name}/{relpath}"
+                st = _stat(path)
+                if stat.S_ISDIR(st.st_mode):
+                    writer.add_dir(member, st)
                 else:
-                    progress_fn = _progress_for(progress, relpath)
-                    hasher.add(relpath, _add_file(tar, path, info, progress_fn))
+                    hasher.add(relpath, add_file(member, path, st, relpath))
             digest = hasher.hexdigest()
-        return _check_hash(digest, source.sha1)
-    except BaseException as err:
-        # tarfile doesn't support removing members, so this uses its internals
-        tar.fileobj.seek(offset)
-        tar.fileobj.truncate()
-        tar.offset = offset
-        del tar.members[n_members:]
-        if isinstance(err, OSError) and err.filename is not None:
-            # stat or listing the source failed; writing the tar has no filename
-            raise TransferError(
-                f"unable to read '{err.filename}': {err.strerror}"
-            ) from err
+        verified = _check_hash(digest, source.sha1)
+        writer.commit()
+        return verified
+    except BaseException:
+        writer.abort()
         raise
 
 
@@ -678,17 +843,22 @@ def add_location(
 
 
 __all__ = [
+    "DirectoryWriter",
+    "ExportWriter",
     "Received",
     "Source",
     "TarResource",
+    "TarWriter",
     "TransferError",
+    "ZipWriter",
     "add_location",
     "find_sources",
     "iter_tar_resources",
+    "open_export",
     "open_tar",
     "partial_name",
     "partial_target",
     "receive_directory",
     "receive_file",
-    "write_tar_resource",
+    "write_resource",
 ]

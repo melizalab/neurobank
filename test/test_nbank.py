@@ -831,7 +831,7 @@ def test_export_never_overwrites(exportable, tmp_path, caplog):
     out.write_text("already here")
     assert run_main("export", str(out), "res_1") == 1
     assert out.read_text() == "already here"
-    assert "unable to create" in caplog.text
+    assert "unable to export to" in caplog.text
 
 
 @respx.mock(assert_all_mocked=True)
@@ -845,3 +845,47 @@ def test_export_nothing_found(exportable, tmp_path, caplog):
 def test_export_no_ids(tmp_path, caplog):
     assert run_main("export", str(tmp_path / "export.tar")) == 1
     assert "no identifiers" in caplog.text
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_zip(exportable, tmp_path):
+    import zipfile
+
+    out = tmp_path / "export.zip"
+    assert run_main("export", "--compress", str(out), "res_1", "res_2") is None
+    with zipfile.ZipFile(out) as zf:
+        assert zf.namelist() == ["res_1.txt", "res_2.txt"]
+        assert zf.read("res_2.txt") == b"contents of res_2"
+        assert zf.getinfo("res_1.txt").compress_type == zipfile.ZIP_DEFLATED
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_directory(exportable, tmp_path):
+    out = tmp_path / "exported" / "here"
+    assert run_main("export", str(out), "res_1", "res_2") is None
+    assert sorted(p.name for p in out.iterdir()) == ["res_1.txt", "res_2.txt"]
+    assert (out / "res_1.txt").read_text() == "contents of res_1"
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_directory_skips_existing(exportable, tmp_path, caplog):
+    out = tmp_path / "exported"
+    out.mkdir()
+    (out / "res_1.txt").write_text("already here")
+    assert run_main("export", str(out), "res_1", "res_2") == 1
+    assert (out / "res_1.txt").read_text() == "already here"
+    assert (out / "res_2.txt").read_text() == "contents of res_2"
+    assert "already exists" in caplog.text
+
+
+def test_export_compress_only_for_zip(tmp_path, caplog):
+    assert run_main("export", "--compress", str(tmp_path / "x.tar"), "res_1") == 1
+    assert "only applies to zip" in caplog.text
+
+
+@respx.mock(assert_all_mocked=True)
+def test_export_refuses_compressed_tar(exportable, tmp_path, caplog):
+    out = tmp_path / "export.tar.gz"
+    assert run_main("export", str(out), "res_1") == 1
+    assert not out.exists()
+    assert "use .tar or .zip" in caplog.text

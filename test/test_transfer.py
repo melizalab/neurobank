@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import tarfile
+import zipfile
 
 import httpx
 import pytest
@@ -759,26 +760,46 @@ def source_for(path, sha1):
     return transfer.Source(path.name, sha1=sha1, path=path, archive="arch")
 
 
-def write_tar(tmp_path, *sources):
-    """Writes sources to a new tar file; returns its path and a result per source."""
-    out = tmp_path / "export.tar"
+export_names = {"tar": "export.tar", "zip": "export.zip", "dir": "export"}
+
+
+@pytest.fixture(params=list(export_names))
+def export_format(request):
+    return request.param
+
+
+def write_export(tmp_path, fmt, *sources, compress=False):
+    """Writes sources to a new export; returns its path and a result per source."""
+    out = tmp_path / export_names[fmt]
     results = []
-    with tarfile.open(out, "x") as tar:
+    with transfer.open_export(out, compress=compress) as writer:
         for source in sources:
             try:
-                results.append(transfer.write_tar_resource(tar, source))
+                results.append(transfer.write_resource(writer, source))
             except transfer.TransferError as err:
                 results.append(err)
     return out, results
 
 
-def tar_contents(path):
-    """Returns the (name, contents) of each member of a tar file; None for directories."""
-    with tarfile.open(path) as tar:
-        return [
-            (m.name, tar.extractfile(m).read() if m.isreg() else None)
-            for m in tar.getmembers()
-        ]
+def export_contents(path):
+    """Returns (name, contents) for everything in an export, None for directories."""
+    if path.suffix == ".tar":
+        with tarfile.open(path) as tar:
+            return [
+                (m.name, tar.extractfile(m).read() if m.isreg() else None)
+                for m in tar.getmembers()
+            ]
+    if path.suffix == ".zip":
+        with zipfile.ZipFile(path) as zf:
+            assert zf.testzip() is None
+            return [
+                (i.filename.rstrip("/"), None if i.is_dir() else zf.read(i))
+                for i in zf.infolist()
+            ]
+    return [
+        (p.relative_to(path).as_posix(), None if p.is_dir() else p.read_bytes())
+        for p in transfer._walk(path)
+    ]
 
 
 @pytest.fixture
@@ -791,111 +812,206 @@ def dir_resource(tmp_path):
     return root
 
 
-def test_write_tar_file_resource(tmp_path):
+dir_resource_members = [
+    ("res_d", None),
+    ("res_d/a.txt", b"first"),
+    ("res_d/sub", None),
+    ("res_d/sub/b.bin", b"second"),
+    ("res_d/sub/deeper", None),
+    ("res_d/sub/deeper/c", b""),
+]
+
+
+def test_export_file_resource(tmp_path, export_format):
     path = tmp_path / "res_1.wav"
     path.write_bytes(b"one")
-    out, results = write_tar(tmp_path, source_for(path, sha1_of(b"one")))
+    out, results = write_export(
+        tmp_path, export_format, source_for(path, sha1_of(b"one"))
+    )
     assert results == [True]
-    assert tar_contents(out) == [("res_1.wav", b"one")]
+    assert export_contents(out) == [("res_1.wav", b"one")]
 
 
-def test_write_tar_directory_resource(tmp_path, dir_resource):
+def test_export_directory_resource(tmp_path, export_format, dir_resource):
     sha1 = directory_hash(tmp_path)
-    out, results = write_tar(tmp_path, source_for(dir_resource, sha1))
+    out, results = write_export(tmp_path, export_format, source_for(dir_resource, sha1))
     assert results == [True]
-    assert tar_contents(out) == [
-        ("res_d", None),
-        ("res_d/a.txt", b"first"),
-        ("res_d/sub", None),
-        ("res_d/sub/b.bin", b"second"),
-        ("res_d/sub/deeper", None),
-        ("res_d/sub/deeper/c", b""),
-    ]
-    # and reads back as the same resource, with the same hash
+    assert export_contents(out) == dir_resource_members
+
+
+def test_export_tar_reads_back(tmp_path, dir_resource):
+    sha1 = directory_hash(tmp_path)
+    out, _ = write_export(tmp_path, "tar", source_for(dir_resource, sha1))
     with transfer.open_tar(out) as tar:
         res = next(transfer.iter_tar_resources(tar, lambda id, m: {"name": id}))
         received = transfer.receive_directory(None, "res_d", res.name, res.data, sha1)
     assert received.verified
 
 
-def test_write_tar_without_registered_hash(tmp_path):
+def test_export_zip_compressed(tmp_path):
+    path = tmp_path / "res_1"
+    path.write_bytes(b"x" * 10000)
+    out, _ = write_export(tmp_path, "zip", source_for(path, None), compress=True)
+    with zipfile.ZipFile(out) as zf:
+        [info] = zf.infolist()
+        assert info.compress_type == zipfile.ZIP_DEFLATED
+        assert info.compress_size < info.file_size
+    assert export_contents(out) == [("res_1", b"x" * 10000)]
+
+
+def test_export_zip_stored_by_default(tmp_path):
+    path = tmp_path / "res_1"
+    path.write_bytes(b"x" * 10000)
+    out, _ = write_export(tmp_path, "zip", source_for(path, None))
+    with zipfile.ZipFile(out) as zf:
+        assert zf.infolist()[0].compress_type == zipfile.ZIP_STORED
+
+
+def test_export_without_registered_hash(tmp_path, export_format):
     path = tmp_path / "res_1"
     path.write_bytes(b"one")
-    out, results = write_tar(tmp_path, source_for(path, None))
+    out, results = write_export(tmp_path, export_format, source_for(path, None))
     assert results == [False]
-    assert tar_contents(out) == [("res_1", b"one")]
+    assert export_contents(out) == [("res_1", b"one")]
 
 
-def test_write_tar_leaves_out_mismatched_file(tmp_path):
+def test_export_leaves_out_mismatched_file(tmp_path, export_format):
     paths = [tmp_path / name for name in ("res_1", "res_2", "res_3")]
     for path in paths:
         path.write_bytes(path.name.encode())
-    out, results = write_tar(
+    out, results = write_export(
         tmp_path,
+        export_format,
         source_for(paths[0], sha1_of(b"res_1")),
         source_for(paths[1], sha1_of(b"something else")),
         source_for(paths[2], sha1_of(b"res_3")),
     )
     assert results[0] is True and results[2] is True
     assert "don't match" in str(results[1])
-    assert tar_contents(out) == [("res_1", b"res_1"), ("res_3", b"res_3")]
+    assert export_contents(out) == [("res_1", b"res_1"), ("res_3", b"res_3")]
 
 
-def test_write_tar_leaves_out_mismatched_directory(tmp_path, dir_resource):
+def test_export_leaves_out_mismatched_directory(tmp_path, export_format, dir_resource):
     last = tmp_path / "res_2"
     last.write_bytes(b"two")
-    out, results = write_tar(
+    out, results = write_export(
         tmp_path,
+        export_format,
         source_for(dir_resource, sha1_of(b"wrong")),
         source_for(last, sha1_of(b"two")),
     )
     assert isinstance(results[0], transfer.TransferError)
-    assert tar_contents(out) == [("res_2", b"two")]
+    assert export_contents(out) == [("res_2", b"two")]
 
 
-def test_write_tar_refuses_link_in_directory(tmp_path, dir_resource):
+# the size of an export with nothing in it
+empty_size = {"tar": tarfile.RECORDSIZE, "zip": 22}
+
+
+def test_export_refuses_link_in_directory(tmp_path, export_format, dir_resource):
     (dir_resource / "link").symlink_to("a.txt")
-    out, results = write_tar(tmp_path, source_for(dir_resource, None))
+    out, results = write_export(tmp_path, export_format, source_for(dir_resource, None))
     assert "not a file or directory" in str(results[0])
-    assert tar_contents(out) == []
-    # nothing is left of the resource after the end of the tar file
-    assert out.stat().st_size == tarfile.RECORDSIZE
+    assert export_contents(out) == []
+    if export_format in empty_size:
+        # nothing is left of the resource after the end of the file
+        assert out.stat().st_size == empty_size[export_format]
 
 
 @pytest.mark.skipif(os.getuid() == 0, reason="root can read anything")
-def test_write_tar_unreadable_file(tmp_path, dir_resource):
+def test_export_unreadable_file(tmp_path, export_format, dir_resource):
     (dir_resource / "sub" / "b.bin").chmod(0)
-    out, results = write_tar(tmp_path, source_for(dir_resource, None))
+    out, results = write_export(tmp_path, export_format, source_for(dir_resource, None))
     assert "unable to read" in str(results[0])
-    assert tar_contents(out) == []
+    assert export_contents(out) == []
 
 
-def test_write_tar_file_that_shrinks(tmp_path, monkeypatch):
+def test_export_file_that_shrinks(tmp_path, export_format, monkeypatch):
     path = tmp_path / "res_1"
     path.write_bytes(b"x" * 100)
-    tarinfo = transfer._tarinfo
+    real_stat = transfer._stat
 
-    def grown(path, name):
-        info, is_dir = tarinfo(path, name)
-        info.size += 10
-        return info, is_dir
+    def grown(path):
+        st = list(real_stat(path))
+        st[stat.ST_SIZE] += 10
+        return os.stat_result(st)
 
-    monkeypatch.setattr(transfer, "_tarinfo", grown)
-    out, results = write_tar(tmp_path, source_for(path, None))
+    monkeypatch.setattr(transfer, "_stat", grown)
+    out, results = write_export(tmp_path, export_format, source_for(path, None))
     assert "got shorter" in str(results[0])
-    assert tar_contents(out) == []
+    assert export_contents(out) == []
 
 
-def test_write_tar_without_a_copy(tmp_path):
-    _, results = write_tar(tmp_path, transfer.Source("res_1", error="no copy"))
+def test_export_without_a_copy(tmp_path, export_format):
+    _, results = write_export(
+        tmp_path, export_format, transfer.Source("res_1", error="no copy")
+    )
     assert str(results[0]) == "no copy"
 
 
-def test_write_tar_reports_progress(tmp_path, dir_resource):
+def test_export_directory_never_replaces(tmp_path):
+    out = tmp_path / "export"
+    out.mkdir()
+    (out / "res_1").write_bytes(b"already here")
+    path = tmp_path / "res_1"
+    path.write_bytes(b"one")
+    _, results = write_export(tmp_path, "dir", source_for(path, None))
+    assert "already exists" in str(results[0])
+    assert (out / "res_1").read_bytes() == b"already here"
+
+
+def test_export_directory_keeps_leftover_partial(tmp_path):
+    out = tmp_path / "export"
+    out.mkdir()
+    (out / ".res_1.partial").write_bytes(b"left over")
+    path = tmp_path / "res_1"
+    path.write_bytes(b"one")
+    _, results = write_export(tmp_path, "dir", source_for(path, None))
+    assert "left over from an earlier export" in str(results[0])
+    assert (out / ".res_1.partial").read_bytes() == b"left over"
+
+
+def test_export_directory_keeps_mtime(tmp_path):
+    path = tmp_path / "res_1"
+    path.write_bytes(b"one")
+    os.utime(path, (1_000_000_000, 1_000_000_000))
+    out, _ = write_export(tmp_path, "dir", source_for(path, None))
+    assert (out / "res_1").stat().st_mtime == 1_000_000_000
+
+
+def test_export_writable_copies(tmp_path, dir_resource):
+    # resources in an archive are read-only; exported copies needn't be
+    for path in [*transfer._walk(dir_resource), dir_resource]:
+        path.chmod(0o555 if path.is_dir() else 0o444)
+    out, _ = write_export(tmp_path, "dir", source_for(dir_resource, None))
+    archive.remove(out / "res_d")
+    for path in [*transfer._walk(dir_resource), dir_resource]:
+        path.chmod(0o755 if path.is_dir() else 0o644)
+
+
+@pytest.mark.parametrize("name", ["export.tar.gz", "export.tgz", "export.tar.xz"])
+def test_export_refuses_compressed_tar(tmp_path, name):
+    with pytest.raises(ValueError, match=r"use \.tar or \.zip"):
+        with transfer.open_export(tmp_path / name):
+            pass
+    assert not (tmp_path / name).exists()
+
+
+@pytest.mark.parametrize("fmt", ["tar", "zip"])
+def test_export_never_overwrites_file(tmp_path, fmt):
+    out = tmp_path / export_names[fmt]
+    out.write_bytes(b"already here")
+    with pytest.raises(FileExistsError):
+        with transfer.open_export(out):
+            pass
+    assert out.read_bytes() == b"already here"
+
+
+def test_export_reports_progress(tmp_path, export_format, dir_resource):
     calls = []
-    with tarfile.open(tmp_path / "export.tar", "x") as tar:
-        transfer.write_tar_resource(
-            tar,
+    with transfer.open_export(tmp_path / export_names[export_format]) as writer:
+        transfer.write_resource(
+            writer,
             source_for(dir_resource, None),
             progress=lambda path, n: calls.append((path, n)),
         )

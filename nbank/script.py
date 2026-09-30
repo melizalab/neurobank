@@ -319,7 +319,8 @@ def main(argv=None):
 
     pp = sub.add_parser(
         "export",
-        help="write resources from neurobank archives on this host to a tar file",
+        help="write resources from neurobank archives on this host to a tar file, "
+        "zip file, or directory",
     )
     pp.set_defaults(func=export_resources)
     pp.add_argument(
@@ -334,7 +335,17 @@ def main(argv=None):
         help="read identifiers from FILE, one per line ('-' for standard input)",
         metavar="FILE",
     )
-    pp.add_argument("tar", type=Path, help="the tar file to create")
+    pp.add_argument(
+        "--compress",
+        help="compress the members of a zip file (default is to store them as-is)",
+        action="store_true",
+    )
+    pp.add_argument(
+        "out",
+        type=Path,
+        help="where to write the resources: a tar file (.tar) or zip file (.zip) "
+        "to create, or else a directory",
+    )
     pp.add_argument("ids", nargs="*", help="identifier(s) of the resource(s) to export")
 
     pp = sub.add_parser("dtype", help="list and add data types")
@@ -1581,14 +1592,18 @@ def _read_ids(path: Path) -> list[str]:
 
 
 def export_resources(args):
-    """Write resources from the neurobank archives on this host to a new tar file.
+    """Write resources from the neurobank archives on this host to a tar file, zip
+    file, or directory.
 
     Each resource is checked against its registered hash as it's read, and one
-    that doesn't match or can't be read is left out of the tar file. The tar
-    file can then be written to tape and registered with `archive register-tar`.
+    that doesn't match or can't be read is left out. A tar file can then be
+    written to tape and registered with `archive register-tar`.
 
     Returns 1 if the export can't be run or any resource is left out.
     """
+    if args.compress and args.out.suffix.lower() != ".zip":
+        log.error("error: --compress only applies to zip files")
+        return 1
     ids = list(args.ids)
     if args.from_file is not None:
         try:
@@ -1625,19 +1640,20 @@ def export_resources(args):
     if not sources:
         summarize()
         return 1
+    log.info("writing %d resource(s) to %s", len(sources), args.out)
     try:
-        tarf = tarfile.open(args.tar, "x", copybufsize=transfer.tape_read_size)
-    except OSError as err:
-        log.error("error: unable to create %s: %s", args.tar, err)
-        return 1
-    log.info("writing %d resource(s) to %s", len(sources), args.tar)
-    try:
-        with tarf, Progress() as progress:
+        with (
+            transfer.open_export(args.out, compress=args.compress) as writer,
+            Progress() as progress,
+        ):
             for source in sources:
-                size = None if source.path.is_dir() else source.path.stat().st_size
+                try:
+                    size = None if source.path.is_dir() else source.path.stat().st_size
+                except OSError:
+                    size = None
                 progress.start(source.path.name, size)
                 try:
-                    verified = transfer.write_tar_resource(tarf, source, progress)
+                    verified = transfer.write_resource(writer, source, progress)
                 except transfer.TransferError as err:
                     log.error("  ✗ %s -> %s", source.id, err)
                     n_failed += 1
@@ -1652,8 +1668,8 @@ def export_resources(args):
                     note,
                     progress.summary(),
                 )
-    except OSError as err:
-        log.error("error: unable to write %s: %s", args.tar, err)
+    except (OSError, ValueError) as err:
+        log.error("error: unable to export to %s: %s", args.out, err)
         return 1
     summarize()
     return 1 if n_failed else None

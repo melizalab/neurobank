@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from nbank import archive as nbank_archive
-from nbank import check, core, script, transfer
+from nbank import check, core, script, transfer, util
 from nbank import registry as nbank_registry
 
 
@@ -638,6 +638,33 @@ def test_export_and_import(
     for name in (file_name, dir_name):
         assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
     assert cli("check", "archive", str(b.path)) == 0
+
+
+@pytest.mark.parametrize("out_name", ["export.zip", "export"])
+def test_export_zip_and_directory(
+    cli, registry, dir_archives, dtype, deposit_file, unique, tmp_path, out_name
+):
+    import zipfile
+
+    a, _ = dir_archives
+    file_name = deposit_file(a, dtype)
+    src = tmp_path / unique("res")
+    (src / "sub").mkdir(parents=True)
+    (src / "sub" / "data").write_text(unique("inside"))
+    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
+    dir_name = item["id"]
+    out = tmp_path / out_name
+    assert cli("export", str(out), file_name, dir_name) == 0
+    file_stored = stored_path(a, file_name)
+    if out.suffix == ".zip":
+        with zipfile.ZipFile(out) as zf:
+            assert zf.read(file_stored.name) == file_stored.read_bytes()
+            assert f"{dir_name}/sub/data" in zf.namelist()
+    else:
+        assert (out / file_stored.name).read_bytes() == file_stored.read_bytes()
+        assert util.hash_directory(out / dir_name) == util.hash_directory(
+            stored_path(a, dir_name)
+        )
 
 
 def changed_tar(archive, name, tmp_path):
