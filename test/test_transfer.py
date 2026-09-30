@@ -561,14 +561,14 @@ def read_tar(members, registered, read=True):
         return {"name": id} if id in registered else None
 
     results = []
-    for record, name, data, is_dir in transfer.iter_tar_resources(tar, lookup):
+    for res in transfer.iter_tar_resources(tar, lookup):
         if not read:
-            results.append((record["name"], name, is_dir))
-        elif is_dir:
-            entries = [(rel, None if s is None else s.read()) for rel, s in data]
-            results.append((record["name"], name, entries))
+            results.append((res.record["name"], res.name, res.is_dir))
+        elif res.is_dir:
+            entries = [(rel, None if s is None else s.read()) for rel, s in res.data]
+            results.append((res.record["name"], res.name, entries))
         else:
-            results.append((record["name"], name, data.read()))
+            results.append((res.record["name"], res.name, res.data.read()))
     return results
 
 
@@ -621,11 +621,12 @@ def test_tar_resources_skips_unread_directory():
     ]
     tar = tarfile.open(fileobj=io.BytesIO(tar_bytes(members)), mode="r|")
     items = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
-    record, _, _, is_dir = next(items)
-    assert (record["name"], is_dir) == ("res_d", True)
+    res = next(items)
+    assert (res.record["name"], res.is_dir, res.size) == ("res_d", True, None)
     # the directory's entries are never read
-    record, name, data, is_dir = next(items)
-    assert (record["name"], name, data.read()) == ("res_f", "res_f.txt", b"after")
+    res = next(items)
+    assert (res.record["name"], res.name, res.size) == ("res_f", "res_f.txt", 5)
+    assert res.data.read() == b"after"
     assert next(items, None) is None
 
 
@@ -638,11 +639,11 @@ def test_tar_resources_directory_with_link():
     ]
     tar = tarfile.open(fileobj=io.BytesIO(tar_bytes(members)), mode="r|")
     items = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
-    _, _, entries, _ = next(items)
+    entries = next(items).data
     with pytest.raises(transfer.TransferError, match="res_d/link"):
         list(entries)
-    record, _, data, _ = next(items)
-    assert (record["name"], data.read()) == ("res_f", b"after")
+    res = next(items)
+    assert (res.record["name"], res.data.read()) == ("res_f", b"after")
 
 
 def test_open_tar_from_stdin(monkeypatch):
@@ -657,5 +658,22 @@ def test_open_tar_from_stdin(monkeypatch):
     monkeypatch.setattr("sys.stdin", Stdin)
     with Stdin.buffer, transfer.open_tar("-") as tar:
         items = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
-        results = [(name, data.read()) for _, name, data, _ in items]
+        results = [(res.name, res.data.read()) for res in items]
     assert results == [("res_1.wav", b"one")]
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_receive_reports_progress(tmp_archive, monkeypatch, dry_run):
+    monkeypatch.setattr(util, "_hash_block_size", 4)
+    cfg = None if dry_run else tmp_archive
+    seen = []
+
+    def progress(path, nbytes):
+        seen.append((path, nbytes))
+
+    transfer.receive_file(cfg, "res_1", "f.wav", io.BytesIO(b"123456"), None, progress)
+    assert seen == [("f.wav", 4), ("f.wav", 6)]
+    seen.clear()
+    entries = [("sub", None), ("sub/a", io.BytesIO(b"12345")), ("b", io.BytesIO(b"1"))]
+    transfer.receive_directory(cfg, "res_2", "res_2", entries, None, progress)
+    assert seen == [("sub/a", 4), ("sub/a", 5), ("b", 1)]

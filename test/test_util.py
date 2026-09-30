@@ -95,6 +95,15 @@ def test_hash_stream_reads_in_blocks_and_copies(tmp_path, monkeypatch):
     assert util.hash(src) == digest
 
 
+def test_hash_stream_reports_progress(monkeypatch):
+    import io
+
+    monkeypatch.setattr(util, "_hash_block_size", 10)
+    seen = []
+    util.hash_stream(io.BytesIO(b"x" * 25), progress=seen.append)
+    assert seen == [10, 20, 25]
+
+
 def test_hash_directory_with_multiple_files(tmp_path):
     d = tmp_path / "sub"
     d.mkdir()

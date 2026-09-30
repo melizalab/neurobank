@@ -7,7 +7,7 @@ Created Tue Jul  8 14:23:35 2014
 
 import json
 import logging
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path, PurePath, PurePosixPath
 from typing import Any, BinaryIO
 
@@ -127,17 +127,22 @@ _hash_block_size = 1 << 20
 
 
 def hash_stream(
-    source: BinaryIO, method: str = "sha1", copy_to: BinaryIO | None = None
+    source: BinaryIO,
+    method: str = "sha1",
+    copy_to: BinaryIO | None = None,
+    progress: Callable[[int], None] | None = None,
 ) -> str:
     """Returns the hash of everything read from source, using method.
 
     Reads in fixed-size blocks, so memory use doesn't depend on the size of the
     data. If copy_to is given, each block is also written to it, so data can be
-    copied and hashed in one pass.
+    copied and hashed in one pass. If progress is given, it's called after each
+    block with the number of bytes read so far.
     """
     import hashlib
 
     digest = hashlib.new(method)
+    nbytes = 0
     while True:
         data = source.read(_hash_block_size)
         if not data:
@@ -145,6 +150,9 @@ def hash_stream(
         digest.update(data)
         if copy_to is not None:
             copy_to.write(data)
+        nbytes += len(data)
+        if progress is not None:
+            progress(nbytes)
     return digest.hexdigest()
 
 
@@ -170,9 +178,17 @@ class DirectoryHasher:
             raise ValueError(f"'{key}' was added more than once")
         self._files[key] = file_hash
 
-    def add_stream(self, relpath: str | PurePath, source: BinaryIO) -> str:
-        """Hashes a file read from source and records it. Returns the file's hash."""
-        file_hash = hash_stream(source, self.method)
+    def add_stream(
+        self,
+        relpath: str | PurePath,
+        source: BinaryIO,
+        progress: Callable[[int], None] | None = None,
+    ) -> str:
+        """Hashes a file read from source and records it. Returns the file's hash.
+
+        progress is passed to hash_stream.
+        """
+        file_hash = hash_stream(source, self.method, progress=progress)
         self.add(relpath, file_hash)
         return file_hash
 

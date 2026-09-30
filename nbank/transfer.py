@@ -20,7 +20,7 @@ import tarfile
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO
+from typing import BinaryIO, NamedTuple
 
 import httpx
 from httpx import Client
@@ -227,12 +227,22 @@ def _move_into_place(partial: Path, target: Path) -> None:
     _fsync_dir(target.parent)
 
 
+Progress = Callable[[str, int], None]
+
+
+def _progress_for(progress: Progress | None, path: str) -> Callable[[int], None] | None:
+    if progress is None:
+        return None
+    return lambda nbytes: progress(path, nbytes)
+
+
 def receive_file(
     cfg: nbank_archive.ArchiveConfig | None,
     id: str,
     name: str,
     source: BinaryIO,
     sha1: str | None,
+    progress: Progress | None = None,
 ) -> Received:
     """Stores a file resource read from source in a neurobank archive, checking its hash.
 
@@ -243,10 +253,13 @@ def receive_file(
     removed. The archive's permission policy is applied before the move.
 
     If cfg is None, this is a dry run: the data is hashed and checked, and
-    nothing is written. Raises TransferError if the resource can't be stored.
+    nothing is written. progress, if given, is called as data is read with name
+    and the number of bytes read so far. Raises TransferError if the resource
+    can't be stored.
     """
+    report = _progress_for(progress, name)
     if cfg is None:
-        digest = util.hash_stream(source)
+        digest = util.hash_stream(source, progress=report)
         return Received(None, digest, _check_hash(digest, sha1))
     target = _destination(cfg, id, name)
     partial = target.parent / partial_name(target.name)
@@ -260,7 +273,7 @@ def receive_file(
             ) from None
         created = True
         with fp:
-            digest = util.hash_stream(source, copy_to=fp)
+            digest = util.hash_stream(source, copy_to=fp, progress=report)
             fp.flush()
             os.fsync(fp.fileno())
         verified = _check_hash(digest, sha1)
@@ -281,6 +294,7 @@ def receive_directory(
     name: str,
     entries: Iterable[tuple[str, BinaryIO | None]],
     sha1: str | None,
+    progress: Progress | None = None,
 ) -> Received:
     """Stores a directory resource in a neurobank archive, checking its hash.
 
@@ -293,7 +307,9 @@ def receive_directory(
     repeat are refused. On any error, the temporary directory is removed.
 
     If cfg is None, this is a dry run: the files are hashed and checked, and
-    nothing is written. Raises TransferError if the resource can't be stored.
+    nothing is written. progress, if given, is called as each file is read with
+    its path and the number of bytes read so far. Raises TransferError if the
+    resource can't be stored.
     """
     hasher = util.DirectoryHasher()
     if cfg is None:
@@ -301,7 +317,9 @@ def receive_directory(
             _entry_path(relpath)
             if source is not None:
                 try:
-                    hasher.add_stream(relpath, source)
+                    hasher.add_stream(
+                        relpath, source, progress=_progress_for(progress, relpath)
+                    )
                 except ValueError as err:
                     raise TransferError(str(err)) from err
         digest = hasher.hexdigest()
@@ -325,7 +343,11 @@ def receive_directory(
             path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 with open(path, "xb") as fp:
-                    file_hash = util.hash_stream(source, copy_to=fp)
+                    file_hash = util.hash_stream(
+                        source,
+                        copy_to=fp,
+                        progress=_progress_for(progress, relpath),
+                    )
                     fp.flush()
                     os.fsync(fp.fileno())
                 hasher.add(relpath, file_hash)
@@ -361,9 +383,19 @@ def open_tar(path: str | Path) -> tarfile.TarFile:
     return tarfile.open(path, mode="r|*")
 
 
+class TarResource(NamedTuple):
+    """A registered resource read from a tar file; see iter_tar_resources."""
+
+    record: dict
+    name: str
+    data: BinaryIO | Iterator
+    is_dir: bool
+    size: int | None
+
+
 def iter_tar_resources(
     tar: tarfile.TarFile, lookup: Callable[[str, tarfile.TarInfo], dict | None]
-) -> Iterator[tuple[dict, str, BinaryIO | Iterator, bool]]:
+) -> Iterator[TarResource]:
     """Yields the registered resources in a tar file, reading it in order.
 
     lookup(id, member) returns the registry record for a resource id, or None if
@@ -371,8 +403,9 @@ def iter_tar_resources(
     any directories or extension) is a registered id, so members can be stored
     under their bare names or under full paths.
 
-    Yields (record, name, data, is_dir) for each resource, where name is the
-    member's base name. For a file resource, data is a stream of its contents.
+    Yields a TarResource (record, name, data, is_dir, size) for each resource,
+    where name is the member's base name and size is a file resource's size in
+    bytes (None for a directory resource). For a file resource, data is a stream of its contents.
     For a directory resource, data is an iterator of (path, stream) entries, as
     receive_directory takes, made from the members that follow it with its name
     as a prefix; a stream of None is a subdirectory. Each resource's data has to
@@ -416,10 +449,12 @@ def iter_tar_resources(
         if record is None:
             continue
         if member.isreg():
-            yield record, path.name, tar.extractfile(member), False
+            yield TarResource(
+                record, path.name, tar.extractfile(member), False, member.size
+            )
             continue
         entries = directory_entries(member.name.rstrip("/") + "/")
-        yield record, path.name, entries, True
+        yield TarResource(record, path.name, entries, True, None)
         # skip whatever the caller didn't read
         try:
             for _ in entries:
@@ -460,6 +495,7 @@ def add_location(
 __all__ = [
     "Received",
     "Source",
+    "TarResource",
     "TransferError",
     "add_location",
     "find_sources",

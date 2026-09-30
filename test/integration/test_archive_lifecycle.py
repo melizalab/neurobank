@@ -673,3 +673,23 @@ def test_import_tar_full_paths(
         t.add(stored, arcname=str(stored).lstrip("/"))
     assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
     assert stored_path(b, name).read_text() == stored.read_text()
+
+
+def test_import_tar_shows_progress(
+    cli, two_archives, dtype, deposit_file, tmp_path, monkeypatch
+):
+    import io
+
+    class Terminal(io.StringIO):
+        def isatty(self):
+            return True
+
+    a, b = two_archives
+    name = deposit_file(a, dtype, hash=True)
+    stored = stored_path(a, name)
+    tar = make_tar(tmp_path / "archive.tar", stored)
+    terminal = Terminal()
+    monkeypatch.setattr("sys.stderr", terminal)
+    assert cli("archive", "import-tar", "-y", str(tar), str(b.path)) == 0
+    size = stored.stat().st_size
+    assert f"  {stored.name}  {size} B / {size} B (100%)" in terminal.getvalue()

@@ -13,6 +13,7 @@ import json
 import logging
 import sys
 import tarfile
+import time
 from collections import Counter
 from netrc import NetrcParseError
 from pathlib import Path
@@ -1223,6 +1224,85 @@ def prune_archive(args):
     return 1 if n_failed else None
 
 
+def _human_size(nbytes: float) -> str:
+    """Returns a byte count in decimal units, e.g. '1.2 GB'."""
+    for unit in ("B", "kB", "MB", "GB"):
+        if nbytes < 1000:
+            return f"{nbytes:.0f} {unit}" if unit == "B" else f"{nbytes:.1f} {unit}"
+        nbytes /= 1000
+    return f"{nbytes:.1f} TB"
+
+
+class Progress:
+    """Shows how much of a file has been read, on one line of the terminal.
+
+    Call start() for each resource, then pass the object as the progress
+    callback of the transfer functions. Writes to stderr only if it's a
+    terminal, and updates at most every `interval` seconds. Used as a context
+    manager, it clears its line before any message from the nbank logger, so
+    the two don't overwrite each other.
+    """
+
+    interval = 0.2
+
+    def __init__(self, stream=None):
+        self.stream = stream if stream is not None else sys.stderr
+        self.enabled = self.stream.isatty()
+        self._width = 0
+        self.start("")
+
+    def start(self, label: str, total: int | None = None) -> None:
+        """Starts reporting on a resource called label, total bytes long if known."""
+        self.label = label
+        self.total = total
+        self._path = None
+        self._last = None
+
+    def __call__(self, path: str, nbytes: int) -> None:
+        if not self.enabled:
+            return
+        now = time.monotonic()
+        if path != self._path:
+            self._path = path
+            self._started = now
+            self._last = None
+        if self._last is not None and now - self._last < self.interval:
+            return
+        self._last = now
+        whole = path == self.label
+        text = f"  {self.label if whole else f'{self.label}/{path}'}  "
+        text += _human_size(nbytes)
+        if whole and self.total:
+            text += f" / {_human_size(self.total)} ({100 * nbytes / self.total:.0f}%)"
+        if now > self._started:
+            text += f"  {_human_size(nbytes / (now - self._started))}/s"
+        self.clear()
+        self.stream.write(text)
+        self.stream.flush()
+        self._width = len(text)
+
+    def clear(self) -> None:
+        """Erases the progress line, if there is one."""
+        if self._width:
+            self.stream.write("\r" + " " * self._width + "\r")
+            self.stream.flush()
+            self._width = 0
+
+    def _before_log(self, record) -> bool:
+        self.clear()
+        return True
+
+    def __enter__(self):
+        for handler in log.handlers:
+            handler.addFilter(self._before_log)
+        return self
+
+    def __exit__(self, *exc):
+        self.clear()
+        for handler in log.handlers:
+            handler.removeFilter(self._before_log)
+
+
 def import_tar(args):
     """Import resources from a tar file, tape, or standard input into a neurobank archive.
 
@@ -1266,31 +1346,42 @@ def import_tar(args):
 
         dest = None if args.dry_run else archive_cfg
         with transfer.open_tar(args.tar) as tarf:
-            for record, name, data, is_dir in transfer.iter_tar_resources(tarf, lookup):
-                id = record["name"]
-                if archive_name in record["locations"]:
-                    log.info(
-                        "  ✗ %s -> '%s' is already in the destination archive",
-                        name,
-                        id,
-                    )
-                    continue
-                receive = (
-                    transfer.receive_directory if is_dir else transfer.receive_file
-                )
-                try:
-                    received = receive(dest, id, name, data, record["sha1"])
-                    if dest is not None:
-                        transfer.add_location(
-                            session, registry_url, id, archive_name, received.path
+            with Progress() as progress:
+                for res in transfer.iter_tar_resources(tarf, lookup):
+                    id = res.record["name"]
+                    if archive_name in res.record["locations"]:
+                        log.info(
+                            "  ✗ %s -> '%s' is already in the destination archive",
+                            res.name,
+                            id,
                         )
-                except transfer.TransferError as err:
-                    log.error("  ✗ %s -> %s", name, err)
-                    n_failed += 1
-                    continue
-                result = received.path if dest is not None else "OK"
-                note = "" if received.verified else " (no registered hash to check)"
-                log.info("  - %s -> %s%s", name, result, note)
+                        continue
+                    receive = (
+                        transfer.receive_directory
+                        if res.is_dir
+                        else transfer.receive_file
+                    )
+                    progress.start(res.name, res.size)
+                    try:
+                        received = receive(
+                            dest,
+                            id,
+                            res.name,
+                            res.data,
+                            res.record["sha1"],
+                            progress=progress,
+                        )
+                        if dest is not None:
+                            transfer.add_location(
+                                session, registry_url, id, archive_name, received.path
+                            )
+                    except transfer.TransferError as err:
+                        log.error("  ✗ %s -> %s", res.name, err)
+                        n_failed += 1
+                        continue
+                    result = received.path if dest is not None else "OK"
+                    note = "" if received.verified else " (no registered hash to check)"
+                    log.info("  - %s -> %s%s", res.name, result, note)
     return 1 if n_failed else None
 
 

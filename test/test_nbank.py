@@ -1,5 +1,6 @@
 # -*- mode: python -*-
 import argparse
+import io
 import json
 import logging
 import os
@@ -648,3 +649,65 @@ def test_init_existing_archive(mocked_api, tmp_archive, caplog):
     run_main("init", str(tmp_archive["path"]))
     assert f"'{config}' already exists" in caplog.text
     assert config.read_text() == before
+
+
+class FakeTerminal(io.StringIO):
+    def isatty(self):
+        return True
+
+
+def test_progress_not_a_terminal():
+    stream = io.StringIO()
+    progress = script.Progress(stream)
+    progress.start("res_1.wav", 100)
+    progress("res_1.wav", 50)
+    progress.clear()
+    assert stream.getvalue() == ""
+
+
+def test_progress_line(monkeypatch):
+    clock = iter([0.0, 1.0, 1.1, 2.0])
+    monkeypatch.setattr(script.time, "monotonic", lambda: next(clock))
+    stream = FakeTerminal()
+    progress = script.Progress(stream)
+    progress.start("res_1.wav", 4_000_000_000)
+    progress("res_1.wav", 1_000_000)  # t=0: first report is shown
+    progress("res_1.wav", 1_000_000_000)  # t=1: shown
+    progress("res_1.wav", 1_100_000_000)  # t=1.1: too soon, skipped
+    progress("res_1.wav", 2_000_000_000)  # t=2: shown
+    lines = [line for line in stream.getvalue().split("\r") if line.strip()]
+    assert lines == [
+        "  res_1.wav  1.0 MB / 4.0 GB (0%)",
+        "  res_1.wav  1.0 GB / 4.0 GB (25%)  1.0 GB/s",
+        "  res_1.wav  2.0 GB / 4.0 GB (50%)  1.0 GB/s",
+    ]
+
+
+def test_progress_directory_entries(monkeypatch):
+    clock = iter([0.0, 2.0])
+    monkeypatch.setattr(script.time, "monotonic", lambda: next(clock))
+    stream = FakeTerminal()
+    progress = script.Progress(stream)
+    progress.start("res_2", None)
+    progress("sub/a", 500)
+    progress("sub/a", 2_000_500)
+    assert stream.getvalue().split("\r")[-1] == "  res_2/sub/a  2.0 MB  1.0 MB/s"
+
+
+def test_progress_clears_line_before_log_messages():
+    logged = io.StringIO()
+    handler = logging.StreamHandler(logged)
+    log = logging.getLogger("nbank")
+    log.addHandler(handler)
+    stream = FakeTerminal()
+    try:
+        with script.Progress(stream) as progress:
+            progress.start("res_1.wav", None)
+            progress("res_1.wav", 1000)
+            log.error("a message")
+            assert stream.getvalue().endswith("\r")
+            assert progress._width == 0
+        assert handler.filters == []
+    finally:
+        log.removeHandler(handler)
+    assert logged.getvalue() == "a message\n"
