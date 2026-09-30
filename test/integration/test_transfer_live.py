@@ -40,17 +40,20 @@ def test_find_sources(
     assert from_b.path == nbank_archive.resource_path(b.config, name, resolve_ext=True)
 
 
-def test_receive_and_add_location(cli, registry, make_archive, register, tmp_path):
+def test_receive_and_add_location(
+    cli, registry, make_archive, register, unique, tmp_path
+):
     import io
 
     from nbank import util
 
     dest = make_archive(allow_directories=True)
-    data = b"file contents"
+    # unique, because the registry doesn't allow two resources with one hash
+    data = unique("file contents").encode()
     file_id = register(sha1=util.hash_stream(io.BytesIO(data)))["name"]
     src = tmp_path / "dir_resource"
     (src / "sub").mkdir(parents=True)
-    (src / "sub" / "data").write_bytes(b"inside")
+    (src / "sub" / "data").write_bytes(unique("inside").encode())
     dir_id = register(sha1=util.hash_directory(src))["name"]
 
     received = transfer.receive_file(

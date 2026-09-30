@@ -711,3 +711,8 @@ def test_progress_clears_line_before_log_messages():
     finally:
         log.removeHandler(handler)
     assert logged.getvalue() == "a message\n"
+
+
+def test_check_tar_missing_file(tmp_path, caplog):
+    assert run_main("check", "tar", str(tmp_path / "missing.tar")) == 1
+    assert "unable to read" in caplog.text

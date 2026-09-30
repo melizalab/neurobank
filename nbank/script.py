@@ -420,6 +420,17 @@ def main(argv=None):
     pp.set_defaults(func=check_all)
     add_check_options(pp)
 
+    pp = ppsub.add_parser(
+        "tar",
+        help="check the resources in a tar file (or tape) against the registry",
+    )
+    pp.set_defaults(func=check_tar)
+    pp.add_argument(
+        "tar",
+        type=Path,
+        help="the tar file: a file, a tape device, or '-' for standard input",
+    )
+
     args = p.parse_args(argv)
 
     if not hasattr(args, "func"):
@@ -1303,6 +1314,87 @@ class Progress:
             handler.removeFilter(self._before_log)
 
 
+def _tar_lookup(session, registry_url, unregistered: list | None = None):
+    """Returns a lookup function for transfer.iter_tar_resources.
+
+    It gets each candidate's registry record and logs files that aren't
+    registered, appending their names to unregistered if it's given.
+    """
+
+    def lookup(id, member):
+        url, _ = registry.get_resource(registry_url, id)
+        record = util.query_registry(session, url)
+        if record is None and member.isreg():
+            log.info("  ✗ %s -> '%s' not in the registry", member.name, id)
+            if unregistered is not None:
+                unregistered.append(member.name)
+        return record
+
+    return lookup
+
+
+def check_tar(args):
+    """Check the resources in a tar file, tape, or standard input against the registry.
+
+    Reads the tar file once, in order, and checks each registered resource
+    against its registered hash. Files that aren't registered are reported but
+    aren't errors. Returns 1 if any resource fails its check or the tar file
+    can't be read, 0 otherwise.
+    """
+    log.info("registry: %s", args.registry_url)
+    log.info("source: %s", args.tar)
+    counts = Counter()
+    unregistered = []
+    read_error = False
+    with httpx.Client(auth=args.auth) as session:
+        lookup = _tar_lookup(session, args.registry_url, unregistered)
+        try:
+            tarf = transfer.open_tar(args.tar)
+        except (OSError, tarfile.TarError) as err:
+            log.error("error: unable to read %s: %s", args.tar, err)
+            return 1
+        with tarf, Progress() as progress:
+            try:
+                for res in transfer.iter_tar_resources(tarf, lookup):
+                    receive = (
+                        transfer.receive_directory
+                        if res.is_dir
+                        else transfer.receive_file
+                    )
+                    progress.start(res.name, res.size)
+                    try:
+                        received = receive(
+                            None,
+                            res.record["name"],
+                            res.name,
+                            res.data,
+                            res.record["sha1"],
+                            progress=progress,
+                        )
+                    except transfer.TransferError as err:
+                        log.error("  ✗ %s -> %s", res.name, err)
+                        counts["failed"] += 1
+                        continue
+                    if received.verified:
+                        log.info("  - %s -> OK", res.name)
+                        counts["ok"] += 1
+                    else:
+                        log.info("  - %s -> OK (no registered hash to check)", res.name)
+                        counts["unverified"] += 1
+            except (OSError, tarfile.TarError) as err:
+                log.error("error: unable to read %s: %s", args.tar, err)
+                read_error = True
+    log.info(
+        "\nResources checked: %d; failed: %d; no registered hash: %d; "
+        "files not in the registry: %d",
+        counts.total(),
+        counts["failed"],
+        counts["unverified"],
+        len(unregistered),
+    )
+    return 1 if counts["failed"] or read_error else 0
+
+
 def import_tar(args):
     """Import resources from a tar file, tape, or standard input into a neurobank archive.
 
@@ -1337,13 +1429,7 @@ def import_tar(args):
         if args.dry_run:
             log.info("DRY RUN: checking resources without importing them")
 
-        def lookup(id, member):
-            url, _ = registry.get_resource(registry_url, id)
-            record = util.query_registry(session, url)
-            if record is None and member.isreg():
-                log.info("  ✗ %s -> '%s' not in the registry", member.name, id)
-            return record
-
+        lookup = _tar_lookup(session, registry_url)
         dest = None if args.dry_run else archive_cfg
         with transfer.open_tar(args.tar) as tarf:
             with Progress() as progress:

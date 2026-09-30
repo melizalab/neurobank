@@ -693,3 +693,72 @@ def test_import_tar_shows_progress(
     assert cli("archive", "import-tar", "-y", str(tar), str(b.path)) == 0
     size = stored.stat().st_size
     assert f"  {stored.name}  {size} B / {size} B (100%)" in terminal.getvalue()
+
+
+def test_check_tar(cli, two_archives, dtype, deposit_file, unique, tmp_path, caplog):
+    a, b = two_archives
+    hashed = deposit_file(a, dtype, hash=True)
+    unhashed = deposit_file(b, dtype)
+    other = tmp_path / f"{unique('other')}.txt"
+    other.write_text("not in the registry")
+    tar = make_tar(
+        tmp_path / "archive.tar",
+        stored_path(a, hashed),
+        stored_path(b, unhashed),
+        other,
+    )
+    assert cli("check", "tar", str(tar)) == 0
+    assert f"{stored_path(a, hashed).name} -> OK" in caplog.text
+    assert (
+        f"{stored_path(b, unhashed).name} -> OK (no registered hash to check)"
+        in caplog.text
+    )
+    assert f"{other.name} -> '{other.stem}' not in the registry" in caplog.text
+    assert (
+        "Resources checked: 2; failed: 0; no registered hash: 1; "
+        "files not in the registry: 1"
+    ) in caplog.text
+
+
+def test_check_tar_hash_mismatch(cli, archive, dtype, deposit_file, tmp_path, caplog):
+    name = deposit_file(archive, dtype, hash=True)
+    tar = changed_tar(archive, name, tmp_path)
+    assert cli("check", "tar", str(tar)) == 1
+    assert "don't match the registered hash" in caplog.text
+    assert "failed: 1" in caplog.text
+
+
+def test_check_tar_directory_resource(
+    cli, registry, dir_archives, dtype, unique, tmp_path, caplog
+):
+    a, _ = dir_archives
+    src = tmp_path / unique("res")
+    (src / "sub").mkdir(parents=True)
+    (src / "sub" / "data").write_text(unique("inside"))
+    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
+    name = item["id"]
+    tar = tmp_path / "archive.tar"
+    with tarfile.open(tar, "w") as t:
+        t.add(stored_path(a, name), arcname=name)
+    assert cli("check", "tar", str(tar)) == 0
+    assert f"{name} -> OK" in caplog.text
+
+
+def test_check_tar_from_stdin(
+    cli, archive, dtype, deposit_file, tmp_path, monkeypatch, caplog
+):
+    name = deposit_file(archive, dtype, hash=True)
+    tar = make_tar(tmp_path / "archive.tar", stored_path(archive, name))
+    with open(tar, "rb") as fp:
+        monkeypatch.setattr("sys.stdin", type("Stdin", (), {"buffer": fp}))
+        assert cli("check", "tar", "-") == 0
+    assert f"{stored_path(archive, name).name} -> OK" in caplog.text
+
+
+def test_check_tar_truncated(cli, archive, dtype, deposit_file, tmp_path, caplog):
+    name = deposit_file(archive, dtype, hash=True, contents="x" * 100_000)
+    tar = make_tar(tmp_path / "archive.tar", stored_path(archive, name))
+    truncated = tmp_path / "truncated.tar"
+    truncated.write_bytes(tar.read_bytes()[:50_000])
+    assert cli("check", "tar", str(truncated)) == 1
+    assert "unable to read" in caplog.text
