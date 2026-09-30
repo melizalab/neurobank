@@ -106,7 +106,7 @@ By default, the archive is owned by you and your primary group, and its
 umask is 002. Use ``-g`` to give the archive a different group, and
 ``-u`` to set a different umask (for example, 027 to keep out users who
 aren't in the group). If several users will deposit into the archive
-under their own accounts, add ``--shared``. See `Controlling access`_
+under their own accounts, add ``--shared``. See `Shared archives`_
 for how to set up and maintain shared archives.
 
 Set archive policies
@@ -128,7 +128,7 @@ the archive's policies. These are the settings you may want to modify:
    -  ``umask``: Permissions to withhold from files and directories (``-u``).
    -  ``read_only_resources``: If true (the default), deposited resources can't be modified.
 
-   See `Controlling access`_ for details.
+   See `Shared archives`_ for details.
 
 Registering and storing resources
 ---------------------------------

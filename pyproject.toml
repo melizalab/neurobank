@@ -55,9 +55,6 @@ Homepage = "https://github.com/melizalab/neurobank"
 [project.scripts]
 nbank = "nbank.script:main"
 
-[tool.hatch.version]
-path = "nbank/__init__.py"
-
 [tool.black]
 line-length = 88
 target-version = ["py311"]
