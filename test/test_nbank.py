@@ -618,6 +618,14 @@ def test_search_partial_hash(mocked_api, capsys):
     assert capsys.readouterr().out == "res_1\n"
 
 
+def test_search_by_scheme(mocked_api, capsys):
+    mocked_api.get(resource_url, params={"scheme": "tape", "dtype": "raw"}).respond(
+        json=[{"name": "res_1"}, {"name": "res_2"}]
+    )
+    assert run_main("search", "-s", "tape", "-d", "raw") is None
+    assert capsys.readouterr().out == "res_1\nres_2\n"
+
+
 def test_verify_name_that_isnt_an_id(mocked_api, tmp_path, capsys):
     # the name can't be an id, so the file is looked up by its hash
     src = tmp_path / "not an id.txt"

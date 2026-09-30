@@ -243,6 +243,12 @@ def main(argv=None):
     )
     pp.add_argument("-n", "--archive", help="filter results by archive name")
     pp.add_argument(
+        "-s",
+        "--scheme",
+        help="filter results by the scheme of any of their locations "
+        "(e.g., neurobank, tape, https)",
+    )
+    pp.add_argument(
         "-k",
         help="filter by metadata field (use multiple -k for multiple values)",
         action=ParseKeyVal,
@@ -696,6 +702,7 @@ def search_resources(args):
         ("name", "name"),
         ("dtype", "dtype"),
         ("location", "archive"),
+        ("scheme", "scheme"),
     ]
     params = {
         paramname: getattr(args, argname)
