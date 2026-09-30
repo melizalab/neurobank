@@ -147,6 +147,27 @@ def test_cannot_store_duplicate_basenames(tmp_archive, tmp_path):
         archive.store_resource(tmp_archive, src, "temp.txt")
 
 
+def test_cannot_store_resource_twice_with_different_extensions(tmp_archive, tmp_path):
+    first, second = tmp_path / "a.json", tmp_path / "b.wav"
+    first.write_text("json")
+    second.write_text("wav")
+    stored = archive.store_resource(tmp_archive, first, "res_1")
+    with pytest.raises(KeyError, match="already stored"):
+        archive.store_resource(tmp_archive, second, "res_1")
+    assert list(stored.parent.iterdir()) == [stored]
+    assert second.exists()
+
+
+def test_cannot_store_resource_twice_without_extensions(tmp_noext_archive, tmp_path):
+    first, second = tmp_path / "a.json", tmp_path / "b.wav"
+    first.write_text("json")
+    second.write_text("wav")
+    stored = archive.store_resource(tmp_noext_archive, first, "res_1")
+    with pytest.raises(KeyError, match="already stored"):
+        archive.store_resource(tmp_noext_archive, second, "res_1")
+    assert list(stored.parent.iterdir()) == [stored]
+
+
 def test_cannot_violate_directory_policy(tmp_archive, tmp_path):
     dir = tmp_path / "tempdir"
     dir.mkdir()

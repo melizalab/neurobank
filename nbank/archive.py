@@ -418,13 +418,13 @@ def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path
     if cfg["policy"]["keep_extensions"]:
         id = Path(id).stem + src.suffix
 
-    # check for existing resource
+    # check for any file already stored for this resource, whatever its extension
     try:
-        _ = resource_path(cfg, id, resolve_ext=True)
+        existing = resource_path(cfg, Path(id).stem, resolve_ext=True)
     except FileNotFoundError:
         pass
     else:
-        raise KeyError("a file already exists for id %s", id)
+        raise KeyError(f"'{existing}' is already stored for this resource")
     log.debug("%s -> %s", src, id)
 
     # execute commands in this order to prevent data loss; source file is not
