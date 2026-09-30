@@ -1,7 +1,8 @@
 # -*- mode: python -*-
-"""This script is used for administrative tasks on archives: and the registry. It
-is intended only for unusual situations that can't easily be fixed manually. For
-example, if a lot of files were deposited erroneously.
+"""Administrative tasks on archives and the registry.
+
+For unusual situations that can't easily be fixed by hand, such as a lot of
+files deposited by mistake.
 
 """
 

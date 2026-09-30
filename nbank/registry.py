@@ -4,7 +4,7 @@
 URL construction functions begin with `get_` if they retrieve a single record,
 `find_` if they retrieve a sequence of records, `add_` if they create a new
 record, and `update_` if they update an existing record. They all return a tuple
-continaing the URL endpoint and a dictionary with the query parameters or
+containing the URL endpoint and a dictionary with the query parameters or
 request body. `get_` and `find_` URLs should be used with the GET method; `add_`
 URLs with the POST method; and `update_` URLs with the PATCH method.
 
@@ -111,7 +111,7 @@ def add_location(
     """Constructs URL to add a location for a resource (use post).
 
     key records where the resource is within the archive, if that can't be
-    derived from its id. Registries before API version 1.1 ignore it.
+    derived from its id.
     """
     return (
         url_join(base_url, "resources", id, "locations/"),
@@ -145,7 +145,10 @@ def add_datatype(base_url: str, name: str, content_type: str) -> tuple[str, dict
 def add_archive(
     base_url: str, name: str, scheme: str, root: Path | str, **kwargs: str
 ) -> tuple[str, dict]:
-    """Constructs URL to add an archive to the registry"""
+    """Constructs URL to add an archive to the registry.
+
+    kwargs are other fields of the archive record, such as accessibility.
+    """
 
     return (
         url_join(base_url, "archives/"),
@@ -205,7 +208,7 @@ def error_messages(response) -> list[str]:
 
 
 def log_error(err):
-    """Writes error message from server to log. Reraises errors where code is not in 400, 403, 415"""
+    """Logs the registry's message for 400, 403, and 415 errors; re-raises others."""
     if err.response.status_code == 400:
         for message in error_messages(err.response):
             log.error("   registry error: %s", message)

@@ -1,16 +1,9 @@
 # -*- mode: python -*-
 """Moving resources into and out of neurobank archives
 
-The two directions work differently:
-
-- Reading out: find_sources finds a readable copy of each requested resource
-  in the neurobank archives on this host, to be exported (to a tar, zip, or
-  directory) or copied into another archive.
-- Writing in: receive_file and receive_directory store a resource in a
-  neurobank archive, checking it against its registered hash. The data can come
-  from anything that can be read as a stream: a file found by find_sources, a
-  tar member read from tape or stdin, or a download. add_location then records
-  the new copy in the registry.
+find_sources finds readable copies in the archives on this host, to export or copy.
+receive_file and receive_directory store a resource read from any stream in an archive,
+checking its hash, and add_location records the new copy.
 
 Copyright (C) 2026 Dan Meliza <dan@meliza.org>
 """
@@ -39,11 +32,10 @@ from nbank import registry, util
 
 @dataclass(frozen=True)
 class Source:
-    """A resource to be transferred and where it can be read on this host.
+    """A resource to transfer and a readable copy of it on this host.
 
-    sha1 and filename come from the registry record. path is a readable local
-    copy and archive the name of the archive that holds it; if there's no such
-    copy, both are None and error says why.
+    sha1 and filename come from the registry record. path and archive locate the copy;
+    if there isn't one, they're None and error says why.
     """
 
     id: str
@@ -98,13 +90,11 @@ def find_sources(
     archive: str | None = None,
     alt_base: Path | None = None,
 ) -> Iterator[Source]:
-    """Finds a readable copy of each resource in ids, in neurobank archives on this host.
+    """Yields a Source for each distinct id, in order, locating a readable local copy.
 
-    Yields one Source per distinct id, in the order requested. A Source without
-    a path has an error saying why: the id isn't registered or has no locations
-    (the registry doesn't distinguish these in a bulk request), or no location
-    is on this host and readable. Set archive to use only copies in that archive.
-    Only checks that files can be read; hashes are checked when they're copied.
+    With archive, only copies in that archive are used. alt_base, if given, replaces the
+    directory that contains each archive, for copies of archives on another host (see
+    archive.Resource). Hashes aren't checked here.
     """
     ids = list(dict.fromkeys(ids))
     params = {} if archive is None else {"archive": archive}
@@ -133,9 +123,8 @@ class TransferError(Exception):
 class Received:
     """The result of receiving a resource.
 
-    path is where it was stored, or None for a dry run. sha1 is the hash of the
-    data received. verified is True if the registry has a hash and it matched,
-    and False if the registry has no hash to check against.
+    path is where it was stored, or None for a dry run. sha1 is the hash of the data
+    received. verified is False if the registry has no hash to check against.
     """
 
     path: Path | None
@@ -149,18 +138,17 @@ def _partial_name(name: str) -> str:
 
 
 def partial_target(name: str) -> str | None:
-    """Returns the name a temporary transfer file was going to be given, or None.
-
-    This is the inverse of _partial_name, for recognizing files left over from
-    transfers that didn't finish.
-    """
+    """Returns the name a staged .partial file was for, or None if name isn't one."""
     if name.startswith(".") and name.endswith(".partial") and len(name) > 9:
         return name[1 : -len(".partial")]
     return None
 
 
 def _check_hash(sha1: str, registered: str | None) -> bool:
-    """Returns whether sha1 was checked; raises TransferError if it doesn't match."""
+    """Returns False if registered (the registry's hash) is None, else True.
+
+    Raises TransferError if sha1 doesn't match registered.
+    """
     if registered is None:
         return False
     if sha1 != registered.lower():
@@ -171,10 +159,9 @@ def _check_hash(sha1: str, registered: str | None) -> bool:
 
 
 def _entry_path(relpath: str) -> PurePosixPath:
-    """Returns relpath if it names something inside a directory resource.
+    """Returns relpath as a path inside a directory resource.
 
-    Raises TransferError for empty, absolute, or '..' paths, which could write
-    outside the resource.
+    Raises TransferError for empty, absolute, or '..' paths.
     """
     path = PurePosixPath(relpath)
     if path.is_absolute() or ".." in path.parts or path == PurePosixPath():
@@ -191,7 +178,7 @@ def _fsync_dir(path: Path) -> None:
 
 
 def _destination(cfg: nbank_archive.ArchiveConfig, id: str, name: str) -> Path:
-    """Returns where the resource will be stored, or raises TransferError if it's there."""
+    """Returns the destination path; raises TransferError if the resource is stored."""
     try:
         existing = nbank_archive.resource_path(cfg, id, resolve_ext=True)
     except FileNotFoundError:
@@ -211,7 +198,7 @@ def _destination(cfg: nbank_archive.ArchiveConfig, id: str, name: str) -> Path:
 
 
 def _move_into_place(partial: Path, target: Path) -> None:
-    """Moves a verified file or directory to its name in the archive, never replacing one."""
+    """Moves a verified file or directory into place, never replacing anything."""
     if partial.is_dir():
         if target.exists():
             raise TransferError(f"'{target}' appeared while it was being written")
@@ -252,18 +239,14 @@ def receive_file(
     sha1: str | None,
     progress: Progress | None = None,
 ) -> Received:
-    """Stores a file resource read from source in a neurobank archive, checking its hash.
+    """Stores a file resource read from source in an archive, checking its hash.
 
-    name is the source's file name, which supplies the extension. The data is
-    written to a temporary name beside its destination and hashed as it's
-    written. It's moved into place only if the hash matches sha1 (the registered
-    hash) or sha1 is None; otherwise, or on any error, the temporary file is
-    removed. The archive's permission policy is applied before the move.
-
-    If cfg is None, this is a dry run: the data is hashed and checked, and
-    nothing is written. progress, if given, is called as data is read with name
-    and the number of bytes read so far. Raises TransferError if the resource
-    can't be stored.
+    cfg is the destination archive's config, or None for a dry run, which only hashes
+    and checks the data. name is the source's file name, which supplies the extension.
+    The data is staged beside its destination and moved into place only if it matches
+    sha1, the registered hash (or sha1 is None); otherwise nothing is left behind.
+    progress is called with name and the bytes read so far. Raises TransferError if the
+    resource can't be stored, and passes TarReadError on.
     """
     report = _progress_for(progress, name)
     if cfg is None:
@@ -306,20 +289,14 @@ def receive_directory(
     sha1: str | None,
     progress: Progress | None = None,
 ) -> Received:
-    """Stores a directory resource in a neurobank archive, checking its hash.
+    """Stores a directory resource in an archive, checking its hash.
 
-    entries are (path, source) pairs, one for each file in the directory, with
-    paths relative to the directory. A source of None stands for a directory,
-    which is created but doesn't contribute to the hash. The files are written
-    under a temporary directory beside the destination and hashed as they're
-    written, and the whole directory is moved into place only if its hash
-    matches sha1 or sha1 is None. Paths that are absolute, contain '..', or
-    repeat are refused. On any error, the temporary directory is removed.
-
-    If cfg is None, this is a dry run: the files are hashed and checked, and
-    nothing is written. progress, if given, is called as each file is read with
-    its path and the number of bytes read so far. Raises TransferError if the
-    resource can't be stored.
+    cfg, name, and sha1 are as for receive_file. entries are (path, stream) pairs
+    relative to the directory; a stream of None is a subdirectory. The directory is
+    staged and moved into place like a file. Refuses absolute, '..', and repeated paths,
+    and archives that don't allow directories. progress is called with each path and the
+    bytes read so far. Raises TransferError if the resource can't be stored, and passes
+    TarReadError on.
     """
     if cfg is not None and not cfg["policy"]["allow_directories"]:
         raise TransferError("the archive doesn't allow directory resources")
@@ -389,20 +366,14 @@ _tape_read_size = 1 << 20
 
 
 class TarReadError(OSError):
-    """The tar file couldn't be read. The message says how far into it the error was.
-
-    receive_file and receive_directory pass this on, instead of reporting it as
-    a problem with the resource being read, as reading can't go on after it.
-    """
+    """The tar file couldn't be read any further. The message says how far in."""
 
 
 class _BlockReader(io.RawIOBase):
-    """Reads from raw in requests of a fixed size, however little the caller asks for.
+    """Reads raw in fixed-size requests, however little the caller asks for.
 
-    A tape drive in variable-block mode fails (with ENOMEM) any read smaller
-    than the block on the tape, so each read has to ask for at least a whole
-    block. Each request returns at most one block, so the number of requests
-    is the tape block number. Read errors are raised as TarReadError.
+    A tape in variable-block mode fails (ENOMEM) reads smaller than its blocks. Counts
+    the bytes and blocks read, and raises read errors as TarReadError.
     """
 
     def __init__(self, raw: BinaryIO, size: int):
@@ -436,13 +407,9 @@ class _BlockReader(io.RawIOBase):
 
 @contextmanager
 def open_tar(path: str | Path) -> Iterator[tarfile.TarFile]:
-    """Opens a tar file for reading in order, without seeking, as a context manager.
+    """Opens a tar file, tape device, or '-' (stdin) to read its members in order.
 
-    path can be a file, a tape device, or '-' for standard input. Members have to
-    be read in order: a member's data can't be read after moving on to the next.
-    Files and devices are read _tape_read_size bytes at a time, which is enough
-    for tapes written with blocks up to that size, and errors reading them are
-    raised as TarReadError, saying how far into the file or tape they happened.
+    Errors reading a file or device are raised as TarReadError.
     """
     import sys
 
@@ -467,7 +434,12 @@ def open_tar(path: str | Path) -> Iterator[tarfile.TarFile]:
 
 
 class TarResource(NamedTuple):
-    """A registered resource read from a tar file; see iter_tar_resources."""
+    """A registered resource read from a tar file; see iter_tar_resources.
+
+    record is its registry record and name the member's base name. data is a stream for
+    a file, or (path, stream) entries for a directory (is_dir). size is a file's size in
+    bytes, or None for a directory.
+    """
 
     record: dict
     name: str
@@ -479,24 +451,15 @@ class TarResource(NamedTuple):
 def iter_tar_resources(
     tar: tarfile.TarFile, lookup: Callable[[str, tarfile.TarInfo], dict | None]
 ) -> Iterator[TarResource]:
-    """Yields the registered resources in a tar file, reading it in order.
+    """Yields a TarResource for each registered resource in a tar file, in order.
 
-    lookup(id, member) returns the registry record for a resource id, or None if
-    it isn't registered. A member is a resource if the stem of its name (without
-    any directories or extension) is a registered id, so members can be stored
-    under their bare names or under full paths.
-
-    Yields a TarResource (record, name, data, is_dir, size) for each resource,
-    where name is the member's base name and size is a file resource's size in
-    bytes (None for a directory resource). For a file resource, data is a stream of its contents.
-    For a directory resource, data is an iterator of (path, stream) entries, as
-    receive_directory takes, made from the members that follow it with its name
-    as a prefix; a stream of None is a subdirectory. Each resource's data has to
-    be read before asking for the next; data that isn't read is skipped.
-    Directories that aren't registered resources, members that aren't files
-    or directories, and a manifest.json at the top level are ignored. A directory resource containing links or
-    other special members raises TransferError from its entries, after they've
-    been read to the end of the resource.
+    lookup(id, member) returns the registry record for id, or None. A member is a
+    resource if the stem of its base name is a registered id. A file's data is a stream;
+    a directory's is an iterator of (path, stream) entries for receive_directory, with
+    None for subdirectories. Each resource's data has to be read before asking for the
+    next, or it's skipped. Unregistered directories, special members, and a top-level
+    manifest.json are ignored; special members inside a directory resource raise
+    TransferError from its entries.
     """
     members = iter(tar)
     pending: list[tarfile.TarInfo] = []
@@ -549,10 +512,9 @@ def iter_tar_resources(
 
 
 class _HashingReader:
-    """Reads a source file of known size, hashing what's read.
+    """Reads a file of known size for an export, hashing it.
 
-    Raises TransferError for read errors and for a file that ends early, so
-    they can be told apart from errors writing the export.
+    Read errors and files that end early raise TransferError.
     """
 
     def __init__(self, path: Path, size: int, progress: Callable[[int], None] | None):
@@ -606,7 +568,7 @@ def _stat(path: Path) -> os.stat_result:
 
 
 def _walk(root: Path) -> Iterator[Path]:
-    """Yields everything under root in sorted order, each directory before its contents."""
+    """Yields everything under root, sorted, each directory before its contents."""
     try:
         children = sorted(root.iterdir())
     except OSError as err:
@@ -620,10 +582,11 @@ def _walk(root: Path) -> Iterator[Path]:
 class ExportWriter:
     """Writes resources to an export, one at a time.
 
-    For each resource, begin() is called with its name, then add_dir() and
-    add_file() for the resource and everything in it, with member names that
-    start with the resource's name. Then commit() keeps it, or abort() removes
-    every trace of it. Errors writing the export are raised as OSError.
+    Call begin(name) with the resource's file name, then add_dir and add_file for the
+    resource and everything in it, using member names that start with that name, then
+    commit() to keep it or abort() to remove it. st is the source's stat result, for its
+    mode and times, and add_file copies the file from reader. Errors writing the export
+    raise OSError.
     """
 
     def begin(self, name: str) -> None:
@@ -647,8 +610,7 @@ class ExportWriter:
 
 
 class _TarWriter(ExportWriter):
-    """Writes to a tar file, which must be open for writing to a regular file
-    (mode 'w' or 'x', not 'w|') so a resource that fails can be cut back out."""
+    """Writes to a tar file open for writing to a regular file (mode 'w' or 'x')."""
 
     def __init__(self, tar: tarfile.TarFile):
         self.tar = tar
@@ -690,8 +652,7 @@ class _TarWriter(ExportWriter):
 
 
 class _ZipWriter(ExportWriter):
-    """Writes to a zip file, which must be open for writing to a regular file
-    (mode 'w' or 'x') so a resource that fails can be cut back out."""
+    """Writes to a zip file open for writing to a regular file (mode 'w' or 'x')."""
 
     def __init__(self, zf: zipfile.ZipFile):
         self.zf = zf
@@ -735,8 +696,7 @@ class _ZipWriter(ExportWriter):
 
 
 class _DirectoryWriter(ExportWriter):
-    """Writes to a directory. Each resource is written under a temporary name
-    and moved into place once it's verified, never replacing anything."""
+    """Writes to a directory, staging each resource and never replacing anything."""
 
     def __init__(self, root: Path):
         self.root = root
@@ -787,14 +747,11 @@ class _DirectoryWriter(ExportWriter):
 
 @contextmanager
 def open_export(path: Path, compress: bool = False) -> Iterator[ExportWriter]:
-    """Opens an export for writing, as a tar file, a zip file, or a directory.
+    """Opens an export: a tar file (.tar), a zip file (.zip), or else a directory.
 
-    The format comes from the extension of path: '.tar' or '.zip', and anything
-    else is a directory, which is created if needed. A tar or zip file must not
-    exist already. compress applies to zip files, whose members are otherwise
-    stored uncompressed. Raises ValueError for compressed tar extensions and
-    other archive formats, which would otherwise be taken as directory names,
-    and OSError if the export can't be created.
+    Yields an ExportWriter. A directory is created if needed; tar and zip files must not
+    exist. compress deflates zip members. Raises ValueError for compressed tar and other
+    archive extensions, and OSError if the export can't be created.
     """
     suffix = path.suffix.lower()
     if suffix in (".gz", ".tgz", ".bz2", ".xz", ".zst", ".7z"):
@@ -814,21 +771,14 @@ def open_export(path: Path, compress: bool = False) -> Iterator[ExportWriter]:
 def write_resource(
     writer: ExportWriter, source: Source, progress: Progress | None = None
 ) -> bool:
-    """Writes a resource to an export, checking its hash as it's read.
+    """Writes source, found by find_sources, to writer, from open_export.
 
-    The resource is stored under the name of its file in the archive, and a
-    directory resource as that directory and everything in it, which is how
-    iter_tar_resources and `nbank archive register-tar` expect to find it in a
-    tar file. If the hash doesn't match, or the resource can't be read, the
-    writer removes what was written of it, so the export only ever holds
-    verified resources. progress is called as each file is read with its path
-    (the resource's name, or a path inside a directory resource) and the number
-    of bytes read so far.
-
-    Returns True if the hash was checked, and False if the registry has no hash
-    to check against. Raises TransferError if the resource can't be read, doesn't
-    match, or is already in a directory export, and OSError if the export can't
-    be written.
+    The resource's hash is checked as it's read. It's stored under its file name in the
+    archive, as a tree for a directory resource. If it can't be read or doesn't match,
+    what was written is removed. progress is called with each file's path and the bytes
+    read so far. Returns False if the registry has no hash to check. Raises
+    TransferError for problems with the resource and OSError for problems writing the
+    export.
     """
     if source.path is None:
         raise TransferError(source.error or "no copy to read")
@@ -882,8 +832,10 @@ def located_in(
 
 
 def _directory_entries(root: Path) -> Iterator[tuple[str, BinaryIO | None]]:
-    """Yields (path, stream) for everything in a directory, as receive_directory
-    takes. Each file is open only until the next entry is asked for."""
+    """Yields (path, stream) for everything in a directory, for receive_directory.
+
+    Each file is open only until the next entry is asked for.
+    """
     for path in _walk(root):
         relpath = path.relative_to(root).as_posix()
         if stat.S_ISDIR(_stat(path).st_mode):
@@ -898,11 +850,10 @@ def receive_source(
     source: Source,
     progress: Progress | None = None,
 ) -> Received:
-    """Stores a resource found by find_sources in a neurobank archive, checking
-    its hash. See receive_file and receive_directory, which this calls.
+    """Stores a Source in an archive with receive_file or receive_directory.
 
-    Errors reading the source raise TransferError, as with any other problem
-    with the resource, including in a dry run (cfg None).
+    cfg is the destination archive's config, or None for a dry run, which only reads and
+    checks. Errors reading the source raise TransferError, including in a dry run.
     """
     if source.path is None:
         raise TransferError(source.error or "no copy to read")
@@ -942,14 +893,10 @@ def write_manifest(writer: ExportWriter, manifest: dict) -> None:
 def add_location(
     session: Client, registry_url: str, id: str, archive_name: str, path: Path
 ) -> None:
-    """Records a resource that's been stored at path as a location in archive_name.
+    """Records a copy stored at path as a location in archive_name.
 
-    If the registry refuses, the stored copy is removed, so the archive won't
-    contain a resource the registry doesn't record as being there. If the
-    registry can't be reached, the location may or may not have been added, so
-    the copy is left for `nbank check archive` to sort out. Raises TransferError
-    in both cases.
-
+    If the registry refuses, the copy is removed; if it can't be reached, the copy is
+    kept for `nbank check archive` to sort out. Raises TransferError in both cases.
     """
     url, body = registry.add_location(registry_url, id, archive_name)
     try:

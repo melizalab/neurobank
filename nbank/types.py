@@ -21,7 +21,7 @@ class FetchableResource(Protocol):
 
     @abstractmethod
     def fetch(self, target: Path) -> Path:
-        """Copies or downloads the resource to target directory or file. Returns target path or raises an error"""
+        """Copies or downloads the resource to target; returns the path written."""
         pass
 
 
@@ -32,7 +32,7 @@ class LocalResource(FetchableResource, Protocol):
 
     @abstractmethod
     def link(self, target: Path) -> Path:
-        """Links the resource to a target directory or file. Returns target path or raises an error"""
+        """Links the resource into target; returns the path of the link."""
         pass
 
 
@@ -44,10 +44,9 @@ _location_schemes: dict[str, type] = {}
 def location_scheme(cls: type) -> type:
     """Class decorator that registers cls to build resources for its location schemes.
 
-    cls needs a `schemes` tuple naming the schemes it handles, and a classmethod
-    `from_location(location, *, alt_base, http_session)` that builds a resource
-    from a registry location dict, or returns None if the resource can't be
-    reached from this host. Raises ValueError if a scheme already has a class.
+    cls needs a `schemes` tuple and a classmethod `from_location(location, *, alt_base,
+    http_session)` that returns a resource, or None if it can't be reached from this
+    host. Raises ValueError if a scheme already has a class.
     """
     for scheme in cls.schemes:
         existing = _location_schemes.get(scheme)

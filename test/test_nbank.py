@@ -603,7 +603,6 @@ full_hash = "0123456789abcdef0123456789abcdef01234567"
 
 
 def test_search_full_hash_is_exact(mocked_api, capsys):
-    # no info request is mocked: a full hash doesn't need the API version
     mocked_api.get(resource_url, params={"sha1": full_hash}).respond(
         json=[{"name": "res_1"}]
     )

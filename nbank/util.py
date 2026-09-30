@@ -91,13 +91,12 @@ def parse_location(
     alt_base: Path | None = None,
     http_session: Client | None = None,
 ) -> Resource | None:
-    """Parse a location dict and return a Resource or None if the location is invalid.
+    """Returns a resource for a registry location dict, or None.
 
-    location is a dict with 'scheme', 'root', and 'resource_name', and 'key' if
-    the registry records where the resource is within its archive. Returns None
-    for schemes the client doesn't know and for local resources that don't
-    exist.
-
+    The dict has 'scheme', 'root', 'resource_name', and optionally 'key'. None means the
+    scheme isn't known or the resource isn't on this host. alt_base, if given, replaces
+    the directory that contains each archive, for copies of archives on another host
+    (see archive.Resource). http_session is used to fetch http(s) resources.
     """
     scheme = location["scheme"]
     cls = location_class(scheme)
@@ -108,12 +107,10 @@ def parse_location(
 
 
 def id_from_fname(fname: Path | str) -> str:
-    """Generates an ID from the basename of fname, stripped of any extensions.
+    """Returns the base name of fname without extensions, as a resource id.
 
-    Raises ValueError unless the resulting id only contains URL-unreserved characters
-    ([-_~0-9a-zA-Z]). This is a fast local sanity check, not a guarantee that the
-    registry will accept the id: the registry has its own, narrower rules (e.g., it
-    doesn't allow '~'), and is the final authority on what ids are valid.
+    Raises ValueError unless the id contains only [-_~0-9a-zA-Z]. This is a quick sanity
+    check; the registry decides which ids are valid.
     """
     import re
 
@@ -132,12 +129,10 @@ def hash_stream(
     copy_to: BinaryIO | None = None,
     progress: Callable[[int], None] | None = None,
 ) -> str:
-    """Returns the hash of everything read from source, using method.
+    """Returns the hash of everything read from source.
 
-    Reads in fixed-size blocks, so memory use doesn't depend on the size of the
-    data. If copy_to is given, each block is also written to it, so data can be
-    copied and hashed in one pass. If progress is given, it's called after each
-    block with the number of bytes read so far.
+    method is the name of a hashlib algorithm. Each block read is also written to
+    copy_to, if given, and progress is called with the number of bytes read so far.
     """
     import hashlib
 
@@ -157,14 +152,11 @@ def hash_stream(
 
 
 class DirectoryHasher:
-    """Computes the hash of a directory resource from the hashes of its files.
+    """Computes the hash of a directory resource from its files, added in any order.
 
-    Files can be added in any order, so the hash can be computed from a
-    directory on disk or from a stream such as a tar file. Each file is
-    identified by its path relative to the directory, with '/' separators. The
-    result is the hash of the lines `<path>=<file hash>`, sorted by path
-    component and joined with newlines. Directories themselves (including empty
-    ones) don't contribute to the hash.
+    Files are named by their paths relative to the directory, with '/' separators. The
+    hash is of the lines `<path>=<file hash>`, sorted by path component and joined with
+    newlines. Directories don't contribute.
     """
 
     def __init__(self, method: str = "sha1"):
@@ -203,13 +195,9 @@ class DirectoryHasher:
 
 
 def hash(fname: Path, method: str = "sha1") -> str:
-    """Returns a hash of the contents of fname using method.
+    """Returns the hash of fname, a file or directory (see hash_directory).
 
-    fname can be the path to a regular file or a directory.
-
-    Any secure hash method supported by python's hashlib library is supported.
-    Raises errors for invalid files or methods.
-
+    method is any algorithm hashlib supports.
     """
     p = fname.resolve(strict=True)
     if p.is_dir():
@@ -219,12 +207,9 @@ def hash(fname: Path, method: str = "sha1") -> str:
 
 
 def hash_directory(path: Path, method: str = "sha1") -> str:
-    """Return hash of the contents of the directory at path using method.
+    """Returns the hash of the directory at path; see DirectoryHasher.
 
-    See DirectoryHasher for how the hash is computed. Any secure hash method
-    supported by python's hashlib library is supported. Raises errors for
-    invalid files or methods.
-
+    method is the name of a hashlib algorithm.
     """
     p = path.resolve(strict=True)
     hasher = DirectoryHasher(method)
@@ -285,7 +270,7 @@ def query_registry_first(
 def query_registry_bulk(
     session: Client, url: str, query: Mapping[str, Any], auth: str | None = None
 ) -> list[dict]:
-    """Perform a POST request to a bulk query url. These endpoints all stream line-delimited json"""
+    """POSTs query to a bulk endpoint and yields the line-delimited JSON records."""
     with session.stream("POST", url, json=query, auth=auth) as r:
         if r.is_error:
             r.read()  # the body can't be read once the stream is closed
@@ -303,15 +288,14 @@ def fetch_resource(
     extension: str | None = None,
     alt_base: Path | None = None,
 ) -> Path | NotFetchableError | FileExistsError:
-    """Fetch a resource from an archive.
+    """Copies or downloads a resource to target from the first location that works.
 
-    Relies on the registry returning local locations before remote ones. Stops
-    after the first success.
-
-    Returns the path of the downloaded file if successful, NotFetchableError if
-    the resource could not be fetched, or FileExistsError if the target already
-    exists.
-
+    locations are registry location dicts, tried in order. extension, if given, replaces
+    the suffix of target. alt_base, if given, replaces the directory that contains each
+    archive, for copies of archives on another host (see archive.Resource). Returns the
+    path written, or (not raises) NotFetchableError if no location works and
+    FileExistsError if target exists and force isn't set. Raises FileNotFoundError if
+    target is a directory.
     """
     if target.is_dir():
         raise FileNotFoundError("target file must be a filename, not a directory")

@@ -518,7 +518,7 @@ def main(argv=None):
         log.error("error: unable to use netrc file: %s", err.msg)
         return 1
 
-    # most commands requre a registry, so check it here once
+    # most commands require a registry, so check it here once
     if args.registry_url is None and args.func not in (
         store_resources,
         locate_resources,
@@ -814,21 +814,14 @@ def list_archives(args):
 
 
 def check_archive(args):
-    """Verify the integrity of an archive.
+    """Check an archive against the registry and its policy.
 
-    - every file is readable
-    - every file's name matches a record in the registry, and its hash matches
-      if the record has one
-    - the registry record has this archive as a location
-    - every record in the registry is matched with a file
-    - ownership and permissions match the archive's policy (and fixes them
-      if requested)
-
-    Returns 1 if there are any errors that weren't fixed or the check couldn't
-    be run, 0 otherwise.
-
-    TODO support non-neurobank archives
+    Files must be readable and match their registry records and hashes, every resource
+    registered to the archive must have a file, and ownership and permissions must
+    follow the policy (fixed with --fix). Returns 1 if there are errors that weren't
+    fixed or the check couldn't be run.
     """
+    # TODO support non-neurobank archives
     try:
         archive_cfg = archive.get_config(args.path)
     except FileNotFoundError:
@@ -852,7 +845,7 @@ def check_archive(args):
 
 
 def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bool:
-    """Runs the archive checks and logs the results. Returns True if there are no errors."""
+    """Runs and logs the archive checks. Returns True if there are no errors."""
     archive_path = archive_cfg["path"]
     log.info(
         "retrieving resources that should be in %s from the registry...",
@@ -996,15 +989,12 @@ def _ask(prompt: str, choices: str) -> str:
 
 
 def _resolve_elsewhere(session, registry_url, archive_name, finding) -> bool:
-    """Asks whether to delete a copy of a resource or add this archive as a location.
+    """Offers to delete a file registered elsewhere, or to add its location.
 
-    Only offered for files that match the registered hash, or whose resource
-    has no hash (with a warning that the contents can't be verified). A file
-    with a different hash isn't a copy, so it's left for the user to sort out.
-    Deleting is offered only if the registry lists another location, so the
-    copy isn't the only one. Adding the location is offered only if the file is
-    in the right subdirectory. Returns True if the file was deleted or the
-    location added.
+    Only for files that match the registered hash or whose resource has none. Deleting
+    is offered only if the resource has another location, and adding only if the file is
+    in the right subdirectory. Returns True if the file was deleted or the location
+    added.
     """
     if finding.status not in (
         check.Status.REGISTERED_ELSEWHERE,
@@ -1059,7 +1049,7 @@ def check_registry(args):
 
 
 def _check_registry(session, registry_url) -> bool:
-    """Runs the registry checks and logs the results. Returns True if there are no errors."""
+    """Runs and logs the registry checks. Returns True if there are no errors."""
     counts = Counter()
     for finding in check.check_registry(session, registry_url):
         counts[finding.status] += 1
@@ -1076,12 +1066,10 @@ def _check_registry(session, registry_url) -> bool:
 
 
 def check_all(args):
-    """Check the registry, then every neurobank archive that's on this host.
+    """Check the registry, then every neurobank archive on this host.
 
-    Archives with other schemes, and archives whose root isn't a directory on
-    this host, are skipped. A problem with one archive is logged and doesn't
-    stop the others from being checked. Returns 1 if the registry or any
-    archive has errors, 0 otherwise.
+    Other archives are skipped, and a problem with one archive doesn't stop the rest.
+    Returns 1 if the registry or any archive has errors.
     """
     registry_url = args.registry_url
     log.info("registry: %s", registry_url)
@@ -1216,11 +1204,10 @@ def register_tar(args):
 
 
 def prune_archive(args):
-    """Remove files from a neurobank archive, but only if they're stored somewhere else.
+    """Remove files from a neurobank archive that are stored somewhere else.
 
-    Returns 1 if the archive can't be pruned or any resource fails to be
-    removed. Resources that aren't in the archive, or that are only stored
-    there, are skipped without counting as failures.
+    Returns 1 if the archive can't be pruned or a resource can't be removed. Resources
+    not in the archive, or only in it, are skipped.
     """
     n_failed = 0
     if args.dry_run:
@@ -1302,15 +1289,12 @@ def _human_size(nbytes: float) -> str:
 
 
 class Progress:
-    """Shows how much of a file has been read, on one line of the terminal.
+    """Reports progress reading a resource on one line of stderr, if it's a terminal.
 
-    Call start() for each resource, then pass the object as the progress
-    callback of the transfer functions. Writes to stderr only if it's a
-    terminal, and updates at most every `interval` seconds. The rate shown is
-    over about the last `window` seconds, so a stall shows up as it happens.
-    summary() gives the size and average rate of the resource once it's read,
-    on a terminal or not. Used as a context manager, it clears its line before
-    any message from the nbank logger, so the two don't overwrite each other.
+    Call start() for each resource and pass the object as a progress callback. The rate
+    shown is over the last `window` seconds. summary() gives the size and average rate
+    whether or not stderr is a terminal. As a context manager, clears its line before
+    nbank log messages.
     """
 
     interval = 0.2
@@ -1395,8 +1379,7 @@ class Progress:
 def _tar_lookup(session, registry_url, unregistered: list | None = None):
     """Returns a lookup function for transfer.iter_tar_resources.
 
-    It gets each candidate's registry record and logs files that aren't
-    registered, appending their names to unregistered if it's given.
+    Logs files that aren't registered and appends their names to unregistered, if given.
     """
 
     def lookup(id, member):
@@ -1412,14 +1395,12 @@ def _tar_lookup(session, registry_url, unregistered: list | None = None):
 
 
 def check_tar(args):
-    """Check the resources in a tar file, tape, or standard input against the registry.
+    """Check the resources in a tar file, tape, or stdin against the registry.
 
-    Reads the tar file once, in order, and checks each registered resource
-    against its registered hash. Files that aren't registered are reported but
-    aren't errors. With --archive, also checks that every resource the registry
-    places in that archive is in the tar file, and reports resources in the tar
-    file that aren't registered to it (as warnings). Returns 1 if any resource
-    fails its check or is missing, or the tar file can't be read, 0 otherwise.
+    Unregistered files are reported but aren't errors. With --archive, also reports
+    resources registered to that archive that are missing from the tar file (or not
+    checked, if reading stopped), and resources in it that aren't registered there.
+    Returns 1 if anything fails, is missing, or can't be read.
     """
     log.info("registry: %s", args.registry_url)
     log.info("source: %s", args.tar)
@@ -1521,17 +1502,12 @@ def check_tar(args):
 
 
 def import_tar(args):
-    """Import resources from a tar file, tape, or standard input into a neurobank archive.
+    """Import resources from a tar file, tape, or stdin into a neurobank archive.
 
-    The tar file is read once, in order, so it can come straight from a tape
-    device or a pipe. Each registered resource in it is checked against its
-    registered hash as it's read and stored, and then added as a location. With
-    --dry-run, resources are only read and checked, which verifies a tape
-    without importing it.
-
-    Returns 1 if the import can't be run or any resource fails to be imported.
-    Files that aren't registered resources, or that are already in the
-    destination, are skipped without counting as failures.
+    Each registered resource is checked against its hash as it's stored, then added as a
+    location. With --dry-run, only reads and checks. Unregistered files and resources
+    already in the destination are skipped. Returns 1 if anything fails to import or the
+    tar file can't be read.
     """
     n_failed = 0
     try:
@@ -1668,16 +1644,11 @@ def _manifest_entry(source, record: dict | None) -> dict:
 
 
 def export_resources(args):
-    """Write resources from the neurobank archives on this host to a tar file, zip
-    file, or directory.
+    """Write resources from this host's archives to a tar file, zip file, or directory.
 
-    Each resource is checked against its registered hash as it's read, and one
-    that doesn't match or can't be read is left out. A tar file can then be
-    written to tape and registered with `archive register-tar`. With
-    --manifest, the registry records of the resources that were exported are
-    written last, as manifest.json.
-
-    Returns 1 if the export can't be run or any resource is left out.
+    Resources that can't be read or don't match their hashes are left out. With
+    --manifest, the registry records of those written are added last, as manifest.json.
+    Returns 1 if anything is left out or the export can't be run.
     """
     if args.compress and args.out.suffix.lower() != ".zip":
         log.error("error: --compress only applies to zip files")
@@ -1767,8 +1738,10 @@ def export_resources(args):
 
 
 def _requested_ids(args) -> list[str] | None:
-    """Returns the ids from the command line and --from-file, or None, after
-    logging why, if there aren't any."""
+    """Returns the ids from the command line and --from-file.
+
+    Returns None, after logging why, if there aren't any.
+    """
     ids = list(args.ids)
     if args.from_file is not None:
         try:
@@ -1783,14 +1756,11 @@ def _requested_ids(args) -> list[str] | None:
 
 
 def copy_resources(args):
-    """Copy resources from the neurobank archives on this host into another one.
+    """Copy resources from the archives on this host into another archive.
 
-    Each resource is checked against its registered hash as it's stored, and
-    then added as a location in the destination. Resources that the registry
-    already places in the destination are skipped. With --dry-run, the sources
-    are only read and checked.
-
-    Returns 1 if the copy can't be run or any resource fails to be copied.
+    Each is checked against its hash as it's stored, then added as a location. Resources
+    already in the destination are skipped. With --dry-run, only reads and checks.
+    Returns 1 if anything fails.
     """
     ids = _requested_ids(args)
     if ids is None:

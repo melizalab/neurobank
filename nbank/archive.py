@@ -74,7 +74,7 @@ _created_files = (_config_fname, _README_fname, ".gitignore")
 
 
 def verify_can_create(archive_path: Path) -> None:
-    """Raises FileExistsError if creating an archive would overwrite files in archive_path."""
+    """Raises FileExistsError if creating an archive would overwrite existing files."""
     for name in _created_files:
         path = archive_path / name
         if path.exists() or path.is_symlink():
@@ -91,28 +91,19 @@ def create(
     read_only_resources: bool = True,
     **policies: Any,
 ) -> ArchiveConfig:
-    """Initializes a new data archive in archive_path.
+    """Initializes a new data archive in archive_path and returns its config.
 
-    archive_path: the absolute or relative path of the archive
-    registry_url: the URL of the registry service
-    umask: the default umask (as an integer)
-    shared: if True, don't record an owner. Use this for archives where users
-      deposit under their own accounts, so files can't all have the same owner.
-      Otherwise the current user is recorded as the owner.
-    group: the group for the archive. The default is the current user's
-      primary group.
-    read_only_resources: if True, deposited resources aren't writable by
-      anyone, although new resources can still be added.
-    **policies: override auto_identifiers, keep_extensions, allow_directories, or require_hash
+    registry_url is the registry the archive's resources are registered with. umask
+    (e.g. 0o027) is recorded in the policy and limits the permissions of everything in
+    the archive. With shared, no owner is recorded, for archives where users deposit
+    under their own accounts; otherwise the current user is the owner. group defaults to
+    the current user's primary group. read_only_resources makes deposited resources
+    read-only. policies can set auto_identifiers, keep_extensions, allow_directories, or
+    require_hash.
 
-    Creates archive_path and all parents as needed, and gives the resources
-    directory and the files created here the archive's group. Raises
-    FileExistsError if any of the files it would create already exist (see
-    verify_can_create), ValueError if group doesn't exist, and OSError for
-    other failed operations.
-
-    Returns the config dict for the archive
-
+    Creates archive_path and its parents as needed. Raises FileExistsError if any file
+    it would create already exists, ValueError if group doesn't exist, and OSError for
+    other failures.
     """
     import grp
     import pwd
@@ -186,9 +177,9 @@ def resource_path(
 ) -> Path:
     """Returns the path in the archive for name, a resource id or a stored file name.
 
-    With resolve_ext, looks up the file actually stored for the resource, which
-    may have an extension (see resolve_extension), and raises FileNotFoundError
-    if there isn't one. To choose the name for a new file, use new_resource_path.
+    With resolve_ext, returns the file actually stored for the resource, whatever its
+    extension, or raises FileNotFoundError if there isn't one. To name a new file, use
+    new_resource_path.
     """
     try:
         root = cfg["path"]
@@ -202,10 +193,10 @@ def resource_path(
 
 
 def new_resource_path(cfg: ArchiveConfig, id: str, source_name: str) -> Path:
-    """Returns the path a new resource will be stored at.
+    """Returns the path to store a new resource at.
 
-    The file name is the id, plus the extension of source_name if the archive's
-    policy keeps extensions. Doesn't check whether the resource is already stored.
+    The name is the id, plus the extension of source_name if the archive keeps
+    extensions. Doesn't check whether the resource is already stored.
     """
     if cfg["policy"]["keep_extensions"]:
         return resource_path(cfg, Path(id).stem + Path(source_name).suffix)
@@ -213,13 +204,9 @@ def new_resource_path(cfg: ArchiveConfig, id: str, source_name: str) -> Path:
 
 
 def resolve_extension(path: Path) -> Path:
-    """Resolves the full path including extension of a resource.
+    """Returns the file stored for path, which may have an extension that path lacks.
 
-    This function is needed if the 'keep_extension' policy is True, in which
-    case resource 'xyzzy' could refer to a file called 'xyzzy.wav' or
-    'xyzzy.json', etc. If no resource associated with the supplied path exists,
-    raises FileNotFoundError.
-
+    Raises FileNotFoundError if there's no such file.
     """
     if path.exists():
         return path
@@ -233,9 +220,8 @@ def resolve_extension(path: Path) -> Path:
 def iter_resources(path: Path) -> Iterator[Path]:
     """Yields the files in the archive at path.
 
-    Deprecated. Has some bad behaviors like raises
-    NotADirectoryError if the resources directory contains a file. Use
-    nbank.check.check_archive_contents instead
+    Deprecated: raises NotADirectoryError if the resources directory contains a file.
+    Use nbank.check.check_archive_contents instead.
     """
     import warnings
 
@@ -252,14 +238,9 @@ def iter_resources(path: Path) -> Iterator[Path]:
 class Resource:
     """A resource stored in a local neurobank archive.
 
-    The `root` field of the location is interpreted as being the path of
-    a neurobank archive on the local file system. If the `alt_base` parameter is
-    set, the dirname of the root will be replaced with this value; e.g.
-    alt_base='/scratch' will change '/home/data/starlings' to
-    '/scratch/starlings'. This is intended to be used with temporary copies of
-    archives on other hosts.
-
-
+    The location's root is the path of the archive. alt_base replaces the directory that
+    contains the archive, e.g. alt_base='/scratch' maps '/home/data/starlings' to
+    '/scratch/starlings', for copies of archives on other hosts.
     """
 
     schemes = ("neurobank",)
@@ -315,9 +296,8 @@ def _directories_in(path: Path) -> list[Path]:
 def _can_remove(path: Path) -> bool:
     """True if this process can remove the resource at path.
 
-    Removing anything requires write access to its parent directory. Removing a
-    directory resource also requires write access to every directory inside it,
-    but a read-only directory can be made writable by its owner or by root.
+    For a directory resource, this includes making read-only directories inside it
+    writable.
     """
     if not os.access(path.parent, os.W_OK | os.X_OK):
         return False
@@ -333,8 +313,7 @@ def _can_remove(path: Path) -> bool:
 def remove(path: Path) -> None:
     """Removes the resource at path.
 
-    Read-only directories inside a directory resource are made writable by their
-    owner first, since their contents can't be removed otherwise. Raises
+    Read-only directories inside a directory resource are made writable first. Raises
     PermissionError if that isn't allowed.
     """
     if not path.is_dir() or path.is_symlink():
@@ -352,18 +331,11 @@ def _same_filesystem(a: Path, b: Path) -> bool:
 
 
 def verify_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> None:
-    """Check whether src can be deposited in an archive.
+    """Raises PermissionError, naming the path and problem, if src can't be deposited.
 
-    Raises PermissionError with the specific path and problem if not. Error
-    conditions include: src is unreadable, the archive's resource directory
-    doesn't exist or isn't readable/writable/searchable, or (if id already has a
-    subdirectory) that subdirectory isn't readable/writable/searchable.
-
-    If src is a directory being deposited onto a different filesystem, also
-    checks that every file and subdirectory inside it is readable, because
-    crossing filesystems copies the contents file by file, and we need to ensure
-    all files are readable.
-
+    src must be readable, and the resources directory (and id's subdirectory, if it
+    exists) readable, writable, and searchable. For a directory going to another
+    filesystem, everything inside it must be readable too.
     """
     if not os.access(src, os.R_OK):
         raise PermissionError(f"'{src}' is not readable")
@@ -390,11 +362,7 @@ def verify_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> 
 
 
 def verify_no_symlinks(src: Path) -> None:
-    """Raises ValueError if src is or contains a symbolic link.
-
-    An archive is canonical storage, so it should hold only real files. For a
-    directory, this walks the tree and checks each item.
-    """
+    """Raises ValueError, naming the link, if src is or contains a symbolic link."""
     if src.is_symlink():
         raise ValueError(f"'{src}' is a symbolic link")
     if src.is_dir():
@@ -404,26 +372,16 @@ def verify_no_symlinks(src: Path) -> None:
 
 
 def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path:
-    """Stores resource (src) in the repository under a unique identifier.
+    """Moves src into the archive as id and returns the stored path.
 
-    cfg - the configuration dict for the archive
-    src - the path of the file or directory
-    id - the identifier for the resource. If None, the basename of src is used
+    id defaults to the name of src. Doesn't register anything: the caller makes sure id
+    is valid and registered. The stored name keeps the extension of src if the policy
+    keeps extensions. If the directory holding src isn't writable, src is copied instead
+    and left in place, with a warning. Policies come from cfg, not from the archive's
+    nbank.json.
 
-    This function just takes care of moving the resource into the archive;
-    caller is responsible for making sure id is valid. Errors will be raised
-    if a resource matching the identifier already exists, or if the request
-    violates the archive policies on directories. Extensions are stripped or
-    added to filenames according to policy.
-
-    Tries to move the file, but if src's parent directory isn't writable, src
-    can't be removed after being deposited, which case the resource is copied, a
-    warning is logged, and src is left in place.
-
-    NB: the policy on disk can always be overridden by modifying the config
-    dictionary. This avoids reading and parsing the file repeatedly, but could be
-    exploited by a malicious caller.
-
+    Raises KeyError if a file is already stored for id, and TypeError if src is a
+    directory and the policy doesn't allow them.
     """
     if not cfg["policy"]["allow_directories"] and src.is_dir():
         raise TypeError("policy forbids depositing directories")
@@ -441,8 +399,7 @@ def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path
     tgt_file = new_resource_path(cfg, id, src.name)
     log.debug("%s -> %s", src, tgt_file.name)
 
-    # execute commands in this order to prevent data loss; source file is not
-    # renamed unless it's copied
+    # the source isn't touched until its destination directory exists
     pfix = permission_fixer(cfg)
     tgt_dir = tgt_file.parent
     try:
@@ -475,12 +432,11 @@ def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path
 def mode_policy(cfg: ArchiveConfig, path: Path) -> tuple[int, int]:
     """Returns (required, forbidden) mode bits for path under the archive's policy.
 
-    Nothing may have bits that the umask forbids. The resources directory and
-    its subdirectories need every permission the umask allows, so any group
-    member can deposit, plus setgid on Linux, so new files inherit the group.
-    Other directories need to be readable and searchable, and files readable,
-    by everyone the umask allows. If the policy's read_only_resources is true,
-    resources (and everything inside directory resources) must not be writable.
+    Nothing may have bits the umask forbids. The resources directory and its
+    subdirectories need every bit the umask allows, plus setgid on Linux. Other
+    directories must be readable and searchable, and files readable, by everyone the
+    umask allows. With read_only_resources, resources and everything in them must not be
+    writable.
     """
     access = cfg["policy"]["access"]
     umask = access["umask"]
@@ -500,14 +456,11 @@ def mode_policy(cfg: ArchiveConfig, path: Path) -> tuple[int, int]:
 
 
 def permission_fixer(cfg: ArchiveConfig, quiet: bool = False):
-    """Returns a function that fixes ownership and permissions of a path in the archive.
+    """Returns a function that sets the ownership and mode of a path in the archive.
 
-    The path is given the policy's group, and the policy's user if there is one
-    and this is running as root. Mode bits are set according to mode_policy. Ownership and mode are
-    changed independently, so a failure to change one doesn't prevent changing
-    the other. Failures are logged as warnings unless quiet is True. Symbolic
-    links are left alone, so that their targets aren't changed.
-
+    The group comes from the policy, and so does the user if there is one and this is
+    running as root; the mode comes from mode_policy. Failures are logged as warnings
+    unless quiet is True. Symbolic links are left alone.
     """
     import grp
     import pwd

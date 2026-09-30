@@ -52,9 +52,7 @@ don't have single directories filling up with hundreds of thousands of files.
 This package also provides some mechanisms for moving older data to and from
 cold storage on tape.
 
-You can also use an external cloud-based service or a distributed filesystem
-like `IPFS <https://ipfs.io/>`__, but for i/o-intensive pipelines you’ll want to
-have your data on a local disk. 
+We're planning to add support for external data depositories (figshare, dataverse), cloud-based services (s3), and possibly some distributed filesystems, but the main use case remains local, where direct disk acess is needed for I/O intensive pipelines.
 
 Installation
 ------------
@@ -79,8 +77,8 @@ filesystem (which could be an NFS or SSHFS mount).
 
 ``registry-url`` specifies the registry to use, which can be any service
 that implements the API defined in
-`django-neurobank <https://github.com/melizalab/django-neurobank>`__ can
-be used. If not supplied, the script will try to use the value of the
+`django-neurobank <https://github.com/melizalab/django-neurobank>`__.
+If not supplied, the script will try to use the value of the
 environment variable ``NBANK_REGISTRY``. The registry URL also
 determines the domain for the resource identifiers. For example, if
 the registry is at ``http://melizalab.org/neurobank/resources/`` and you
@@ -119,7 +117,7 @@ directory to describe your project. The ``nbank.json`` file also holds
 the archive's policies. These are the settings you may want to modify:
 
 -  ``auto_identifiers``: If set to false (the default), when files are deposited, their names are used as identifiers unless the user asks for an automatically generated id. If set to true, every resource is given an automatic id.
--  ``auto_id_type``: If set to ``null`` (or not set at all), automatic ids are assigned by the registry. This is usually a short, random base-36 string. If set to ``"uuid"``, the ``nbank`` script will generate 128-bit UUIDs as identifiers, which are guaranteed to work everywhere but a little painful to manipulate by hand.
+-  ``auto_id_type``: If set to ``null`` (or not set at all), automatic ids are assigned by the registry. This is usually a short, random base-36 string. If set to ``"uuid"``, the ``nbank`` script will generate 128-bit UUIDs as identifiers, which are guaranteed to work everywhere but also a little painful to manipulate by hand.
 -  ``require_hash``: If set to true (the default), every resource will have a hash value calculated and stored in the registry. The registry will then be able to prevent duplicate files from being deposited under multiple identifiers.
 -  ``keep_extensions``: If set to true (the default), files keep their extensions when deposited. Only one file with a given base identifier can be deposited, so if you have a ``st32_1_2_1.wav``, the identifier is ``st32_1_2_1``, and therefore you can’t also have an ``st32_1_2_1.json`` file. If set to false, the extension is stripped, so ``st32_1_2_1.wav`` would be deposited as ``st32_1_2_1``. Usually you want this to be true, unless your archive only contains one kind of file.
 -  ``allow_directories``: If set to true, directories and their contents can be deposited as resources. The identifier is given to the directory, and the user is responsible for knowing how to interpret the contents. If set to false (the default), only regular files can be deposited.
@@ -211,11 +209,11 @@ files in one directory. For example, if the identifier is
 ``nbank`` also acts as a command-line interface to the registry. You can
 perform the following operations:
 
-- ``nbank locate [options] id-1 [id-2 [id-3] ...]``: look up the location(s) of the resources associated with each identifier. You can supply full URL-based identifiers, or short ids. If short ids are used, the default registry (specified with ``-r`` argument or ``NBANK_REGISTRY`` environment variable) is used to resolve the full URL. Use the ``-L`` flag to create symbolic links or the ``-0`` flag to pipe the paths to another program.
+- ``nbank locate [options] id-1 [id-2 [id-3] ...]``: look up the location(s) of the resources associated with each identifier. You can supply full URL-based identifiers, or short ids. If short ids are used, the default registry (specified with ``-r`` argument or ``NBANK_REGISTRY`` environment variable) is used to resolve the full URL. Use the ``-L`` flag to create symbolic links or the ``-0`` flag to pipe the paths to another program. This should be your primary way of accessing resources. Don't make unnecessary copies!
 -  ``nbank info id``: returns the registry information on the resource in json format.
--  ``nbank search [options] query``: searches the database for resources that match ``query``. The default is to search by identifier, but you can also search by hash, dtype, archive, or any metadata fields. The default is to return only the identifiers of the resources, but you can use the ``-j`` flag to output json instead, which is useful if you want to distribute the metadata with the archive.
--  ``nbank verify [options] files``: computes a SHA1 hash for each file and searches the registry for a match. Running this is a good idea before starting an experiment, as you’ll be able to tell if any of your stimulus files have changed. It’s also useful if the same identifier is used in more than one domain or if you have a data file that was inadvertently renamed.
--  ``nbank modify [-k key=value] id``: update the metadata for ``id``. Multiple ``-k`` flags can be used.
+-  ``nbank search [options] query``: searches the database for resources that match ``query``. The default is to search by identifier, but you can also search by hash, dtype, archive, or any metadata fields. The default is to return only the identifiers of the resources, but you can use the ``-j`` flag to output json instead, which is useful if you want to extract the registry records for further processing.
+-  ``nbank verify [options] files``: computes a hash for each file and searches the registry for a match. Running this before starting an experiment is a good idea if you're using copies (for example, on a data-collection machine), as you’ll be able to tell if any of your stimulus files have changed. It’s also useful if the same identifier is used in more than one domain or if you have a data file that was inadvertently renamed.
+-  ``nbank modify [-k key=value] id``: update the metadata for ``id``. Multiple ``-k`` flags can be used. You can't change the hash or any other fields outside the metadata.
 -  ``nbank export [options] out id-1 [id-2 ...]``: copy resources from the archives on this host to a tar file (``out.tar``), a zip file (``out.zip``), or a directory (anything else), for example to share them or put them in cold storage. Don't use this for local copies (use ``nbank locate -L`` to create symbolic links instead). Each resource is checked against its registered hash as it's copied, and any that don't match or can't be read are reported and left out. Use ``-f`` to read identifiers from a file, ``-a`` to read only from one archive, and ``--compress`` to compress the members of a zip file (they're stored as-is by default, since most data files don't compress well). Add ``--manifest`` to include the registry records of the exported resources (identifier, path, hash, datatype, metadata, and when and by whom they were created) as ``manifest.json``.
 
 Managing archives
@@ -229,16 +227,18 @@ Some resources, like raw extracellular data, can be moved to cold storage when t
 
 - Identify the resources to archive, using lists of identifiers from project directories or ``nbank search``.
 - Copy the resources to a tar file with ``nbank export -f <list_of_identifiers> <name_of_tar_file>``. Each resource is checked against its registered hash as it's read, and any that don't match or can't be read are reported and left out, so the tar file only holds verified copies. Add ``-a <archive_name>`` to read only from that archive.
-- Write the tar file to tape (or some other media), for example with ``dd if=<name_of_tar_file> of=/dev/nst0 bs=256k``
-- Check what was written with ``nbank check tar <tape_device_or_tar_file>``, which reads every registered resource back and compares it to its registered hash. The tar file can be read straight from the tape drive (e.g. ``/dev/nst0`` after positioning the tape with ``mt fsf``) or from standard input (``-``). This also works for checking old tapes. Add ``--archive <name_of_archive>`` to also confirm that every resource the registry places on that tape is actually there, which is worth doing in periodic checks of stored tapes. If the tape can't be read past some point (for example, a damaged stretch), the check stops there: the resource it was reading is reported as failed, the error says how many bytes and tape blocks were read before it, and with ``--archive`` the resources it didn't reach are listed as not checked. The kernel log (``dmesg``) will say whether the drive reported a problem with the tape (``Medium Error``) or with itself (``Hardware Error``).
+- Write the tar file to tape (or some other media), for example with ``dd if=<name_of_tar_file> of=/dev/nst0 bs=256k``. Keep two copies, one offsite, for important data.
+- Check what was written with ``nbank check tar <tape_device_or_tar_file>``, which reads every registered resource back and compares it to its registered hash. The tar file can be read straight from the tape drive (e.g. ``/dev/nst0`` after positioning the tape with ``mt fsf``) or from standard input (``-``). 
 - Register the tar file with neurobank using ``nbank archive register-tar -n <name_of_archive> <name_of_tape> <tape_index> <tar_file>``. This will create a record for the tape archive and update the records for the resources in the tar file.
 - To remove the tape-archived resources from live storage, run ``nbank archive prune <live_archive_name> <list_of_identifiers>``. This command will delete files from the local filesystem archive and update records for the resources. It will only do this for resources that have another location.
 - To copy data back to live storage, run ``nbank archive import-tar <tar_file> <path_of_archive>``. The tar file can be read straight from the tape drive (e.g. ``/dev/nst0`` after positioning the tape with ``mt fsf``) or from standard input (``-``), so it doesn't need to be extracted first. Each resource is checked against its registered hash before it's stored. To check a tape without importing anything, add ``-y``.
 
+It's a good idea to set up a cron job to check archive integrity every month or so with ``nbank check all``. Data on tapes should be checked every year or two using ``nbank check tar``. Add ``--archive <name_of_archive>`` to also confirm that every resource the registry thinks is on that tape is actually there. If the tape can't be read past some point (for example, a damaged stretch), the check stops. Check the kernel log (``dmesg``) to see whether the drive reported a problem with the tape (``Medium Error``) or with itself (``Hardware Error``). 
+
 Development
 -----------
 
-Recommend using `uv <https://docs.astral.sh/uv/>`__ for development.
+Use `uv <https://docs.astral.sh/uv/>`__ for development.
 
 Run ``uv sync`` to create a virtual environment and install
 dependencies. ``uv sync --no-dev --frozen`` for deployment.
@@ -271,14 +271,13 @@ Best Practices
 See `docs/examples <docs/examples.md>`__ for some additional notes on
 how the Meliza Lab uses neurobank.
 
-Controlling access
-~~~~~~~~~~~~~~~~~~
+Shared archives
+~~~~~~~~~~~~~~~
 
-One of the primary uses for neurobank is to allow multiple users to
-share a common set of data, thereby reducing the need for temporary
-copies and ensuring that a canonical, centralized backup of critical
-data can be maintained. In this case, the following practices are
-suggested for POSIX operating systems:
+It's easy to set up neurobank to allow multiple users to share a common set of
+data, thereby reducing the need for temporary copies and ensuring that a
+canonical, centralized backup of critical data can be maintained. In this case,
+the following practices are suggested for POSIX operating systems:
 
 1. For each project, create a separate user group. To give a user access to
    the data, add them to the group.
@@ -302,14 +301,7 @@ still be removed with ``nbank archive prune``, but only the owner of a
 read-only directory resource, or root, can remove it.
 
 ``nbank check archive`` reports files and directories whose group or
-permissions don't match ``nbank.json``, and ``--fix`` repairs them. Only
-the owner of a file or root can change its permissions, which is why
-fixing a shared archive needs to be done as root.
-
-Archives created by older versions of neurobank don't have the
-``read_only_resources`` setting, so their resources stay writable. To
-make them read-only, add ``"read_only_resources": true`` to ``access`` in
-``nbank.json`` and run ``nbank check archive --fix`` as root.
+permissions don't match ``nbank.json``, and ``--fix`` repairs them. Many fixes require running this command as root, because only the owner of a file or root can change its permissions.
 
 License
 -------

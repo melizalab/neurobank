@@ -48,13 +48,11 @@ class Status(enum.Enum):
 class Finding:
     """The result of checking one resource, file, or archive.
 
-    resource is None for directories that belong to the archive layout rather
-    than to a resource, and for findings about a whole archive. locations
-    lists a resource's registered archives, for findings about files whose
-    resource is registered somewhere else. fixed is True if the problem was
-    found and then fixed. ok is True unless the finding is
-    an error; some findings that are ok are still worth reporting, like an
-    archive with no resources.
+    resource is the resource's id, or None for layout directories and whole-archive
+    findings; path is the file or directory concerned, and detail says more about the
+    problem. archive names the archive for whole-archive findings. locations lists the
+    registered archives of a resource found in an archive it isn't registered to. fixed
+    is True if the problem was fixed. ok is False only for errors.
     """
 
     status: Status
@@ -177,15 +175,11 @@ def _symlinks_in(path: Path) -> Iterator[Path]:
 def check_archive_contents(
     archive_path: Path, expected: Mapping[str, str | None], check_hash: bool = True
 ) -> Iterator[Finding]:
-    """Compares the files in a local archive against expected resources.
+    """Compares the files in a local archive with expected, {name: sha1 or None}.
 
-    expected maps resource names to sha1 hashes (or None if the registry has no
-    hash). Yields one Finding for each expected resource, indicating whether
-    everything is okay or if there is a problem (see Status enum). May yield
-    more than one Finding per resource in cases of multiple errors. Set
-    check_hash to False to skip reading file contents, which is much faster for
-    a large archive. Doesn't contact the registry.
-
+    Yields Findings (see Status) for the expected resources and for the files in the
+    archive; a resource can have more than one. check_hash=False skips reading files.
+    Doesn't contact the registry.
     """
     remaining = dict(expected)
     files, problems = _scan_archive(archive_path)
@@ -228,14 +222,10 @@ def recheck_unregistered(
 ) -> Iterator[Finding]:
     """Looks up the resources of MISSING_FROM_REGISTRY findings in the registry.
 
-    An archive can hold a copy of a resource that's registered, but not with
-    this archive as a location. Each such file is yielded as
-    REGISTERED_ELSEWHERE if it matches the registered hash, CHANGED_ELSEWHERE if
-    it doesn't (so it's a different file with the same name), or
-    UNVERIFIED_ELSEWHERE if the registry has no hash, with locations set to the
-    resource's registered locations (which may be empty). The file's hash is always checked when the registry
-    has one, since the result decides whether it can be treated as a copy.
-    Other findings are yielded unchanged.
+    A file whose resource is registered to other archives is yielded as
+    REGISTERED_ELSEWHERE if its hash matches, CHANGED_ELSEWHERE if not, or
+    UNVERIFIED_ELSEWHERE if the registry has no hash, with locations set. Other findings
+    are yielded unchanged.
     """
     findings = list(findings)
     names = sorted(
@@ -323,10 +313,9 @@ def _listdir(path: Path) -> list[Path]:
 
 
 def _resource_tree(path: Path, name: str) -> Iterator[tuple[Path, str]]:
-    """Yields (path, name) for a resource and, for a directory, everything in it.
+    """Yields (path, name) for a resource and everything in it.
 
-    Each directory is listed only after it has been yielded, so a caller can
-    fix its permissions first. Symbolic links are skipped.
+    Each directory comes before its contents. Symbolic links are skipped.
     """
     yield path, name
     if path.is_dir():
@@ -338,10 +327,8 @@ def _resource_tree(path: Path, name: str) -> Iterator[tuple[Path, str]]:
 def _archive_tree(base: Path) -> Iterator[tuple[Path, str | None]]:
     """Yields (path, resource name) for the resources directory and everything in it.
 
-    The resource name is None for the resources directory and its
-    subdirectories. Directories are listed only after they have been yielded.
-    Symbolic links, files directly under base, and files left over from
-    unfinished transfers are skipped.
+    The name is None for the layout directories. Each directory comes before its
+    contents. Symbolic links, stray files, and leftover partial transfers are skipped.
     """
     yield base, None
     for stub_dir in _listdir(base):
@@ -359,23 +346,13 @@ def _archive_tree(base: Path) -> Iterator[tuple[Path, str | None]]:
 def check_archive_permissions(
     cfg: archive.ArchiveConfig, fix: bool = False
 ) -> Iterator[Finding]:
-    """Checks ownership and permissions in a local archive against its policy.
+    """Checks ownership and modes under resources/ against the archive's policy.
 
-    Every file and directory under resources/ must be owned by the policy's
-    user and group and have the mode bits given by archive.mode_policy. If the
-    policy's user is null (a shared archive, where users deposit under their
-    own accounts), ownership by user isn't checked.
-    Symbolic links, files directly under resources/, and files left over from
-    unfinished transfers are skipped, because check_archive_contents reports
-    them. Directories that can't be listed are
-    skipped too.
-
-    If fix is True, tries to fix each problem with archive.permission_fixer
-    and sets fixed on the findings that it resolved. A directory is fixed
-    before it's listed, so the fix can make its contents reachable. Changing
-    ownership requires running as root.
-
-    Raises ValueError if the policy's user or group doesn't exist on this host.
+    Owners must be the policy's user (unless it's null) and group, and modes follow
+    archive.mode_policy. Symbolic links, stray files, leftover partial transfers, and
+    directories that can't be listed are skipped; check_archive_contents reports them.
+    With fix, fixes what it can (ownership needs root) and marks those findings fixed.
+    Raises ValueError if the policy's user or group doesn't exist.
     """
     access = cfg["policy"]["access"]
     user = access.get("user")

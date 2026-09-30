@@ -21,7 +21,7 @@ log = logging.getLogger("nbank")  # root logger
 
 
 def make_auth(auth: RegistryAuth) -> httpx.Auth | None:
-    """Convert a RegistryAuth to an actual httpx Auth. If auth is None, tries to use netrc"""
+    """Converts a RegistryAuth to an httpx Auth, using .netrc if auth is None."""
     if isinstance(auth, httpx.Auth):
         return auth
     if isinstance(auth, tuple):
@@ -43,42 +43,30 @@ def deposit(
     skip_errors: bool = False,
     **metadata: Any,
 ) -> Iterator[dict]:
-    """Main entry point to deposit resources into an archive
+    """Registers files and moves them into the archive at archive_path.
 
-    Yields the short IDs for each deposited item in files
+    dtype is the registered datatype of the files. hash registers each file's sha1 even
+    if the archive doesn't require it. auto_id (or the archive's auto_identifiers
+    policy) gives each file a new id, a UUID if the policy's auto_id_type is "uuid" and
+    otherwise assigned by the registry, instead of using the file's name. auth is for
+    the registry (default: .netrc). metadata is stored with each resource.
 
-    Set dry_run to True to run all the same pre-flight checks (archive and
-    dtype are registered, files are readable, archive is writable) without
-    registering anything or moving any files. Yielded records have
-    "dry_run": True and, for files where the id isn't known until the
-    registry assigns it (auto_identifiers with no auto_id_type), "id": None.
+    Yields {"source": path, "id": id} for each file deposited. With dry_run, checks
+    everything but registers and moves nothing; records have "dry_run": True, and "id"
+    is None if the registry would assign it. With skip_errors, a file that can't be
+    deposited yields {"source": path, "error": message} instead of raising. That covers
+    missing files, directories the archive doesn't allow, invalid names, symbolic links,
+    permission problems, and resources the registry rejects (400).
 
-    Set skip_errors to True to skip a file that can't be deposited and continue
-    with the rest, instead of raising an error. Each skipped file yields
-    {"source": src, "error": message}. This applies to files that don't exist,
-    directories the archive doesn't allow, invalid names, symbolic links,
-    permission problems, and resources the registry rejects as invalid (400).
-    Other errors still raise, including authentication failures and failures to
-    store a file after it has been registered.
+    Otherwise, directories the archive doesn't allow are skipped with a log message, and
+    these errors are raised:
 
-    Otherwise, here's how a variety of error conditions are handled:
-
-    - unable to contact registry: ConnectionError
-    - attempt to add unallowed directory: skip the directory
-    - unable to read the source file or write to the target directory:
-      PermissionError, naming the specific path and problem
-    - source is or contains a symbolic link: ValueError, naming the link
-    - requested dtype is not registered: RuntimeError
-    - failed to register resource for any reason: HTTPError, usually 400 error code
-    - unable to match archive path to archive in registry: RuntimeError
-    - failed to add the file (usually b/c the identifier is taken): RuntimeError
-
-    The last two errors indicate a major problem where the archive has perhaps
-    been moved, or the archive in the registry is not pointing to the right
-    location, or data has been stored in the archive without contacting the
-    registry. These are currently hairy enough problems that the user is going
-    to have to fix them herself for now.
-
+    - ValueError: archive_path isn't an archive, or a source is or has a symbolic link
+    - RuntimeError: the archive or dtype isn't registered
+    - PermissionError: a source can't be read or the archive can't be written
+    - httpx.HTTPStatusError: the registry refuses a resource
+    - httpx.ConnectError: the registry can't be reached
+    - KeyError: a file is already stored for an id (the archive and registry disagree)
     """
     import uuid
 
@@ -123,8 +111,7 @@ def deposit(
             ) from err
         log.info("   archive name: %s", archive)
 
-        # check that dtype (if specified) is known to the registry, rather
-        # than discovering this only after hashing and trying to add each file
+        # check the dtype before hashing any files
         if dtype is not None:
             url, params = get_datatypes(registry_url)
             known_dtypes = {
@@ -195,7 +182,7 @@ def deposit(
 
 
 def search(registry_url: str, **params) -> Iterator[dict]:
-    """Searches the registry for resources that match query params, yielding a sequence of hits"""
+    """Yields the registry records that match the query params."""
     from nbank.registry import find_resource
     from nbank.util import query_registry_paginated
 
@@ -205,7 +192,7 @@ def search(registry_url: str, **params) -> Iterator[dict]:
 
 
 def describe(registry_url: str, id: str) -> dict | None:
-    """Returns the database record for a resource, or None if it does not exist in the registry"""
+    """Returns the registry record for id, or None if it isn't registered."""
     from nbank.registry import get_resource
     from nbank.util import query_registry
 
@@ -215,11 +202,7 @@ def describe(registry_url: str, id: str) -> dict | None:
 
 
 def describe_many(registry_url: str, *ids: str) -> Iterator[dict]:
-    """Returns the database record(s) for one or more resources.
-
-    Yields one record for each resource that was located in the registry.
-
-    """
+    """Yields the registry record of each resource in ids that's registered."""
     from nbank.registry import get_resource_bulk
     from nbank.util import query_registry_bulk
 
@@ -231,22 +214,14 @@ def describe_many(registry_url: str, *ids: str) -> Iterator[dict]:
 def find(
     registry_url: str, id: str, alt_base: Path | None = None
 ) -> Iterator[FetchableResource | None]:
-    """Generates a sequence of Fetchables where id can be located
+    """Yields a Fetchable for each location of id (None if this host can't reach it).
 
-    Yields None for locations that can't be reached from this host (e.g., an
-    archive on a filesystem that isn't mounted here), so an empty sequence means
-    that the resource has no locations. Raises HTTPStatusError (with status 404)
-    if the resource is not in the registry.
+    An empty sequence means the resource has no locations. Raises HTTPStatusError (404)
+    if id isn't registered. alt_base, if given, replaces the directory that contains
+    each archive, for copies of archives on another host (see archive.Resource).
 
-    The fetch method of a resource at an http(s) location doesn't work, because
-    the session used to look it up is closed. This is deprecated: in a future
-    release the method will raise NotFetchableError. Use the `nbank fetch`
-    command to download resources.
-
-    Set alt_base to set an alternate path to search for resources in neurobank
-    archives. This is intended to be used with temporary copies of archives on
-    other hosts.
-
+    Deprecated: fetch() doesn't work for http(s) locations, as the session is closed,
+    and will raise NotFetchableError in a future release. Use `nbank fetch` to download.
     """
     # TODO: consider a more transparent readout for unreachable/nonexistent conditions
     from nbank.registry import get_locations
@@ -261,16 +236,11 @@ def find(
 def get(
     registry_url: str, id: str, alt_base: Path | None = None
 ) -> FetchableResource | None:
-    """Returns the first path or URL where id can be found from this host, or None.
+    """Returns the first path or URL for id that this host can reach, or None.
 
-    None means that no location for the resource can be reached from this host.
-    Raises HTTPStatusError (with status 404) if the resource is not in the
-    registry. See find about resources at http(s) locations.
-
-    Set alt_base to set an alternate path to search for resources in neurobank
-    archives. This is intended to be used with temporary copies of archives on
-    other hosts.
-
+    Raises HTTPStatusError (404) if id isn't registered. alt_base, if given, replaces
+    the directory that contains each archive, for copies of archives on another host
+    (see archive.Resource).
     """
     # TODO: consider a more transparent readout for unreachable/nonexistent conditions
     for resource in find(registry_url, id, alt_base):
@@ -281,11 +251,10 @@ def get(
 def verify(
     registry_url: str, file: str | Path, id: str | None = None
 ) -> Iterator[dict] | bool:
-    """Compute the hash for file and search the registry for any resource(s) associated with it.
+    """Hashes file and returns the registry records with that hash.
 
-    Returns a sequence of matching records. If id is not None, search instead by id
-    and return True if the hash matches.
-
+    If id is given, returns whether the hash matches id's record instead, and raises
+    ValueError if id isn't registered.
     """
     from nbank.util import hash
 
