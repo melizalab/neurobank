@@ -465,7 +465,20 @@ def main(argv=None):
         help="tar file with the resources to import: a file, a tape device, or "
         "'-' for standard input",
     )
+    pp.add_argument(
+        "-f",
+        "--from-file",
+        type=Path,
+        help="read identifiers of the resources to import from FILE, one per line "
+        "('-' for standard input)",
+        metavar="FILE",
+    )
     pp.add_argument("dest", type=Path, help="path of the destination neurobank archive")
+    pp.add_argument(
+        "ids",
+        nargs="*",
+        help="identifier(s) of the resources to import (default: all of them)",
+    )
 
     pp = sub.add_parser("check", help="check integrity of the registry and archives")
     ppsub = pp.add_subparsers(title="subcommands")
@@ -1512,11 +1525,18 @@ def import_tar(args):
     """Import resources from a tar file, tape, or stdin into a neurobank archive.
 
     Each registered resource is checked against its hash as it's stored, then added as a
-    location. With --dry-run, only reads and checks. Unregistered files and resources
-    already in the destination are skipped. Returns 1 if anything fails to import or the
-    tar file can't be read.
+    location. With identifiers (or --from-file), imports only those resources and stops
+    reading once they're found. With --dry-run, only reads and checks. Unregistered
+    files and resources already in the destination are skipped. Returns 1 if anything
+    fails to import, a requested resource isn't found, or the tar file can't be read.
     """
     n_failed = 0
+    wanted = None
+    if args.ids or args.from_file is not None:
+        wanted = _requested_ids(args)
+        if wanted is None:
+            return 1
+        wanted = set(wanted)
     try:
         archive_cfg = archive.get_config(args.dest)
     except FileNotFoundError:
@@ -1537,67 +1557,67 @@ def import_tar(args):
         if args.dry_run:
             log.info("DRY RUN: checking resources without importing them")
 
-        lookup = _tar_lookup(session, registry_url)
+        tar_lookup = _tar_lookup(session, registry_url)
+
+        def lookup(id, member):
+            # only resources that were asked for are looked up
+            if wanted is not None and id not in wanted:
+                return None
+            return tar_lookup(id, member)
+
         dest = None if args.dry_run else archive_cfg
+
+        def import_one(res, progress) -> bool:
+            """Imports a resource from the tar file. Returns False if it fails."""
+            id = res.record["name"]
+            if archive_name in res.record["locations"]:
+                log.info(
+                    "  ✗ %s -> '%s' is already in the destination archive", res.name, id
+                )
+                return True
+            receive = (
+                transfer.receive_directory if res.is_dir else transfer.receive_file
+            )
+            progress.start(res.name, res.size)
+            try:
+                received = receive(
+                    dest, id, res.name, res.data, res.record["sha1"], progress=progress
+                )
+                if dest is not None:
+                    transfer.add_location(
+                        session, registry_url, id, archive_name, received.path
+                    )
+            except transfer.TarReadError:
+                log.error("  ✗ %s -> unable to read; stopping", res.name)
+                raise
+            except transfer.TransferError as err:
+                log.error("  ✗ %s -> %s", res.name, err)
+                return False
+            result = received.path if dest is not None else "OK"
+            note = "" if received.verified else " (no registered hash to check)"
+            log.info("  - %s -> %s%s  (%s)", res.name, result, note, progress.summary())
+            return True
+
+        read_error = False
         try:
-            with transfer.open_tar(args.tar) as tarf:
-                with Progress() as progress:
-                    for res in transfer.iter_tar_resources(tarf, lookup):
-                        id = res.record["name"]
-                        if archive_name in res.record["locations"]:
-                            log.info(
-                                "  ✗ %s -> '%s' is already in the destination archive",
-                                res.name,
-                                id,
-                            )
-                            continue
-                        receive = (
-                            transfer.receive_directory
-                            if res.is_dir
-                            else transfer.receive_file
-                        )
-                        progress.start(res.name, res.size)
-                        try:
-                            received = receive(
-                                dest,
-                                id,
-                                res.name,
-                                res.data,
-                                res.record["sha1"],
-                                progress=progress,
-                            )
-                            if dest is not None:
-                                transfer.add_location(
-                                    session,
-                                    registry_url,
-                                    id,
-                                    archive_name,
-                                    received.path,
-                                )
-                        except transfer.TarReadError:
-                            log.error("  ✗ %s -> unable to read; stopping", res.name)
-                            n_failed += 1
-                            raise
-                        except transfer.TransferError as err:
-                            log.error("  ✗ %s -> %s", res.name, err)
-                            n_failed += 1
-                            continue
-                        result = received.path if dest is not None else "OK"
-                        note = (
-                            ""
-                            if received.verified
-                            else " (no registered hash to check)"
-                        )
-                        log.info(
-                            "  - %s -> %s%s  (%s)",
-                            res.name,
-                            result,
-                            note,
-                            progress.summary(),
-                        )
+            with transfer.open_tar(args.tar) as tarf, Progress() as progress:
+                for res in transfer.iter_tar_resources(tarf, lookup):
+                    n_failed += not import_one(res, progress)
+                    if wanted is not None:
+                        wanted.discard(res.record["name"])
+                        if not wanted:
+                            # everything asked for is found; don't read the rest
+                            break
         except (OSError, tarfile.TarError) as err:
             log.error("error: unable to read %s: %s", args.tar, err)
             n_failed += 1
+            read_error = True
+    for id in sorted(wanted or ()):
+        reason = (
+            "not reached, as reading stopped" if read_error else "not in the tar file"
+        )
+        log.error("  ✗ %s -> %s", id, reason)
+        n_failed += 1
     return 1 if n_failed else None
 
 

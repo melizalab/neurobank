@@ -755,6 +755,64 @@ def test_import_tar_read_error(
     assert cli("check", "archive", str(b.path)) == 0
 
 
+@pytest.fixture
+def three_in_tar(two_archives, dtype, deposit_file, unique, tmp_path):
+    """Three resources in archive a, written to a tar file whose last member is cut
+    off partway through, so reading past the first two fails."""
+    a, b = two_archives
+    names = [deposit_file(a, dtype) for _ in range(2)]
+    names.append(deposit_file(a, dtype, contents=unique("big") + "x" * 50_000))
+    tar = make_tar(tmp_path / "archive.tar", *(stored_path(a, n) for n in names))
+    with tarfile.open(tar) as t:
+        last = t.getmembers()[-1]
+    with open(tar, "r+b") as fp:
+        fp.truncate(last.offset_data + last.size // 2)
+    return SimpleNamespace(a=a, b=b, names=names, tar=tar)
+
+
+def test_import_tar_selected(cli, registry, three_in_tar, caplog):
+    t = three_in_tar
+    first, second, _ = t.names
+    # stops after second, before reaching the cut-off member
+    assert cli("archive", "import-tar", str(t.tar), str(t.b.path), second) == 0
+    assert stored_path(t.b, second).exists()
+    with pytest.raises(FileNotFoundError):
+        stored_path(t.b, first)
+    assert "unable to read" not in caplog.text
+    assert "not in the registry" not in caplog.text
+    # again, when it's already there
+    caplog.clear()
+    assert cli("archive", "import-tar", str(t.tar), str(t.b.path), second) == 0
+    assert "is already in the destination archive" in caplog.text
+    assert "unable to read" not in caplog.text
+
+
+def test_import_tar_selected_from_file(cli, three_in_tar, unique, tmp_path, caplog):
+    t = three_in_tar
+    first, second, _ = t.names
+    missing = unique("missing")
+    ids = tmp_path / "ids.txt"
+    ids.write_text(f"{first}\n{missing}\n")
+    assert cli("archive", "import-tar", "-f", str(ids), str(t.tar), str(t.b.path)) == 1
+    assert stored_path(t.b, first).exists()
+    with pytest.raises(FileNotFoundError):
+        stored_path(t.b, second)
+    # the missing id keeps it reading to the end, where the tar is cut off
+    assert f"✗ {missing} -> not reached, as reading stopped" in caplog.text
+
+
+def test_import_tar_selected_not_in_tar(
+    cli, two_archives, dtype, deposit_file, unique, tmp_path, caplog
+):
+    a, b = two_archives
+    name = deposit_file(a, dtype)
+    tar = make_tar(tmp_path / "archive.tar", stored_path(a, name))
+    missing = unique("missing")
+    assert cli("archive", "import-tar", str(tar), str(b.path), name, missing) == 1
+    assert stored_path(b, name).exists()
+    assert f"✗ {missing} -> not in the tar file" in caplog.text
+
+
 def changed_tar(archive, name, tmp_path):
     """A tar file holding a changed copy of a resource under its own name."""
     stored = stored_path(archive, name)
