@@ -1,3 +1,22 @@
+## 0.12.1
+
+### New
+
+- `nbank archive import-tar` can import only some of the resources in a tar file:
+  list their identifiers after the archive path, or in a file with `-f`. Reading
+  stops once they've all been found, and requested resources that aren't in the
+  tar file are reported as failures.
+
+### Fixed
+
+- When a tar file ends partway through a resource (for example, a tape that ran
+  out of space), `check tar` and `import-tar` now report that resource as failed.
+  Before, it wasn't counted at all, and `check tar --archive` didn't report it
+  as missing.
+- Tar files on disk are read with seeking, so `import-tar` skips resources it
+  doesn't need without reading them, and `check tar` and `import-tar` hash files
+  in tar files faster. Tapes and standard input are still read in order.
+
 ## 0.12.0
 
 Requires Python 3.11 and django-neurobank 0.11.0 (registry API 1.1) or later.
