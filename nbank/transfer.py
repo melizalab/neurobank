@@ -425,11 +425,39 @@ class _BlockReader(io.RawIOBase):
         return n
 
 
+class _FileReader(io.RawIOBase):
+    """Reads and seeks a file, raising read errors as TarReadError."""
+
+    def __init__(self, raw: BinaryIO):
+        self.raw = raw
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        return self.raw.seek(offset, whence)
+
+    def tell(self) -> int:
+        return self.raw.tell()
+
+    def readinto(self, buffer) -> int:
+        try:
+            return self.raw.readinto(buffer)
+        except OSError as err:
+            raise TarReadError(
+                err.errno, f"{err.strerror} at byte {self.raw.tell()}"
+            ) from err
+
+
 @contextmanager
 def open_tar(path: str | Path) -> Iterator[tarfile.TarFile]:
     """Opens a tar file, tape device, or '-' (stdin) to read its members in order.
 
-    Errors reading a file or device are raised as TarReadError.
+    Members that aren't read are seeked past in a file, but have to be read through on
+    a tape or stdin. Errors reading a file or device are raised as TarReadError.
     """
     import sys
 
@@ -440,8 +468,13 @@ def open_tar(path: str | Path) -> Iterator[tarfile.TarFile]:
     with open(path, "rb", buffering=0) as raw:
         is_device = stat.S_ISCHR(os.fstat(raw.fileno()).st_mode)
         try:
-            reader = _BlockReader(raw, _tape_read_size)
-            with tarfile.open(fileobj=reader, mode="r|*") as tar:
+            if raw.seekable() and not is_device:
+                reader = io.BufferedReader(_FileReader(raw), _tape_read_size)
+                mode = "r:*"
+            else:
+                reader = _BlockReader(raw, _tape_read_size)
+                mode = "r|*"
+            with tarfile.open(fileobj=reader, mode=mode) as tar:
                 yield tar
         except OSError as err:
             if is_device and err.errno == errno.ENOMEM:

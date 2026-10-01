@@ -741,7 +741,7 @@ def test_open_tar_explains_large_tape_blocks(monkeypatch):
 def test_open_tar_leaves_other_errors_alone(monkeypatch, tmp_path):
     path = tmp_path / "archive.tar"
     path.write_bytes(tar_bytes(tape_members))
-    monkeypatch.setattr(transfer._BlockReader, "readinto", raise_enomem)
+    monkeypatch.setattr(transfer._FileReader, "readinto", raise_enomem)
     with pytest.raises(OSError, match="Cannot allocate memory"):
         with transfer.open_tar(path):
             pass
@@ -1227,3 +1227,63 @@ def test_truncated_directory_member(tmp_path, tmp_archive, dry_run):
         with pytest.raises(transfer.TarReadError, match="res_d/b"):
             transfer.receive_directory(dest, "res_d", res.name, res.data, None)
     assert leftovers(tmp_archive) == []
+
+
+class CountingFile(io.FileIO):
+    """A file that counts the bytes read from it."""
+
+    nbytes = 0
+
+    def read(self, size=-1):
+        data = super().read(size)
+        CountingFile.nbytes += len(data)
+        return data
+
+    def readinto(self, buffer):
+        n = super().readinto(buffer)
+        CountingFile.nbytes += n or 0
+        return n
+
+
+def test_open_tar_file_skips_without_reading(tmp_path, monkeypatch):
+    path = tmp_path / "archive.tar"
+    path.write_bytes(tar_bytes([("skipped", b"x" * 10_000_000), ("res_1", b"one")]))
+    monkeypatch.setattr(
+        transfer, "open", lambda p, *args, **kwargs: CountingFile(p), raising=False
+    )
+    CountingFile.nbytes = 0
+    with transfer.open_tar(path) as tar:
+        lookup = {"res_1": {"name": "res_1"}}.get
+        [res] = [
+            r.data.read()
+            for r in transfer.iter_tar_resources(tar, lambda i, m: lookup(i))
+        ]
+    assert res == b"one"
+    # the skipped member is seeked past, apart from what's buffered (about 1 MiB)
+    assert CountingFile.nbytes < 4_000_000
+
+
+class SeekableFailingFile(FailingFile):
+    def seekable(self):
+        return True
+
+    def seek(self, offset, whence=0):
+        return self._fp.seek(offset, whence)
+
+    def tell(self):
+        return self._fp.tell()
+
+
+def test_file_read_error_says_where(tmp_path, monkeypatch):
+    path = tmp_path / "damaged.tar"
+    path.write_bytes(tar_bytes(tape_members))
+    monkeypatch.setattr(
+        transfer,
+        "open",
+        lambda p, *args, **kwargs: SeekableFailingFile(p, 20_000),
+        raising=False,
+    )
+    with pytest.raises(transfer.TarReadError, match="Input/output error at byte"):
+        with transfer.open_tar(path) as tar:
+            for res in transfer.iter_tar_resources(tar, lambda id, m: {"name": id}):
+                res.data.read()
