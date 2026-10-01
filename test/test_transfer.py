@@ -1191,3 +1191,39 @@ def test_receive_directory_where_renaming_needs_write_access(tmp_archive, monkey
     # read-only once it's in place
     assert stat.S_IMODE(received.path.stat().st_mode) & 0o222 == 0
     assert leftovers(tmp_archive) == []
+
+
+def truncated_tar(tmp_path, members, keep):
+    """Writes a tar file of members cut off after keep bytes, as when a tape
+    runs out partway through it."""
+    path = tmp_path / "truncated.tar"
+    path.write_bytes(tar_bytes(members)[:keep])
+    return path
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_truncated_member(tmp_path, tmp_archive, dry_run):
+    # headers are 512 bytes; res_1.wav's 50000 bytes are padded to 50176
+    path = truncated_tar(tmp_path, tape_members, 512 + 50176 + 512 + 1000)
+    dest = None if dry_run else tmp_archive
+    with transfer.open_tar(path) as tar:
+        resources = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
+        first = next(resources)
+        transfer.receive_file(dest, "res_1", first.name, first.data, None)
+        second = next(resources)
+        with pytest.raises(transfer.TarReadError, match="res_2"):
+            transfer.receive_file(dest, "res_2", second.name, second.data, None)
+    assert leftovers(tmp_archive) == []
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_truncated_directory_member(tmp_path, tmp_archive, dry_run):
+    members = [("res_d", None), ("res_d/a", b"x" * 5120), ("res_d/b", b"y" * 5120)]
+    # cut off partway through res_d/b
+    path = truncated_tar(tmp_path, members, 512 + 512 + 5120 + 512 + 1000)
+    dest = None if dry_run else tmp_archive
+    with transfer.open_tar(path) as tar:
+        res = next(transfer.iter_tar_resources(tar, lambda id, m: {"name": id}))
+        with pytest.raises(transfer.TarReadError, match="res_d/b"):
+            transfer.receive_directory(dest, "res_d", res.name, res.data, None)
+    assert leftovers(tmp_archive) == []

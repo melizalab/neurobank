@@ -370,6 +370,25 @@ class TarReadError(OSError):
     """The tar file couldn't be read any further. The message says how far in."""
 
 
+class _MemberReader:
+    """Reads a tar member, raising TarReadError if the tar file ends partway through it."""
+
+    def __init__(self, stream: BinaryIO, name: str):
+        self._stream = stream
+        self.name = name
+
+    def read(self, size: int = -1) -> bytes:
+        try:
+            return self._stream.read(size)
+        except tarfile.ReadError as err:
+            raise TarReadError(
+                f"the tar file ends partway through '{self.name}' ({err})"
+            ) from err
+
+    def __getattr__(self, attr):
+        return getattr(self._stream, attr)
+
+
 class _BlockReader(io.RawIOBase):
     """Reads raw in fixed-size requests, however little the caller asks for.
 
@@ -480,7 +499,7 @@ def iter_tar_resources(
             if member.isdir():
                 yield relpath, None
             elif member.isreg():
-                yield relpath, tar.extractfile(member)
+                yield relpath, _MemberReader(tar.extractfile(member), member.name)
             else:
                 special.append(member.name)
         if special:
@@ -498,9 +517,8 @@ def iter_tar_resources(
         if record is None:
             continue
         if member.isreg():
-            yield TarResource(
-                record, path.name, tar.extractfile(member), False, member.size
-            )
+            data = _MemberReader(tar.extractfile(member), member.name)
+            yield TarResource(record, path.name, data, False, member.size)
             continue
         entries = directory_entries(member.name.rstrip("/") + "/")
         yield TarResource(record, path.name, entries, True, None)

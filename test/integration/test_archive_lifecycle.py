@@ -909,7 +909,10 @@ def test_check_tar_truncated(
     truncated = tmp_path / "truncated.tar"
     truncated.write_bytes(tar.read_bytes()[:50_000])
     assert cli("check", "tar", str(truncated)) == 1
-    assert "unable to read" in caplog.text
+    member = stored_path(archive, name).name
+    assert f"✗ {member} -> unable to read; stopping" in caplog.text
+    assert f"ends partway through '{member}'" in caplog.text
+    assert "Resources checked: 1; failed: 1" in caplog.text
 
 
 def test_import_tar_truncated(
@@ -921,7 +924,12 @@ def test_import_tar_truncated(
     truncated = tmp_path / "truncated.tar"
     truncated.write_bytes(tar.read_bytes()[:50_000])
     assert cli("archive", "import-tar", str(truncated), str(b.path)) == 1
-    assert "unable to read" in caplog.text
+    member = stored_path(a, name).name
+    assert f"✗ {member} -> unable to read; stopping" in caplog.text
+    assert f"ends partway through '{member}'" in caplog.text
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, name)
+    assert cli("check", "archive", str(b.path)) == 0
 
 
 @pytest.fixture

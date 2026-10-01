@@ -987,3 +987,28 @@ def test_check_tar_read_error(mocked_api, failing_tar, caplog, with_archive):
         assert "Missing from the tar file: 0; not checked (reading stopped): 1" in (
             caplog.text
         )
+
+
+def test_check_tar_truncated(mocked_api, tmp_path, caplog):
+    from test.test_transfer import tar_bytes
+
+    members = [("res_1", b"one"), ("res_2", b"x" * 50_000)]
+    for name in ("res_1", "res_2"):
+        mocked_api.get(resource_url + f"{name}/").respond(
+            json={"name": name, "sha1": None, "locations": ["tape"]}
+        )
+    mocked_api.get(archives_url + "tape/").respond(json={"name": "tape"})
+    mocked_api.get(resource_url, params={"archive": "tape"}).respond(
+        json=[
+            {"name": name, "sha1": None, "locations": ["tape"]}
+            for name in ("res_1", "res_2")
+        ]
+    )
+    # the tape ran out partway through res_2
+    path = tmp_path / "truncated.tar"
+    path.write_bytes(tar_bytes(members)[: 512 + 512 + 512 + 20_000])
+    assert run_main("check", "tar", "--archive", "tape", str(path)) == 1
+    assert "res_1 -> OK" in caplog.text
+    assert "✗ res_2 -> unable to read; stopping" in caplog.text
+    assert "ends partway through 'res_2'" in caplog.text
+    assert "Resources checked: 2; failed: 1" in caplog.text
