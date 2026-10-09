@@ -240,6 +240,22 @@ def test_verify_permissions_resource_dir_denied(tmp_archive, tmp_path):
         tgt_base.chmod(mode)
 
 
+def test_verify_permissions_file_exists(tmp_archive, tmp_path):
+    name = "dummy"
+    dummy_1 =  tmp_path / name
+    dummy_1.write_text("blah")
+    stored_path = archive.store_resource(tmp_archive, dummy_1, name)
+    dummy_2 =  tmp_path / name
+    dummy_2.write_text("blah")
+    with pytest.raises(PermissionError, match=str(stored_path)):
+        archive.verify_permissions(tmp_archive, dummy_2)
+    # should also raise if the id matches but not the filename
+    dummy_3 =  tmp_path / "dummy_3"
+    dummy_3.write_text("blah")
+    with pytest.raises(PermissionError, match=str(stored_path)):
+        archive.verify_permissions(tmp_archive, dummy_3, id=name)
+    
+
 def test_verify_permissions_subdirectory_denied(tmp_archive, tmp_path):
     name = "dummy_100"
     dummy = tmp_path / "dummy"
