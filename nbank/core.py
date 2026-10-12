@@ -64,9 +64,11 @@ def deposit(
     - ValueError: archive_path isn't an archive, or a source is or has a symbolic link
     - RuntimeError: the archive or dtype isn't registered
     - PermissionError: a source can't be read or the archive can't be written
+    - FileExistsError: a file is already stored for the id (nothing is registered)
     - httpx.HTTPStatusError: the registry refuses a resource
     - httpx.ConnectError: the registry can't be reached
-    - KeyError: a file is already stored for an id (the archive and registry disagree)
+    - KeyError: a file for an id appeared after the check, as the archive and registry
+      disagree
     """
     import uuid
 

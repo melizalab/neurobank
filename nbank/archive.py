@@ -335,18 +335,16 @@ def verify_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> 
 
     src must be readable, and the resources directory (and id's subdirectory, if it
     exists) readable, writable, and searchable. For a directory going to another
-    filesystem, everything inside it must be readable too. Also checks that the target
-    file doesn't already exist.
-
+    filesystem, everything inside it must be readable too. Raises FileExistsError
+    instead if a file is already stored for the id, whatever its extension.
     """
     if not os.access(src, os.R_OK):
         raise PermissionError(f"'{src}' is not readable")
     reqd_perms = os.R_OK | os.W_OK | os.X_OK
     if id is None:
         id = src.name
-    tgt_base: Path =  cfg["path"] / _resource_subdir
+    tgt_base: Path = cfg["path"] / _resource_subdir
     tgt_dir = tgt_base / id_stub(id)
-    tgt_stem = tgt_dir / id
     if not os.access(tgt_base, os.F_OK):
         raise PermissionError(f"archive resource directory '{tgt_base}' does not exist")
     if not os.access(tgt_base, reqd_perms):
@@ -363,7 +361,7 @@ def verify_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> 
     except FileNotFoundError:
         pass
     else:
-        raise PermissionError(f"'{existing}' is already stored for this resource")
+        raise FileExistsError(f"'{existing}' is already stored for this resource")
 
     if src.is_dir() and not _same_filesystem(src, tgt_base):
         for item in src.rglob("*"):

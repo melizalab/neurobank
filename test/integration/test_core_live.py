@@ -118,15 +118,45 @@ def test_deposit_auto_id_uuid(registry, make_archive, dtype, tmp_path, unique):
 
 
 def test_deposit_duplicate_name(registry, archive, dtype, tmp_path, unique):
+    # found in the archive, before anything is registered
     name = unique("res")
     first = write_file(tmp_path / f"{name}.txt", "first")
     deposit_one(registry, archive, dtype, first)
     second = write_file(tmp_path / f"{name}.dat", "second")
-    with pytest.raises(httpx.HTTPStatusError) as err:
+    with pytest.raises(FileExistsError, match="already stored"):
         deposit_one(registry, archive, dtype, second)
+    assert second.exists()
+    stored = nbank_archive.resource_path(archive.config, name, resolve_ext=True)
+    assert stored.read_text() == "first"
+    assert [r["name"] for r in core.search(registry.url, name=name)] == [name]
+
+
+def test_deposit_duplicate_name_skipped(registry, archive, dtype, tmp_path, unique):
+    name = unique("res")
+    deposit_one(registry, archive, dtype, write_file(tmp_path / f"{name}.txt", "first"))
+    second = write_file(tmp_path / f"{name}.dat", "second")
+    [item] = core.deposit(
+        archive.path, [second], dtype=dtype, auth=registry.auth, skip_errors=True
+    )
+    assert item["source"] == second
+    assert "already stored" in item["error"]
+
+
+def test_deposit_duplicate_name_in_another_archive(
+    registry, archive, make_archive, dtype, tmp_path, unique
+):
+    # the registry refuses it, as only the other archive has the file
+    name = unique("res")
+    deposit_one(registry, archive, dtype, write_file(tmp_path / f"{name}.txt", "first"))
+    other = make_archive()
+    second = write_file(tmp_path / f"{name}.dat", "second")
+    with pytest.raises(httpx.HTTPStatusError) as err:
+        deposit_one(registry, other, dtype, second)
     assert err.value.response.status_code == 400
     assert "name" in err.value.response.json()
     assert second.exists()
+    with pytest.raises(FileNotFoundError):
+        nbank_archive.resource_path(other.config, name, resolve_ext=True)
 
 
 def test_deposit_duplicate_hash(registry, archive, dtype, tmp_path, unique):
