@@ -6,9 +6,12 @@ files deposited by mistake.
 
 """
 
+import json
 import logging
+from contextlib import nullcontext
 from netrc import NetrcParseError
 from pathlib import Path
+from typing import TextIO
 
 import httpx
 
@@ -19,8 +22,19 @@ log = logging.getLogger("nbank")  # root logger
 
 
 def delete_resource(
-    resource_id: str, *, session: httpx.Client, registry_url: str, dry_run: bool = False
+    resource_id: str,
+    *,
+    session: httpx.Client,
+    registry_url: str,
+    dry_run: bool = False,
+    record_fp: TextIO | None = None,
 ):
+    """Delete a resource from its local archives and purge it from the registry.
+
+    If record_fp is given, the purged registry record is written to it as one
+    line of JSON.
+
+    """
     log.info("%s:", resource_id)
     url, params = registry.get_locations(registry_url, resource_id)
     for loc in util.query_registry_paginated(session, url, params):
@@ -39,18 +53,31 @@ def delete_resource(
             except AttributeError:
                 log.debug("   - %s is not deletable, skipping", location)
     url, params = registry.get_resource(registry_url, resource_id)
+    record = None
+    if record_fp is not None and not dry_run:
+        r = session.get(url)
+        r.raise_for_status()
+        record = r.json()
     req = session.build_request("DELETE", url)
     log.info("  ✗ purged %s", req.url)
     if not dry_run:
         r = session.send(req)
         r.raise_for_status()
+        if record is not None:
+            record_fp.write(json.dumps(record) + "\n")
+            record_fp.flush()
 
 
 def delete_resources(args):
     if args.dry_run:
         log.info("DRY RUN")
 
-    with open(args.resources) as fp, httpx.Client(auth=args.auth) as session:
+    record_ctx = open(args.record, "a") if args.record else nullcontext()
+    with (
+        open(args.resources) as fp,
+        record_ctx as record_fp,
+        httpx.Client(auth=args.auth) as session,
+    ):
         for line in fp:
             resource_id = line.strip()
             if len(resource_id) == 0 or resource_id.startswith("#"):
@@ -61,6 +88,7 @@ def delete_resources(args):
                     session=session,
                     registry_url=args.registry_url,
                     dry_run=args.dry_run,
+                    record_fp=record_fp,
                 )
             except httpx.HTTPStatusError as err:
                 if err.response.status_code == 404:
@@ -148,6 +176,11 @@ if __name__ == "__main__":
         "--dry-run",
         help="if set, don't actually delete anything",
         action="store_true",
+    )
+    pp.add_argument(
+        "--record",
+        type=Path,
+        help="append the purged registry records to this file, as JSON lines",
     )
     pp.add_argument(
         "resources", type=Path, help="file with a list of resources to delete"
