@@ -40,7 +40,7 @@ def test_deposit(registry, archive, dtype, tmp_path, unique):
             dtype=dtype,
             hash=True,
             auth=registry.auth,
-            experimenter="dmeliza",
+            experimenter=registry.auth[0],
         )
     )
     assert items == [{"source": src, "id": name}]
@@ -51,7 +51,7 @@ def test_deposit(registry, archive, dtype, tmp_path, unique):
     record = core.describe(registry.url, name)
     assert record["sha1"] == sha1
     assert record["dtype"] == dtype
-    assert record["metadata"] == {"experimenter": "dmeliza"}
+    assert record["metadata"] == {"experimenter": registry.auth[0]}
     assert record["locations"] == [archive.name]
     assert record["created_by"] == registry.auth[0]
 

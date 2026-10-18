@@ -63,7 +63,7 @@ def test_deposit(cli, registry, archive, dtype, tmp_path, unique, capsys):
     hashes = [util.hash(f) for f in files]
     status = cli(
         *["deposit", "-d", dtype, "-H", "-j"],
-        *["-k", "experimenter=dmeliza", "-k", "n=3"],
+        *["-k", f"experimenter={registry.auth[0]}", "-k", "n=3"],
         str(archive.path),
         *map(str, files),
     )
@@ -74,7 +74,7 @@ def test_deposit(cli, registry, archive, dtype, tmp_path, unique, capsys):
     for name, sha1 in zip(names, hashes, strict=True):
         record = core.describe(registry.url, name)
         assert record["sha1"] == sha1
-        assert record["metadata"] == {"experimenter": "dmeliza", "n": 3}
+        assert record["metadata"] == {"experimenter": registry.auth[0], "n": 3}
 
 
 def test_deposit_names_from_stdin(
