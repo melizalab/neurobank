@@ -217,6 +217,15 @@ def register(client, registry, unique, dtype):
 
 
 @pytest.fixture
+def core_fields(client, registry):
+    """Skips the test if the registry has no experimenter, animal, and protocol fields."""
+    url, _ = reg.get_info(registry.url)
+    version = client.get(url).json()["api_version"]
+    if tuple(int(x) for x in version.split(".")) < (1, 2):
+        pytest.skip(f"registry API {version} has no core fields")
+
+
+@pytest.fixture
 def make_netrc(registry):
     """Returns a function that writes a netrc file with the registry credentials."""
 

@@ -151,7 +151,10 @@ The ``deposit`` command takes several options:
 -  ``-d, --dtype``: specify the datatype for the deposited resources.
    Your registry may require this.
 -  ``-k``: specify a metadata key-value pair. You can use this flag
-   multiple times to set multiple fields.
+   multiple times to set multiple fields. ``experimenter``, ``animal``, and
+   ``protocol`` are fields of the resource rather than metadata: the
+   experimenter must be a user in the registry, and the protocol a slug
+   (letters, numbers, underscores, and hyphens).
 -  ``-H, --hash``: if set, ``nbank`` will calculate a SHA1 hash of each
    file and store it in the registry. Use this if you expect the
    contents of the file to be unique.
@@ -211,9 +214,9 @@ perform the following operations:
 
 - ``nbank locate [options] id-1 [id-2 [id-3] ...]``: look up the location(s) of the resources associated with each identifier. You can supply full URL-based identifiers, or short ids. If short ids are used, the default registry (specified with ``-r`` argument or ``NBANK_REGISTRY`` environment variable) is used to resolve the full URL. Use the ``-L`` flag to create symbolic links or the ``-0`` flag to pipe the paths to another program. This should be your primary way of accessing resources. Don't make unnecessary copies!
 -  ``nbank info id``: returns the registry information on the resource in json format.
--  ``nbank search [options] query``: searches the database for resources that match ``query``. The default is to search by identifier, but you can also search by hash, dtype, archive, or any metadata fields. The default is to return only the identifiers of the resources, but you can use the ``-j`` flag to output json instead, which is useful if you want to extract the registry records for further processing.
+-  ``nbank search [options] query``: searches the database for resources that match ``query``. The default is to search by identifier, but you can also search by hash, dtype, archive, experimenter, animal, protocol, or any metadata fields. The default is to return only the identifiers of the resources, but you can use the ``-j`` flag to output json instead, which is useful if you want to extract the registry records for further processing.
 -  ``nbank verify [options] files``: computes a hash for each file and searches the registry for a match. Running this before starting an experiment is a good idea if you're using copies (for example, on a data-collection machine), as you’ll be able to tell if any of your stimulus files have changed. It’s also useful if the same identifier is used in more than one domain or if you have a data file that was inadvertently renamed.
--  ``nbank modify [-k key=value] id``: update the metadata for ``id``. Multiple ``-k`` flags can be used. You can't change the hash or any other fields outside the metadata.
+-  ``nbank modify [-k key=value] id``: update the metadata, experimenter, animal, or protocol for ``id``. Multiple ``-k`` flags can be used, and ``-K key`` deletes a key. You can't change the hash or the other fields of the resource.
 -  ``nbank export [options] out id-1 [id-2 ...]``: copy resources from the archives on this host to a tar file (``out.tar``), a zip file (``out.zip``), or a directory (anything else), for example to share them or put them in cold storage. Don't use this for local copies (use ``nbank locate -L`` to create symbolic links instead). Each resource is checked against its registered hash as it's copied, and any that don't match or can't be read are reported and left out. Use ``-f`` to read identifiers from a file, ``-a`` to read only from one archive, and ``--compress`` to compress the members of a zip file (they're stored as-is by default, since most data files don't compress well). Add ``--manifest`` to include the registry records of the exported resources (identifier, path, hash, datatype, metadata, and when and by whom they were created) as ``manifest.json``.
 
 Managing archives

@@ -190,7 +190,8 @@ def main(argv=None):
     )
     pp.add_argument(
         "-k",
-        help="specify metadata field (use multiple -k for multiple values)",
+        help="specify metadata field, or the experimenter, animal, or protocol "
+        "field (use multiple -k for multiple values)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -250,7 +251,8 @@ def main(argv=None):
     )
     pp.add_argument(
         "-k",
-        help="filter by metadata field (use multiple -k for multiple values)",
+        help="filter by metadata field, or by experimenter, animal, or protocol "
+        "(use multiple -k for multiple values)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -258,7 +260,8 @@ def main(argv=None):
     )
     pp.add_argument(
         "-K",
-        help="exclude by metadata field (use multiple -K for multiple values)",
+        help="exclude by metadata field, or by experimenter, animal, or protocol "
+        "(use multiple -K for multiple values)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -285,8 +288,8 @@ def main(argv=None):
     pp.set_defaults(func=set_resource_metadata)
     pp.add_argument(
         "-k",
-        help="set metadata key=value, replacing any previous "
-        "value for this key (use multiple -k for multiple fields)",
+        help="set metadata key=value, or the experimenter, animal, or protocol "
+        "field, replacing any previous value (use multiple -k for multiple fields)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -294,7 +297,7 @@ def main(argv=None):
     )
     pp.add_argument(
         "-K",
-        help="delete metadata field",
+        help="delete metadata field, or clear experimenter, animal, or protocol",
         action="append",
         default=[],
         metavar="KEY",
@@ -724,12 +727,11 @@ def search_resources(args):
     }
     if args.hash is not None:
         params.update(hash_search_param(args.hash))
+    # the core fields are searched as fields, everything else in metadata
     for k, v in args.metadata.items():
-        kk = f"metadata__{k}"
-        params[kk] = v
+        params[k if k in registry.core_fields else f"metadata__{k}"] = v
     for k, v in args.metadata_neq.items():
-        kk = f"metadata__{k}__neq"
-        params[kk] = v
+        params[f"{k}__neq" if k in registry.core_fields else f"metadata__{k}__neq"] = v
     if len(params) == 0:
         log.error("nbank search: error: at least one filter parameter is required")
         return 1

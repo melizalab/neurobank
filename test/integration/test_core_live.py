@@ -40,7 +40,7 @@ def test_deposit(registry, archive, dtype, tmp_path, unique):
             dtype=dtype,
             hash=True,
             auth=registry.auth,
-            experimenter=registry.auth[0],
+            pen=1,
         )
     )
     assert items == [{"source": src, "id": name}]
@@ -51,9 +51,34 @@ def test_deposit(registry, archive, dtype, tmp_path, unique):
     record = core.describe(registry.url, name)
     assert record["sha1"] == sha1
     assert record["dtype"] == dtype
-    assert record["metadata"] == {"experimenter": registry.auth[0]}
+    assert record["metadata"] == {"pen": 1}
     assert record["locations"] == [archive.name]
     assert record["created_by"] == registry.auth[0]
+
+
+@pytest.mark.usefixtures("core_fields")
+def test_deposit_core_fields(registry, archive, dtype, tmp_path, unique):
+    name = unique("res")
+    src = write_file(tmp_path / f"{name}.txt", name)
+    user = registry.auth[0]
+    items = core.deposit(
+        archive.path,
+        [src],
+        dtype=dtype,
+        auth=registry.auth,
+        experimenter=user,
+        animal="P50",
+        protocol="chorus",
+        pen=1,
+    )
+    assert list(items) == [{"source": src, "id": name}]
+    record = core.describe(registry.url, name)
+    assert (record["experimenter"], record["animal"], record["protocol"]) == (
+        user,
+        "P50",
+        "chorus",
+    )
+    assert record["metadata"]["pen"] == 1
 
 
 def test_deposit_dry_run(registry, archive, dtype, tmp_path, unique):
@@ -230,6 +255,32 @@ def test_search_by_metadata(registry, register, dtype, unique):
     assert search(metadata__group=tag) == {a, b}
     assert search(metadata__n="3") == {a}
     assert search(metadata__group__neq=tag) == {c}
+
+
+@pytest.mark.usefixtures("core_fields")
+def test_search_by_core_fields(registry, register, dtype, unique):
+    animal = unique("animal")
+    a = register(animal=animal, protocol="chorus")["name"]
+    b = register(animal=animal)["name"]
+
+    def search(**params):
+        return {r["name"] for r in core.search(registry.url, dtype=dtype, **params)}
+
+    assert search(animal=animal) == {a, b}
+    assert search(animal=animal, protocol="chorus") == {a}
+    assert search(animal=animal, protocol__neq="chorus") == {b}
+    assert search(animal=animal, protocol__isnull="true") == {b}
+
+
+@pytest.mark.usefixtures("core_fields")
+def test_update_core_fields(registry, register):
+    name = register(animal="P50", pen=1)["name"]
+    [record] = core.update(
+        registry.url, name, auth=registry.auth, animal=None, protocol="chorus"
+    )
+    assert (record["animal"], record["protocol"]) == (None, "chorus")
+    assert record["metadata"]["pen"] == 1
+    assert core.describe(registry.url, name)["protocol"] == "chorus"
 
 
 def test_search_is_paginated(registry, client, register, dtype):

@@ -59,7 +59,7 @@ def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
     root = tmp_archive["path"]
     name = "dummy_1"
     dtype = "dummy-dtype"
-    metadata = {"experimenter": "dmeliza"}
+    metadata = {"experimenter": "dmeliza", "pen": 1}
     src = tmp_path / name
     contents = '{"foo": 10}\n'
     src.write_text(contents)
@@ -77,7 +77,8 @@ def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
             "dtype": dtype,
             "locations": [archive_name],
             "sha1": sha1,
-            "metadata": metadata,
+            "experimenter": "dmeliza",
+            "metadata": {"pen": 1},
         },
         headers={"Authorization": f"Basic {auth_enc}"},
     ).respond(json={"name": name})
@@ -624,6 +625,32 @@ def test_search_by_scheme(mocked_api, capsys):
     )
     assert run_main("search", "-s", "tape", "-d", "raw") is None
     assert capsys.readouterr().out == "res_1\nres_2\n"
+
+
+def test_search_by_core_fields(mocked_api, capsys):
+    mocked_api.get(
+        resource_url,
+        params={"animal": "P50", "protocol__neq": "chorus", "metadata__pen": "1"},
+    ).respond(json=[{"name": "res_1"}])
+    assert (
+        run_main("search", "-k", "animal=P50", "-K", "protocol=chorus", "-k", "pen=1")
+        is None
+    )
+    assert capsys.readouterr().out == "res_1\n"
+
+
+def test_modify_core_fields(mocked_api, capsys):
+    mocked_api.patch(
+        registry.full_url(base_url, "res_1"),
+        json={"protocol": "chorus", "animal": None, "metadata": {"pen": None}},
+    ).respond(json={"name": "res_1"})
+    assert (
+        run_main(
+            "modify", "-k", "protocol=chorus", "-K", "animal", "-K", "pen", "res_1"
+        )
+        is None
+    )
+    assert json.loads(capsys.readouterr().out) == {"name": "res_1"}
 
 
 def test_verify_name_that_isnt_an_id(mocked_api, tmp_path, capsys):

@@ -184,19 +184,38 @@ def test_add_resource():
         "name": test_id,
         "dtype": test_dtype,
         "locations": [test_archive],
-        "metadata": {"experimenter": experimenter},
+        "experimenter": experimenter,
+        "metadata": {},
+    }
+
+
+def test_add_resource_sends_core_fields_as_fields():
+    _, params = registry.add_resource(
+        base_url, "res", "dtype", "arch", animal="P50", protocol="chorus", pen=1
+    )
+    assert params == {
+        "name": "res",
+        "dtype": "dtype",
+        "locations": ["arch"],
+        "animal": "P50",
+        "protocol": "chorus",
+        "metadata": {"pen": 1},
     }
 
 
 def test_update_metadata():
-    experimenter = "dmeliza"
+    url, params = registry.update_resource_metadata(base_url, id, pen=1, site=None)
+    assert url == full
+    assert params == {"metadata": {"pen": 1, "site": None}}
+
+
+def test_update_core_fields():
     url, params = registry.update_resource_metadata(
-        base_url, id, experimenter=experimenter
+        base_url, id, experimenter="dmeliza", animal=None, pen=1
     )
     assert url == full
-    assert params == {
-        "metadata": {"experimenter": experimenter},
-    }
+    # None clears a field, as it deletes a metadata key
+    assert params == {"experimenter": "dmeliza", "animal": None, "metadata": {"pen": 1}}
 
 
 # def test_id_with_slashes_ok():

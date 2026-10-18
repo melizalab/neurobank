@@ -63,7 +63,7 @@ def test_deposit(cli, registry, archive, dtype, tmp_path, unique, capsys):
     hashes = [util.hash(f) for f in files]
     status = cli(
         *["deposit", "-d", dtype, "-H", "-j"],
-        *["-k", f"experimenter={registry.auth[0]}", "-k", "n=3"],
+        *["-k", "n=3"],
         str(archive.path),
         *map(str, files),
     )
@@ -74,7 +74,7 @@ def test_deposit(cli, registry, archive, dtype, tmp_path, unique, capsys):
     for name, sha1 in zip(names, hashes, strict=True):
         record = core.describe(registry.url, name)
         assert record["sha1"] == sha1
-        assert record["metadata"] == {"experimenter": registry.auth[0], "n": 3}
+        assert record["metadata"] == {"n": 3}
 
 
 def test_deposit_names_from_stdin(
@@ -238,6 +238,46 @@ def test_modify(cli, registry, register, capsys):
     [result] = json_objects(capsys.readouterr().out)
     assert result["metadata"] == {"b": 3, "c": "new"}
     assert core.describe(registry.url, name)["metadata"] == result["metadata"]
+
+
+@pytest.mark.usefixtures("core_fields")
+def test_deposit_and_modify_core_fields(
+    cli, registry, archive, dtype, tmp_path, unique, capsys
+):
+    name = unique("res")
+    src = tmp_path / f"{name}.txt"
+    src.write_text(name)
+    user = registry.auth[0]
+    status = cli(
+        *["deposit", "-d", dtype],
+        *["-k", f"experimenter={user}", "-k", "animal=P50", "-k", "n=3"],
+        str(archive.path),
+        str(src),
+    )
+    assert status == 0
+    record = core.describe(registry.url, name)
+    assert (record["experimenter"], record["animal"]) == (user, "P50")
+    assert record["metadata"]["n"] == 3
+    capsys.readouterr()
+
+    assert cli("modify", "-k", "protocol=chorus", "-K", "animal", name) == 0
+    [result] = json_objects(capsys.readouterr().out)
+    assert (result["animal"], result["protocol"]) == (None, "chorus")
+
+
+@pytest.mark.usefixtures("core_fields")
+def test_search_by_core_fields(cli, register, dtype, unique, capsys):
+    animal = unique("animal")
+    a = register(animal=animal, protocol="chorus")["name"]
+    b = register(animal=animal)["name"]
+
+    def search(*args):
+        cli("search", "-d", dtype, "-k", f"animal={animal}", *args)
+        return set(capsys.readouterr().out.split())
+
+    assert search() == {a, b}
+    assert search("-k", "protocol=chorus") == {a}
+    assert search("-K", "protocol=chorus") == {b}
 
 
 def test_modify_missing(cli, register, unique, capsys):

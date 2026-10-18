@@ -18,6 +18,8 @@ from typing import Any
 _env_registry = "NBANK_REGISTRY"
 _neurobank_scheme = "neurobank"
 _local_schemes = (_neurobank_scheme,)
+# resource fields that callers pass along with metadata
+core_fields = ("experimenter", "animal", "protocol")
 log = logging.getLogger("nbank")
 
 
@@ -164,21 +166,38 @@ def add_resource(
     sha1: str | None = None,
     **metadata: Any,
 ) -> tuple[str, dict]:
-    """Constructs URL to add a resource to the registry"""
+    """Constructs URL to add a resource to the registry.
+
+    The core fields (experimenter, animal, protocol) in metadata are sent as
+    fields of the resource.
+    """
     url = url_join(base_url, "resources/")
+    fields, metadata = _split_core_fields(metadata)
     data = {
         "name": id,
         "dtype": dtype,
         "sha1": sha1,
         "locations": [archive],
+        **fields,
         "metadata": metadata,
     }
     return (url, strip_nulls(data))
 
 
 def update_resource_metadata(base_url: str, id: str, **metadata) -> tuple[str, dict]:
-    """Constructs URL to update metadata in the registry. Set a key to None to delete"""
-    return (full_url(base_url, id), {"metadata": metadata})
+    """Constructs URL to update metadata in the registry. Set a key to None to delete.
+
+    The core fields (experimenter, animal, protocol) in metadata are sent as
+    fields of the resource; None clears them.
+    """
+    fields, metadata = _split_core_fields(metadata)
+    return (full_url(base_url, id), {**fields, "metadata": metadata})
+
+
+def _split_core_fields(metadata: dict) -> tuple[dict, dict]:
+    """Returns ({core field: value}, other metadata)"""
+    fields = {k: v for k, v in metadata.items() if k in core_fields}
+    return fields, {k: v for k, v in metadata.items() if k not in core_fields}
 
 
 def url_join(base: str, *path: str) -> str:
