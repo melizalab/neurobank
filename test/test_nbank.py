@@ -295,6 +295,8 @@ def test_store_resources_continues_past_errors(monkeypatch, capsys, caplog):
         auth=None,
         dry_run=False,
         metadata={},
+        experimenter=None,
+        animal=None,
         json_out=True,
     )
     assert script.store_resources(args) == 1
@@ -323,6 +325,8 @@ def test_store_resources_reports_clean_error(monkeypatch, caplog):
         auth=None,
         dry_run=False,
         metadata={},
+        experimenter=None,
+        animal=None,
         json_out=False,
     )
     with caplog.at_level(logging.ERROR, logger="nbank"):
@@ -348,6 +352,8 @@ def test_store_resources_passes_dry_run(monkeypatch):
         auth=None,
         dry_run=True,
         metadata={},
+        experimenter=None,
+        animal=None,
         json_out=False,
     )
     script.store_resources(args)
@@ -631,12 +637,12 @@ def test_search_by_core_fields(mocked_api, capsys):
     mocked_api.get(
         resource_url,
         params={
-            "animal": "P50",
-            "experimenter__neq": "dmeliza",
+            "animal__istartswith": "P50",
+            "experimenter": "dmeliza",
             "metadata__protocol": "chorus",
         },
     ).respond(json=[{"name": "res_1"}])
-    args = ("-k", "animal=P50", "-K", "experimenter=dmeliza", "-k", "protocol=chorus")
+    args = ("--animal", "P50", "--experimenter", "dmeliza", "-k", "protocol=chorus")
     assert run_main("search", *args) is None
     assert capsys.readouterr().out == "res_1\n"
 
@@ -644,11 +650,34 @@ def test_search_by_core_fields(mocked_api, capsys):
 def test_modify_core_fields(mocked_api, capsys):
     mocked_api.patch(
         registry.full_url(base_url, "res_1"),
-        json={"animal": None, "metadata": {"protocol": "chorus", "pen": None}},
+        json={
+            "experimenter": "dmeliza",
+            "animal": None,
+            "metadata": {"protocol": "chorus", "pen": None},
+        },
     ).respond(json={"name": "res_1"})
-    args = ("-k", "protocol=chorus", "-K", "animal", "-K", "pen", "res_1")
-    assert run_main("modify", *args) is None
+    # an empty value clears a field
+    args = ("--experimenter", "dmeliza", "--animal", "", "-k", "protocol=chorus")
+    assert run_main("modify", *args, "-K", "pen", "res_1") is None
     assert json.loads(capsys.readouterr().out) == {"name": "res_1"}
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("deposit", "-k", "animal=P50", "archive", "file"),
+        ("search", "-k", "experimenter=dmeliza"),
+        ("search", "-K", "animal=P50"),
+        ("modify", "-k", "experimenter=dmeliza", "res_1"),
+        ("modify", "-K", "animal", "res_1"),
+    ],
+)
+def test_core_fields_are_refused_as_metadata(mocked_api, capsys, argv):
+    # no registry route is mocked: nothing must be sent
+    with pytest.raises(SystemExit) as exc:
+        run_main(*argv)
+    assert exc.value.code == 2
+    assert "is not metadata; use --" in capsys.readouterr().err
 
 
 def test_verify_name_that_isnt_an_id(mocked_api, tmp_path, capsys):

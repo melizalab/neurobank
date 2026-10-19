@@ -250,7 +250,7 @@ def test_deposit_and_modify_core_fields(
     user = registry.auth[0]
     status = cli(
         *["deposit", "-d", dtype],
-        *["-k", f"experimenter={user}", "-k", f"animal={animal}", "-k", "n=3"],
+        *["--experimenter", user, "--animal", animal, "-k", "n=3"],
         str(archive.path),
         str(src),
     )
@@ -260,23 +260,27 @@ def test_deposit_and_modify_core_fields(
     assert record["metadata"]["n"] == 3
     capsys.readouterr()
 
-    assert cli("modify", "-k", "protocol=chorus", "-K", "animal", name) == 0
+    assert cli("modify", "-k", "protocol=chorus", "--animal", "", name) == 0
     [result] = json_objects(capsys.readouterr().out)
     assert result["animal"] is None
     assert result["metadata"]["protocol"] == "chorus"
 
 
-def test_search_by_core_fields(core_fields, cli, register, dtype, capsys):
+def test_search_by_core_fields(core_fields, cli, registry, register, dtype, capsys):
     p50, p51 = core_fields
-    a = register(animal=p50, protocol="chorus")["name"]
+    user = registry.auth[0]
+    a = register(animal=p50, experimenter=user, protocol="chorus")["name"]
     b = register(animal=p51)["name"]
 
     def search(*args):
         cli("search", "-d", dtype, *args)
         return set(capsys.readouterr().out.split())
 
-    assert search("-k", f"animal={p50}") == {a}
-    assert search("-K", f"animal={p50}") == {b}
+    assert search("--animal", p50) == {a}
+    assert search("--animal", p51) == {b}
+    # the start of an animal's id is enough
+    assert a in search("--animal", p50[:-1].upper())
+    assert search("--experimenter", user) == {a}
     assert search("-k", "protocol=chorus") == {a}
 
 

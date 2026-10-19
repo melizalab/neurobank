@@ -71,8 +71,51 @@ class ParseKeyVal(argparse.Action):
             raise ValueError(f"-k {arg} argument badly formed; needs key=value")
         else:
             key, val = arg.split("=")
+            if key in registry.core_fields:
+                parser.error(
+                    f"{option_string} {key}: {key} is not metadata; use --{key}"
+                )
             kv[key] = self.parse_value(val)
         setattr(namespace, self.dest, kv)
+
+
+def metadata_key(arg):
+    """Parse arg as a metadata key, which can't be the name of a resource field"""
+    if arg in registry.core_fields:
+        raise argparse.ArgumentTypeError(f"{arg} is not metadata; use --{arg}")
+    return arg
+
+
+def add_core_field_args(pp, action: str):
+    """Adds --experimenter and --animal to a subcommand parser.
+
+    action is "set", "update", or "search".
+    """
+    help = {
+        "set": (
+            "the person who collected or produced the data (a registry username)",
+            "the full identifier of the animal the data came from",
+        ),
+        "update": (
+            "set the experimenter (a registry username; empty to clear)",
+            "set the animal, by its full identifier (empty to clear)",
+        ),
+        "search": (
+            "filter results by experimenter (username)",
+            "filter results by animal (the start of its identifier is enough)",
+        ),
+    }[action]
+    pp.add_argument("--experimenter", metavar="USER", help=help[0])
+    pp.add_argument("--animal", metavar="ID", help=help[1])
+
+
+def core_field_args(args) -> dict:
+    """Returns the values of --experimenter and --animal that were given"""
+    return {
+        field: value
+        for field in registry.core_fields
+        if (value := getattr(args, field)) is not None
+    }
 
 
 def add_check_archive_args(pp):
@@ -190,8 +233,7 @@ def main(argv=None):
     )
     pp.add_argument(
         "-k",
-        help="specify metadata field, or the experimenter or animal field "
-        "(use multiple -k for multiple values)",
+        help="specify metadata field (use multiple -k for multiple values)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -203,6 +245,7 @@ def main(argv=None):
         action="store_true",
         help="output each deposited file to stdout as line-deliminated JSON",
     )
+    add_core_field_args(pp, "set")
     pp.add_argument(
         "-@",
         dest="read_stdin",
@@ -251,8 +294,7 @@ def main(argv=None):
     )
     pp.add_argument(
         "-k",
-        help="filter by metadata field, or by experimenter or animal "
-        "(use multiple -k for multiple values)",
+        help="filter by metadata field (use multiple -k for multiple values)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -260,13 +302,13 @@ def main(argv=None):
     )
     pp.add_argument(
         "-K",
-        help="exclude by metadata field, or by experimenter or animal "
-        "(use multiple -K for multiple values)",
+        help="exclude by metadata field (use multiple -K for multiple values)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
         dest="metadata_neq",
     )
+    add_core_field_args(pp, "search")
     pp.add_argument("name", help="resource name or fragment to search by", nargs="?")
 
     pp = sub.add_parser("info", help="get info from registry about resource(s)")
@@ -288,8 +330,8 @@ def main(argv=None):
     pp.set_defaults(func=set_resource_metadata)
     pp.add_argument(
         "-k",
-        help="set metadata key=value, or the experimenter or animal field, "
-        "replacing any previous value (use multiple -k for multiple fields)",
+        help="set metadata key=value, replacing any previous "
+        "value for this key (use multiple -k for multiple fields)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -297,12 +339,14 @@ def main(argv=None):
     )
     pp.add_argument(
         "-K",
-        help="delete metadata field, or clear experimenter or animal",
+        help="delete metadata field",
         action="append",
+        type=metadata_key,
         default=[],
         metavar="KEY",
         dest="metadata_remove",
     )
+    add_core_field_args(pp, "update")
     pp.add_argument("id", nargs="+", help="identifier(s) of the resource(s)")
 
     pp = sub.add_parser(
@@ -638,6 +682,7 @@ def store_resources(args):
             dry_run=args.dry_run,
             skip_errors=True,
             **args.metadata,
+            **core_field_args(args),
         ):
             n_failed += "error" in res
             if args.json_out:
@@ -727,11 +772,15 @@ def search_resources(args):
     }
     if args.hash is not None:
         params.update(hash_search_param(args.hash))
-    # the core fields are searched as fields, everything else in metadata
+    if args.experimenter is not None:
+        params["experimenter"] = args.experimenter
+    if args.animal is not None:
+        # the first part of a UUID is enough
+        params["animal__istartswith"] = args.animal
     for k, v in args.metadata.items():
-        params[k if k in registry.core_fields else f"metadata__{k}"] = v
+        params[f"metadata__{k}"] = v
     for k, v in args.metadata_neq.items():
-        params[f"{k}__neq" if k in registry.core_fields else f"metadata__{k}__neq"] = v
+        params[f"metadata__{k}__neq"] = v
     if len(params) == 0:
         log.error("nbank search: error: at least one filter parameter is required")
         return 1
@@ -758,9 +807,11 @@ def get_resource_info(args):
 def set_resource_metadata(args):
     for key in args.metadata_remove:
         args.metadata[key] = None
+    # an empty value clears a field
+    fields = {k: v or None for k, v in core_field_args(args).items()}
     n_failed = 0
     for result in core.update(
-        args.registry_url, *args.id, auth=args.auth, **args.metadata
+        args.registry_url, *args.id, auth=args.auth, **args.metadata, **fields
     ):
         json.dump(result, fp=sys.stdout, indent=2)
         sys.stdout.write("\n")
