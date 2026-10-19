@@ -2,8 +2,10 @@
 import stat
 
 import pytest
+import respx
 
-from nbank import transfer
+from nbank import archive, transfer
+from test.test_registry import base_url
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -18,6 +20,18 @@ def writable_tmp_dirs(tmp_path_factory):
     for path in [base, *base.rglob("*")]:
         if path.is_dir() and not path.is_symlink():
             path.chmod(stat.S_IMODE(path.stat().st_mode) | stat.S_IRWXU)
+
+
+@pytest.fixture
+def tmp_archive(tmp_path):
+    root = tmp_path / "archive"
+    return archive.create(root, base_url, umask=0o027, require_hash=False)
+
+
+@pytest.fixture
+def mocked_api():
+    with respx.mock(assert_all_called=True, assert_all_mocked=True) as respx_mock:
+        yield respx_mock
 
 
 @pytest.fixture

@@ -36,18 +36,6 @@ def random_string(N):
 
 
 @pytest.fixture
-def tmp_archive(tmp_path):
-    root = tmp_path / "archive"
-    return archive.create(root, base_url, umask=0o027, require_hash=False)
-
-
-@pytest.fixture
-def mocked_api():
-    with respx.mock(assert_all_called=True, assert_all_mocked=True) as respx_mock:
-        yield respx_mock
-
-
-@pytest.fixture
 def netrc_auth(tmp_path):
     auth_str = "machine localhost\nlogin {}\npassword {}\n".format(*auth)
     netrc = tmp_path / ".netrc"
@@ -102,7 +90,7 @@ def test_deposit_dry_run(mocked_api, tmp_archive, tmp_path):
     )
     # no resource POST is mocked: dry_run must not attempt one
     items = list(core.deposit(root, files=[src], dtype=dtype, dry_run=True))
-    assert items == [{"source": src, "id": name, "dry_run": True}]
+    assert items == [{"source": src, "id": name, "dry_run": True, "metadata": {}}]
     assert src.exists()  # source is untouched
     assert not archive.resource_path(tmp_archive, name).exists()  # nothing stored
 
@@ -297,6 +285,8 @@ def test_store_resources_continues_past_errors(monkeypatch, capsys, caplog):
         metadata={},
         experimenter=None,
         animal=None,
+        read_metadata=True,
+        override_file_metadata=False,
         json_out=True,
     )
     assert script.store_resources(args) == 1
@@ -327,6 +317,8 @@ def test_store_resources_reports_clean_error(monkeypatch, caplog):
         metadata={},
         experimenter=None,
         animal=None,
+        read_metadata=True,
+        override_file_metadata=False,
         json_out=False,
     )
     with caplog.at_level(logging.ERROR, logger="nbank"):
@@ -354,10 +346,34 @@ def test_store_resources_passes_dry_run(monkeypatch):
         metadata={},
         experimenter=None,
         animal=None,
+        read_metadata=True,
+        override_file_metadata=False,
         json_out=False,
     )
     script.store_resources(args)
     assert captured["dry_run"] is True
+
+
+@pytest.mark.parametrize(
+    "flags, expected",
+    [
+        ((), {"read_metadata": True, "override_file_metadata": False}),
+        (
+            ("--no-file-metadata", "--override-file-metadata"),
+            {"read_metadata": False, "override_file_metadata": True},
+        ),
+    ],
+)
+def test_deposit_passes_file_metadata_options(monkeypatch, flags, expected):
+    captured = {}
+
+    def fake_deposit(*args, **kwargs):
+        captured.update(kwargs)
+        return iter(())
+
+    monkeypatch.setattr(core, "deposit", fake_deposit)
+    run_main("deposit", *flags, "archive", "file")
+    assert {k: captured[k] for k in expected} == expected
 
 
 def test_deposit_resource_registry_duplicate(mocked_api, tmp_archive, tmp_path):

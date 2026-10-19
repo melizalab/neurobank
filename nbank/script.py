@@ -247,6 +247,17 @@ def main(argv=None):
     )
     add_core_field_args(pp, "set")
     pp.add_argument(
+        "--no-file-metadata",
+        dest="read_metadata",
+        action="store_false",
+        help="don't check the files or read their metadata with the dtype's reader",
+    )
+    pp.add_argument(
+        "--override-file-metadata",
+        action="store_true",
+        help="where the given metadata differs from a file's, use the given values",
+    )
+    pp.add_argument(
         "-@",
         dest="read_stdin",
         action="store_true",
@@ -681,6 +692,8 @@ def store_resources(args):
             auth=args.auth,
             dry_run=args.dry_run,
             skip_errors=True,
+            read_metadata=args.read_metadata,
+            override_file_metadata=args.override_file_metadata,
             **args.metadata,
             **core_field_args(args),
         ):

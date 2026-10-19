@@ -5,6 +5,7 @@ NB: fixtures are defined in the conftest module
 """
 
 import hashlib
+import json
 import re
 import uuid
 
@@ -12,7 +13,7 @@ import httpx
 import pytest
 
 from nbank import archive as nbank_archive
-from nbank import core, util
+from nbank import core, readers, util
 from nbank import registry as reg
 
 
@@ -76,6 +77,33 @@ def test_deposit_core_fields(core_fields, registry, archive, dtype, tmp_path, un
     assert record["metadata"]["protocol"] == "chorus"
 
 
+def test_deposit_reads_metadata_from_the_file(
+    core_fields, registry, archive, dtype, tmp_path, unique, monkeypatch
+):
+    from test.test_readers import FakeEntryPoint, fake_reader
+
+    animal, _ = core_fields
+    user = registry.auth[0]
+    monkeypatch.setattr(
+        readers, "entry_points", lambda group: [FakeEntryPoint(dtype, fake_reader)]
+    )
+    name = unique("res")
+    src = tmp_path / name
+    src.write_text(
+        json.dumps(
+            {
+                "$schema": "fake",
+                "metadata": {"experimenter": user, "animal": animal, "pen": 1},
+            }
+        )
+    )
+    items = core.deposit(archive.path, [src], dtype=dtype, auth=registry.auth, site=2)
+    assert list(items) == [{"source": src, "id": name}]
+    record = core.describe(registry.url, name)
+    assert (record["experimenter"], record["animal"]) == (user, animal)
+    assert (record["metadata"]["pen"], record["metadata"]["site"]) == (1, 2)
+
+
 def test_deposit_unknown_animal_is_refused(
     core_fields, registry, archive, dtype, tmp_path, unique
 ):
@@ -100,7 +128,7 @@ def test_deposit_dry_run(registry, archive, dtype, tmp_path, unique):
     items = list(
         core.deposit(archive.path, [src], dtype=dtype, auth=registry.auth, dry_run=True)
     )
-    assert items == [{"source": src, "id": name, "dry_run": True}]
+    assert items == [{"source": src, "id": name, "dry_run": True, "metadata": {}}]
     assert src.exists()  # source is untouched
     assert core.describe(registry.url, name) is None  # nothing registered
     assert not nbank_archive.resource_path(archive.config, name).exists()

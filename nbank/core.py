@@ -41,6 +41,8 @@ def deposit(
     auth: RegistryAuth = None,
     dry_run: bool = False,
     skip_errors: bool = False,
+    read_metadata: bool = True,
+    override_file_metadata: bool = False,
     **metadata: Any,
 ) -> Iterator[dict]:
     """Registers files and moves them into the archive at archive_path.
@@ -51,18 +53,28 @@ def deposit(
     otherwise assigned by the registry, instead of using the file's name. auth is for
     the registry (default: .netrc). metadata is stored with each resource.
 
+    If a package provides a metadata reader for dtype (see nbank.readers), each file is
+    checked and its metadata read with it, unless read_metadata is False. The file's
+    metadata is merged with the metadata given here; a key with different values in
+    the two is an error for that file, unless override_file_metadata, in which case
+    the given value is used.
+
     Yields {"source": path, "id": id} for each file deposited. With dry_run, checks
-    everything but registers and moves nothing; records have "dry_run": True, and "id"
-    is None if the registry would assign it. With skip_errors, a file that can't be
-    deposited yields {"source": path, "error": message} instead of raising. That covers
-    missing files, directories the archive doesn't allow, invalid names, symbolic links,
-    permission problems, and resources the registry rejects (400).
+    everything but registers and moves nothing; records have "dry_run": True, the
+    "metadata" that would be registered, and "id" None if the registry would assign
+    it. With skip_errors, a file that can't be deposited yields {"source": path,
+    "error": message} instead of raising. That covers missing files, directories the
+    archive doesn't allow, invalid names, symbolic links, permission problems, files
+    their dtype's reader rejects or whose metadata doesn't match what's given, and
+    resources the registry rejects (400).
 
     Otherwise, directories the archive doesn't allow are skipped with a log message, and
     these errors are raised:
 
-    - ValueError: archive_path isn't an archive, or a source is or has a symbolic link
-    - RuntimeError: the archive or dtype isn't registered
+    - ValueError: archive_path isn't an archive, a source is or has a symbolic link,
+      or the dtype's reader rejects a file or its metadata doesn't match
+    - RuntimeError: the archive or dtype isn't registered, or the dtype's reader can't
+      be loaded
     - PermissionError: a source can't be read or the archive can't be written
     - FileExistsError: a file is already stored for the id (nothing is registered)
     - httpx.HTTPStatusError: the registry refuses a resource
@@ -72,7 +84,7 @@ def deposit(
     """
     import uuid
 
-    from nbank import util
+    from nbank import readers, util
     from nbank.archive import (
         get_config,
         store_resource,
@@ -122,6 +134,12 @@ def deposit(
             if dtype not in known_dtypes:
                 raise RuntimeError(f"'{dtype}' is not a registered datatype")
 
+        reader = None
+        if dtype is not None and read_metadata:
+            reader = readers.find_reader(dtype)
+            if reader is None:
+                log.info("   no metadata reader for %s", dtype)
+
         def skipped(src: Path, message: str) -> dict:
             log.error("   error: %s", message)
             return {"source": src, "error": message}
@@ -152,6 +170,14 @@ def deposit(
                     id = util.id_from_fname(src)
                 verify_no_symlinks(src)
                 verify_permissions(archive_cfg, src, id)
+                if reader is not None:
+                    file_metadata = readers.read_file_metadata(reader, dtype, src)
+                    resource_metadata = readers.merge_metadata(
+                        file_metadata, metadata, override=override_file_metadata
+                    )
+                    log.info("   metadata: %s", resource_metadata)
+                else:
+                    resource_metadata = metadata
                 if hash or archive_cfg["policy"]["require_hash"]:
                     sha1 = util.hash(src)
                     log.info("   sha1: %s", sha1)
@@ -164,10 +190,15 @@ def deposit(
                 continue
             if dry_run:
                 log.info("   OK (dry run; nothing registered or moved)")
-                yield {"source": src, "id": id, "dry_run": True}
+                yield {
+                    "source": src,
+                    "id": id,
+                    "dry_run": True,
+                    "metadata": resource_metadata,
+                }
                 continue
             url, params = add_resource(
-                registry_url, id, dtype, archive, sha1, **metadata
+                registry_url, id, dtype, archive, sha1, **resource_metadata
             )
             log.debug("POST %s: %s", url, params)
             r = session.post(url, json=params)

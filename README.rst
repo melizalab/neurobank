@@ -158,6 +158,12 @@ The ``deposit`` command takes several options:
 -  ``-k``: specify a metadata key-value pair. You can use this flag
    multiple times to set multiple fields. Use ``--experimenter`` and
    ``--animal`` for those fields; ``-k`` refuses their names.
+-  ``--no-file-metadata``: if a package provides a metadata reader for the
+   dtype, ``nbank`` checks each file with it and adds the metadata it reads from
+   the file. This skips that.
+-  ``--override-file-metadata``: a file whose metadata disagrees with what's
+   given on the command line is normally skipped; with this, the given values
+   are used.
 -  ``-H, --hash``: if set, ``nbank`` will calculate a SHA1 hash of each
    file and store it in the registry. Use this if you expect the
    contents of the file to be unique.
