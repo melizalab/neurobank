@@ -8,7 +8,9 @@ Postgres):
     uv run --group integration pytest -m integration
 
 To use an existing registry instead, set NBANK_TEST_REGISTRY to its base URL
-and NBANK_TEST_AUTH to "user:password" for an account that can write.
+and NBANK_TEST_AUTH to "user:password" for an account that can write. Tests of the
+experimenter and animal fields also need NBANK_TEST_ANIMALS, the identifiers of
+two animals in that registry separated by a comma; they're skipped without it.
 """
 
 import importlib.util
@@ -35,12 +37,15 @@ ROOT = Path(__file__).parents[2]
 SETTINGS_MODULE = "test.integration.server.settings"
 USERNAME = "nbank-test"
 PASSWORD = "nbank-test-pw"
+# animals created in a registry started for the tests (API 1.2 and later)
+ANIMALS = ("P50", "P51")
 STARTUP_TIMEOUT = 30
 
 
 class Registry(NamedTuple):
     url: str
     auth: tuple[str, str]
+    animals: tuple[str, ...] = ()
 
 
 class Archive(NamedTuple):
@@ -63,8 +68,8 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def manage(env: dict, *args: str) -> None:
-    """Run a Django management command against the test settings."""
+def manage(env: dict, *args: str) -> str:
+    """Run a Django management command against the test settings. Returns its output."""
     result = subprocess.run(
         [sys.executable, "-m", "django", *args],
         env=env,
@@ -74,6 +79,7 @@ def manage(env: dict, *args: str) -> None:
     )
     if result.returncode != 0:
         pytest.fail(f"'manage.py {args[0]}' failed:\n{result.stdout}{result.stderr}")
+    return result.stdout
 
 
 def wait_for_server(url: str, proc: subprocess.Popen, log: Path) -> None:
@@ -95,7 +101,10 @@ def registry(tmp_path_factory):
     external = os.environ.get("NBANK_TEST_REGISTRY")
     if external:
         user, _, password = os.environ["NBANK_TEST_AUTH"].partition(":")
-        yield Registry(external, (user, password))
+        animals = os.environ.get("NBANK_TEST_ANIMALS", "")
+        yield Registry(
+            external, (user, password), tuple(filter(None, animals.split(",")))
+        )
         return
 
     if importlib.util.find_spec("nbank_registry") is None:
@@ -121,6 +130,23 @@ def registry(tmp_path_factory):
         f"user.set_password('{PASSWORD}');"
         "user.save()",
     )
+    # the shell prints the animals it created; registries before API 1.2 have none
+    created = manage(
+        env,
+        "shell",
+        "-v",
+        "0",
+        "-c",
+        "try:\n"
+        "    from nbank_registry.models import get_animal_model\n"
+        "except ImportError:\n"
+        "    pass\n"
+        "else:\n"
+        f"    for name in {ANIMALS!r}:\n"
+        "        get_animal_model().objects.get_or_create(name=name)\n"
+        "        print(name)",
+    )
+    animals = tuple(created.split())
     port = free_port()
     addr = f"127.0.0.1:{port}"
     url = f"http://{addr}/neurobank/"
@@ -135,7 +161,7 @@ def registry(tmp_path_factory):
         )
         try:
             wait_for_server(url, proc, log)
-            yield Registry(url, (USERNAME, PASSWORD))
+            yield Registry(url, (USERNAME, PASSWORD), animals)
         finally:
             proc.terminate()
             proc.wait(timeout=10)
@@ -217,12 +243,19 @@ def register(client, registry, unique, dtype):
 
 
 @pytest.fixture
-def core_fields(client, registry):
-    """Skips the test if the registry has no experimenter, animal, and protocol fields."""
+def core_fields(client, registry) -> tuple[str, str]:
+    """Returns the identifiers of two animals in the registry.
+
+    Skips the test if the registry has no experimenter and animal fields, or there
+    are no animals to use.
+    """
     url, _ = reg.get_info(registry.url)
     version = client.get(url).json()["api_version"]
     if tuple(int(x) for x in version.split(".")) < (1, 2):
         pytest.skip(f"registry API {version} has no core fields")
+    if len(registry.animals) < 2:
+        pytest.skip("no animals in the registry to use (see NBANK_TEST_ANIMALS)")
+    return registry.animals[0], registry.animals[1]
 
 
 @pytest.fixture

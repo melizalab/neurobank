@@ -19,7 +19,7 @@ _env_registry = "NBANK_REGISTRY"
 _neurobank_scheme = "neurobank"
 _local_schemes = (_neurobank_scheme,)
 # resource fields that callers pass along with metadata
-core_fields = ("experimenter", "animal", "protocol")
+core_fields = ("experimenter", "animal")
 log = logging.getLogger("nbank")
 
 
@@ -168,7 +168,7 @@ def add_resource(
 ) -> tuple[str, dict]:
     """Constructs URL to add a resource to the registry.
 
-    The core fields (experimenter, animal, protocol) in metadata are sent as
+    The core fields (experimenter, animal) in metadata are sent as
     fields of the resource.
     """
     url = url_join(base_url, "resources/")
@@ -187,7 +187,7 @@ def add_resource(
 def update_resource_metadata(base_url: str, id: str, **metadata) -> tuple[str, dict]:
     """Constructs URL to update metadata in the registry. Set a key to None to delete.
 
-    The core fields (experimenter, animal, protocol) in metadata are sent as
+    The core fields (experimenter, animal) in metadata are sent as
     fields of the resource; None clears them.
     """
     fields, metadata = _split_core_fields(metadata)

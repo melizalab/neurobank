@@ -193,13 +193,13 @@ def test_add_resource_sends_core_fields_as_fields():
     _, params = registry.add_resource(
         base_url, "res", "dtype", "arch", animal="P50", protocol="chorus", pen=1
     )
+    # protocol is ordinary metadata
     assert params == {
         "name": "res",
         "dtype": "dtype",
         "locations": ["arch"],
         "animal": "P50",
-        "protocol": "chorus",
-        "metadata": {"pen": 1},
+        "metadata": {"protocol": "chorus", "pen": 1},
     }
 
 

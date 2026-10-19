@@ -630,26 +630,24 @@ def test_search_by_scheme(mocked_api, capsys):
 def test_search_by_core_fields(mocked_api, capsys):
     mocked_api.get(
         resource_url,
-        params={"animal": "P50", "protocol__neq": "chorus", "metadata__pen": "1"},
+        params={
+            "animal": "P50",
+            "experimenter__neq": "dmeliza",
+            "metadata__protocol": "chorus",
+        },
     ).respond(json=[{"name": "res_1"}])
-    assert (
-        run_main("search", "-k", "animal=P50", "-K", "protocol=chorus", "-k", "pen=1")
-        is None
-    )
+    args = ("-k", "animal=P50", "-K", "experimenter=dmeliza", "-k", "protocol=chorus")
+    assert run_main("search", *args) is None
     assert capsys.readouterr().out == "res_1\n"
 
 
 def test_modify_core_fields(mocked_api, capsys):
     mocked_api.patch(
         registry.full_url(base_url, "res_1"),
-        json={"protocol": "chorus", "animal": None, "metadata": {"pen": None}},
+        json={"animal": None, "metadata": {"protocol": "chorus", "pen": None}},
     ).respond(json={"name": "res_1"})
-    assert (
-        run_main(
-            "modify", "-k", "protocol=chorus", "-K", "animal", "-K", "pen", "res_1"
-        )
-        is None
-    )
+    args = ("-k", "protocol=chorus", "-K", "animal", "-K", "pen", "res_1")
+    assert run_main("modify", *args) is None
     assert json.loads(capsys.readouterr().out) == {"name": "res_1"}
 
 

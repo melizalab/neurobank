@@ -240,44 +240,44 @@ def test_modify(cli, registry, register, capsys):
     assert core.describe(registry.url, name)["metadata"] == result["metadata"]
 
 
-@pytest.mark.usefixtures("core_fields")
 def test_deposit_and_modify_core_fields(
-    cli, registry, archive, dtype, tmp_path, unique, capsys
+    core_fields, cli, registry, archive, dtype, tmp_path, unique, capsys
 ):
+    animal, _ = core_fields
     name = unique("res")
     src = tmp_path / f"{name}.txt"
     src.write_text(name)
     user = registry.auth[0]
     status = cli(
         *["deposit", "-d", dtype],
-        *["-k", f"experimenter={user}", "-k", "animal=P50", "-k", "n=3"],
+        *["-k", f"experimenter={user}", "-k", f"animal={animal}", "-k", "n=3"],
         str(archive.path),
         str(src),
     )
     assert status == 0
     record = core.describe(registry.url, name)
-    assert (record["experimenter"], record["animal"]) == (user, "P50")
+    assert (record["experimenter"], record["animal"]) == (user, animal)
     assert record["metadata"]["n"] == 3
     capsys.readouterr()
 
     assert cli("modify", "-k", "protocol=chorus", "-K", "animal", name) == 0
     [result] = json_objects(capsys.readouterr().out)
-    assert (result["animal"], result["protocol"]) == (None, "chorus")
+    assert result["animal"] is None
+    assert result["metadata"]["protocol"] == "chorus"
 
 
-@pytest.mark.usefixtures("core_fields")
-def test_search_by_core_fields(cli, register, dtype, unique, capsys):
-    animal = unique("animal")
-    a = register(animal=animal, protocol="chorus")["name"]
-    b = register(animal=animal)["name"]
+def test_search_by_core_fields(core_fields, cli, register, dtype, capsys):
+    p50, p51 = core_fields
+    a = register(animal=p50, protocol="chorus")["name"]
+    b = register(animal=p51)["name"]
 
     def search(*args):
-        cli("search", "-d", dtype, "-k", f"animal={animal}", *args)
+        cli("search", "-d", dtype, *args)
         return set(capsys.readouterr().out.split())
 
-    assert search() == {a, b}
+    assert search("-k", f"animal={p50}") == {a}
+    assert search("-K", f"animal={p50}") == {b}
     assert search("-k", "protocol=chorus") == {a}
-    assert search("-K", "protocol=chorus") == {b}
 
 
 def test_modify_missing(cli, register, unique, capsys):

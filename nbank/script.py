@@ -190,8 +190,8 @@ def main(argv=None):
     )
     pp.add_argument(
         "-k",
-        help="specify metadata field, or the experimenter, animal, or protocol "
-        "field (use multiple -k for multiple values)",
+        help="specify metadata field, or the experimenter or animal field "
+        "(use multiple -k for multiple values)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -251,7 +251,7 @@ def main(argv=None):
     )
     pp.add_argument(
         "-k",
-        help="filter by metadata field, or by experimenter, animal, or protocol "
+        help="filter by metadata field, or by experimenter or animal "
         "(use multiple -k for multiple values)",
         action=ParseKeyVal,
         default=dict(),
@@ -260,7 +260,7 @@ def main(argv=None):
     )
     pp.add_argument(
         "-K",
-        help="exclude by metadata field, or by experimenter, animal, or protocol "
+        help="exclude by metadata field, or by experimenter or animal "
         "(use multiple -K for multiple values)",
         action=ParseKeyVal,
         default=dict(),
@@ -288,8 +288,8 @@ def main(argv=None):
     pp.set_defaults(func=set_resource_metadata)
     pp.add_argument(
         "-k",
-        help="set metadata key=value, or the experimenter, animal, or protocol "
-        "field, replacing any previous value (use multiple -k for multiple fields)",
+        help="set metadata key=value, or the experimenter or animal field, "
+        "replacing any previous value (use multiple -k for multiple fields)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -297,7 +297,7 @@ def main(argv=None):
     )
     pp.add_argument(
         "-K",
-        help="delete metadata field, or clear experimenter, animal, or protocol",
+        help="delete metadata field, or clear experimenter or animal",
         action="append",
         default=[],
         metavar="KEY",
