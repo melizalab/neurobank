@@ -35,6 +35,7 @@ def make_auth(auth: RegistryAuth) -> httpx.Auth | None:
 def deposit(
     archive_path: Path,
     files: Iterable[Path],
+    *,
     dtype: str | None = None,
     hash: bool = False,
     auto_id: bool = False,
@@ -247,7 +248,7 @@ def describe_many(registry_url: str, *ids: str) -> Iterator[dict]:
 
 
 def find(
-    registry_url: str, id: str, alt_base: Path | None = None
+    registry_url: str, id: str, *, alt_base: Path | None = None
 ) -> Iterator[FetchableResource | None]:
     """Yields a Fetchable for each location of id (None if this host can't reach it).
 
@@ -269,7 +270,7 @@ def find(
 
 
 def get(
-    registry_url: str, id: str, alt_base: Path | None = None
+    registry_url: str, id: str, *, alt_base: Path | None = None
 ) -> FetchableResource | None:
     """Returns the first path or URL for id that this host can reach, or None.
 
@@ -278,13 +279,13 @@ def get(
     (see archive.Resource).
     """
     # TODO: consider a more transparent readout for unreachable/nonexistent conditions
-    for resource in find(registry_url, id, alt_base):
+    for resource in find(registry_url, id, alt_base=alt_base):
         if resource is not None:
             return resource
 
 
 def verify(
-    registry_url: str, file: str | Path, id: str | None = None
+    registry_url: str, file: str | Path, *, id: str | None = None
 ) -> Iterator[dict] | bool:
     """Hashes file and returns the registry records with that hash.
 

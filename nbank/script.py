@@ -671,7 +671,7 @@ def init_archive(args):
         archive.create(
             args.directory,
             args.registry_url,
-            args.umask,
+            umask=args.umask,
             shared=args.shared,
             group=args.group,
         )

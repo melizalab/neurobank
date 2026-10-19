@@ -84,8 +84,8 @@ def verify_can_create(archive_path: Path) -> None:
 def create(
     archive_path: Path,
     registry_url: str,
-    umask: int = _default_umask,
     *,
+    umask: int = _default_umask,
     shared: bool = False,
     group: str | None = None,
     read_only_resources: bool = True,
@@ -380,7 +380,7 @@ def verify_no_symlinks(src: Path) -> None:
                 raise ValueError(f"'{path}' is a symbolic link")
 
 
-def store_resource(cfg: ArchiveConfig, src: Path, id: str | None = None) -> Path:
+def store_resource(cfg: ArchiveConfig, src: Path, *, id: str | None = None) -> Path:
     """Moves src into the archive as id and returns the stored path.
 
     id defaults to the name of src. Doesn't register anything: the caller makes sure id

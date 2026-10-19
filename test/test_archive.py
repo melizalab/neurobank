@@ -52,7 +52,7 @@ def test_store_and_find_resource(tmp_archive, tmp_path):
     src = tmp_path / name
     contents = '{"foo": 10}\n'
     src.write_text(contents)
-    archive.store_resource(tmp_archive, src, name)
+    archive.store_resource(tmp_archive, src, id=name)
     # assertions
     assert not src.exists()
     path = archive.resource_path(tmp_archive, name, resolve_ext=True)
@@ -72,7 +72,7 @@ def test_parse_neurobank_location(tmp_archive, tmp_path):
     src = tmp_path / name
     contents = '{"foo": 10}\n'
     src.write_text(contents)
-    archive.store_resource(tmp_archive, src, name)
+    archive.store_resource(tmp_archive, src, id=name)
 
     location = {
         "scheme": "neurobank",
@@ -91,7 +91,7 @@ def test_store_and_fetch_resource(tmp_archive, tmp_path):
     src = tmp_path / name
     contents = '{"foo": 10}\n'
     src.write_text(contents)
-    archive.store_resource(tmp_archive, src, name)
+    archive.store_resource(tmp_archive, src, id=name)
     resource = archive.Resource(tmp_archive["path"], name)
     fetched = resource.fetch(tmp_path)
     assert fetched.is_file()
@@ -103,7 +103,7 @@ def test_store_and_find_named_resource(tmp_archive, tmp_path):
     src = tmp_path / "tempfile"
     contents = '{"foo": 20}\n'
     src.write_text(contents)
-    archive.store_resource(tmp_archive, src, name)
+    archive.store_resource(tmp_archive, src, id=name)
     # assertions
     path = archive.resource_path(tmp_archive, name, resolve_ext=True)
     assert path.is_file()
@@ -116,7 +116,7 @@ def test_store_and_find_resource_with_extension(tmp_archive, tmp_path):
     src = tmp_path / "temp.wav"
     contents = "not a wave file"
     src.write_text(contents)
-    archive.store_resource(tmp_archive, src, name)
+    archive.store_resource(tmp_archive, src, id=name)
     # assertions
     path = archive.resource_path(tmp_archive, name, resolve_ext=True)
     assert path.is_file()
@@ -144,16 +144,16 @@ def test_cannot_store_duplicate_basenames(tmp_archive, tmp_path):
     assert path.name == src.name
     src.write_text(contents)
     with pytest.raises(KeyError):
-        archive.store_resource(tmp_archive, src, "temp.txt")
+        archive.store_resource(tmp_archive, src, id="temp.txt")
 
 
 def test_cannot_store_resource_twice_with_different_extensions(tmp_archive, tmp_path):
     first, second = tmp_path / "a.json", tmp_path / "b.wav"
     first.write_text("json")
     second.write_text("wav")
-    stored = archive.store_resource(tmp_archive, first, "res_1")
+    stored = archive.store_resource(tmp_archive, first, id="res_1")
     with pytest.raises(KeyError, match="already stored"):
-        archive.store_resource(tmp_archive, second, "res_1")
+        archive.store_resource(tmp_archive, second, id="res_1")
     assert list(stored.parent.iterdir()) == [stored]
     assert second.exists()
 
@@ -162,9 +162,9 @@ def test_cannot_store_resource_twice_without_extensions(tmp_noext_archive, tmp_p
     first, second = tmp_path / "a.json", tmp_path / "b.wav"
     first.write_text("json")
     second.write_text("wav")
-    stored = archive.store_resource(tmp_noext_archive, first, "res_1")
+    stored = archive.store_resource(tmp_noext_archive, first, id="res_1")
     with pytest.raises(KeyError, match="already stored"):
-        archive.store_resource(tmp_noext_archive, second, "res_1")
+        archive.store_resource(tmp_noext_archive, second, id="res_1")
     assert list(stored.parent.iterdir()) == [stored]
 
 
@@ -185,7 +185,7 @@ def test_can_store_directories(tmp_dir_archive, tmp_path):
     fname.chmod(0o777)
     assert (fname.stat().st_mode & umask) != 0
 
-    archive.store_resource(tmp_dir_archive, dname, id)
+    archive.store_resource(tmp_dir_archive, dname, id=id)
     path = archive.resource_path(tmp_dir_archive, id, resolve_ext=True)
     assert path.is_dir()
     assert (path.stat().st_mode & umask) == 0
@@ -204,7 +204,7 @@ def test_can_strip_extensions(tmp_noext_archive, tmp_path):
     src = tmp_path / "temp.wav"
     contents = "not a wave file"
     src.write_text(contents)
-    archive.store_resource(tmp_noext_archive, src, name)
+    archive.store_resource(tmp_noext_archive, src, id=name)
     path = archive.resource_path(tmp_noext_archive, name, resolve_ext=True)
     assert path.exists()
     assert path.suffix == ""
@@ -244,7 +244,7 @@ def test_verify_permissions_file_exists(tmp_archive, tmp_path):
     name = "dummy"
     dummy_1 = tmp_path / name
     dummy_1.write_text("blah")
-    stored_path = archive.store_resource(tmp_archive, dummy_1, name)
+    stored_path = archive.store_resource(tmp_archive, dummy_1, id=name)
     dummy_2 = tmp_path / name
     dummy_2.write_text("blah")
     with pytest.raises(FileExistsError, match=str(stored_path)):
@@ -326,7 +326,7 @@ def test_store_resource_copies_when_source_dir_not_writable(
     src_dir.chmod(0o500)  # readable and searchable, but not writable
     try:
         with caplog.at_level(logging.WARNING, logger="nbank"):
-            tgt = archive.store_resource(tmp_archive, src, "dummy_1")
+            tgt = archive.store_resource(tmp_archive, src, id="dummy_1")
     finally:
         src_dir.chmod(0o700)
     assert tgt.read_text() == "blah"

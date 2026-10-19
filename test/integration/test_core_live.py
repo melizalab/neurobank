@@ -417,15 +417,15 @@ def test_verify_by_hash(registry, register, tmp_path, unique):
 def test_verify_by_id(registry, register, tmp_path, unique):
     src = write_file(tmp_path / "file.txt", unique("contents"))
     name = register(sha1=util.hash(src))["name"]
-    assert core.verify(registry.url, src, name) is True
+    assert core.verify(registry.url, src, id=name) is True
     other = write_file(tmp_path / "other.txt", unique("contents"))
-    assert core.verify(registry.url, other, name) is False
+    assert core.verify(registry.url, other, id=name) is False
 
 
 def test_verify_missing_id(registry, tmp_path, unique):
     src = write_file(tmp_path / "file.txt", "contents")
     with pytest.raises(ValueError):
-        core.verify(registry.url, src, unique("missing"))
+        core.verify(registry.url, src, id=unique("missing"))
 
 
 def test_update_metadata(registry, register):

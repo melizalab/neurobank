@@ -173,7 +173,7 @@ def _symlinks_in(path: Path) -> Iterator[Path]:
 
 
 def check_archive_contents(
-    archive_path: Path, expected: Mapping[str, str | None], check_hash: bool = True
+    archive_path: Path, expected: Mapping[str, str | None], *, check_hash: bool = True
 ) -> Iterator[Finding]:
     """Compares the files in a local archive with expected, {name: sha1 or None}.
 
@@ -344,7 +344,7 @@ def _archive_tree(base: Path) -> Iterator[tuple[Path, str | None]]:
 
 
 def check_archive_permissions(
-    cfg: archive.ArchiveConfig, fix: bool = False
+    cfg: archive.ArchiveConfig, *, fix: bool = False
 ) -> Iterator[Finding]:
     """Checks ownership and modes under resources/ against the archive's policy.
 

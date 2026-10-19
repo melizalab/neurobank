@@ -225,6 +225,7 @@ def query_registry(
     session: Client,
     url: str,
     params: Mapping[str, Any] | None = None,
+    *,
     auth: str | None = None,
 ) -> dict | None:
     """Perform a GET request to url with params. Returns None for 404 HTTP errors"""
@@ -268,7 +269,7 @@ def query_registry_first(
 
 
 def query_registry_bulk(
-    session: Client, url: str, query: Mapping[str, Any], auth: str | None = None
+    session: Client, url: str, query: Mapping[str, Any], *, auth: str | None = None
 ) -> list[dict]:
     """POSTs query to a bulk endpoint and yields the line-delimited JSON records."""
     with session.stream("POST", url, json=query, auth=auth) as r:

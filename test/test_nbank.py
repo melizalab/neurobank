@@ -516,7 +516,7 @@ def test_verify_resource_by_id(mocked_api, tmp_path):
     sha1 = util.hash(src)
     data = {"sha1": sha1}
     mocked_api.get(registry.full_url(base_url, name)).respond(json=data)
-    assert core.verify(base_url, src, name)
+    assert core.verify(base_url, src, id=name)
 
 
 def test_update_metadata(mocked_api):
