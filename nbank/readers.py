@@ -7,7 +7,6 @@ ValueError if the file isn't a valid file of that dtype. Readers belong to the
 packages that produce the files, and don't import neurobank.
 """
 
-import inspect
 import json
 import logging
 from collections.abc import Callable
@@ -82,11 +81,6 @@ def read_file_metadata(reader: Reader, dtype: str, path: Path) -> dict[str, Any]
                 f"the metadata reader for {dtype} returned a key that isn't a "
                 f"string: {key!r}"
             )
-        if key in reserved_keys():
-            raise ValueError(
-                f"the metadata reader for {dtype} returned '{key}', which can't be "
-                "a metadata key"
-            )
         if value is None:
             log.debug("   %s: no value from the file", key)
             continue
@@ -100,15 +94,6 @@ def read_file_metadata(reader: Reader, dtype: str, path: Path) -> dict[str, Any]
             ) from err
         out[key] = value
     return out
-
-
-def reserved_keys() -> set[str]:
-    """Metadata keys that collide with the arguments of the request that registers
-    a resource."""
-    from nbank.registry import add_resource
-
-    params = inspect.signature(add_resource).parameters.values()
-    return {p.name for p in params if p.kind is not p.VAR_KEYWORD}
 
 
 def merge_metadata(

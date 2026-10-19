@@ -71,7 +71,9 @@ def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
         headers={"Authorization": f"Basic {auth_enc}"},
     ).respond(json={"name": name})
     items = list(
-        core.deposit(root, files=[src], dtype=dtype, auth=auth, hash=True, **metadata)
+        core.deposit(
+            root, files=[src], dtype=dtype, auth=auth, hash=True, metadata=metadata
+        )
     )
     assert items == [{"source": src, "id": name}]
 
@@ -376,6 +378,21 @@ def test_deposit_passes_file_metadata_options(monkeypatch, flags, expected):
     assert {k: captured[k] for k in expected} == expected
 
 
+def test_deposit_metadata_keys_can_share_option_names(monkeypatch):
+    captured = {}
+
+    def fake_deposit(*args, **kwargs):
+        captured.update(kwargs)
+        return iter(())
+
+    monkeypatch.setattr(core, "deposit", fake_deposit)
+    keys = ("archive", "dtype", "sha1", "id", "auth", "hash", "dry_run")
+    args = [arg for key in keys for arg in ("-k", f"{key}=x")]
+    assert run_main("deposit", *args, "archive", "file") is None
+    assert captured["metadata"] == dict.fromkeys(keys, "x")
+    assert captured["dtype"] is None and captured["dry_run"] is False
+
+
 def test_deposit_resource_registry_duplicate(mocked_api, tmp_archive, tmp_path):
     root = tmp_archive["path"]
     name = "dummy_1"
@@ -512,7 +529,7 @@ def test_update_metadata(mocked_api):
     ).respond(
         json={"name": name, "metadata": metadata},
     )
-    updated = list(core.update(base_url, name, auth=auth, **metadata))
+    updated = list(core.update(base_url, name, auth=auth, metadata=metadata))
     assert updated == [{"metadata": metadata, "name": name}]
 
 
@@ -526,7 +543,7 @@ def test_update_with_netrc(mocked_api, netrc_auth):
     ).respond(
         json={"name": name, "metadata": metadata},
     )
-    updated = list(core.update(base_url, name, auth=netrc_auth, **metadata))
+    updated = list(core.update(base_url, name, auth=netrc_auth, metadata=metadata))
     assert updated == [{"metadata": metadata, "name": name}]
 
 

@@ -209,6 +209,15 @@ def test_update_metadata():
     assert params == {"metadata": {"pen": 1, "site": None}}
 
 
+@pytest.mark.parametrize("key", ["base_url", "id", "dtype", "archive", "sha1"])
+def test_metadata_keys_can_share_argument_names(key):
+    _, params = registry.add_resource(base_url, "res", "dtype", "arch", **{key: "x"})
+    assert params["metadata"] == {key: "x"}
+    if key in ("base_url", "id"):
+        _, params = registry.update_resource_metadata(base_url, "res", **{key: "x"})
+        assert params == {"metadata": {key: "x"}}
+
+
 def test_update_core_fields():
     url, params = registry.update_resource_metadata(
         base_url, id, experimenter="dmeliza", animal=None, pen=1

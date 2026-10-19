@@ -129,9 +129,6 @@ def test_reader_failing_is_reported_with_its_type():
         # HDF5 attributes can hold NaN, which JSON (and Postgres) can't
         ({"depth": math.nan}, "value for 'depth'"),
         ({"bytes": b"P50"}, "value for 'bytes'"),
-        # these collide with the arguments of the registration request
-        ({"archive": "x"}, "returned 'archive'"),
-        ({"sha1": "x"}, "returned 'sha1'"),
     ],
 )
 def test_reader_returning_what_cant_be_stored(returned, message):
@@ -218,7 +215,8 @@ def test_deposit_registers_file_metadata(
         },
         headers={"Authorization": f"Basic {auth_enc}"},
     ).respond(json={"name": "res_1"})
-    assert deposit(archive_routes, src, site=2) == [{"source": src, "id": "res_1"}]
+    items = deposit(archive_routes, src, metadata={"site": 2})
+    assert items == [{"source": src, "id": "res_1"}]
 
 
 @pytest.mark.parametrize(
@@ -235,7 +233,7 @@ def test_deposit_skips_files_that_fail(
     src = tmp_path / "res_1"
     src.write_text(json.dumps(contents))
     # no resource POST is mocked: nothing must be registered
-    [item] = deposit(archive_routes, src, **given)
+    [item] = deposit(archive_routes, src, metadata=given)
     assert message in item["error"]
     assert src.exists()
 
@@ -253,14 +251,16 @@ def test_deposit_override(install, mocked_api, archive_routes, make_file):
     mocked_api.post(resource_url, json__metadata={"pen": 2}).respond(
         json={"name": "res_1"}
     )
-    items = deposit(archive_routes, src, pen=2, override_file_metadata=True)
+    items = deposit(
+        archive_routes, src, metadata={"pen": 2}, override_file_metadata=True
+    )
     assert items == [{"source": src, "id": "res_1"}]
 
 
 def test_deposit_dry_run_shows_merged_metadata(install, archive_routes, make_file):
     install(FakeEntryPoint(DTYPE, fake_reader))
     src = make_file("res_1", {"pen": 1})
-    [item] = deposit(archive_routes, src, site=2, dry_run=True)
+    [item] = deposit(archive_routes, src, metadata={"site": 2}, dry_run=True)
     assert item["metadata"] == {"pen": 1, "site": 2}
     assert not archive.resource_path(
         archive.get_config(archive_routes), "res_1"
@@ -273,7 +273,9 @@ def test_deposit_without_reading_metadata(install, archive_routes, make_file):
 
     install(FakeEntryPoint(DTYPE, reader))
     src = make_file("res_1", schema="other")
-    [item] = deposit(archive_routes, src, site=2, dry_run=True, read_metadata=False)
+    [item] = deposit(
+        archive_routes, src, metadata={"site": 2}, dry_run=True, read_metadata=False
+    )
     assert item["metadata"] == {"site": 2}
 
 

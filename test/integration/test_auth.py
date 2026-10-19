@@ -24,7 +24,7 @@ def bad_auth(registry):
 
 
 def update(registry, name, auth):
-    return list(core.update(registry.url, name, auth=auth, k="v"))
+    return list(core.update(registry.url, name, auth=auth, metadata={"k": "v"}))
 
 
 def forbidden(registry, name, auth):

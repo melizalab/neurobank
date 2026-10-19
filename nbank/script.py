@@ -694,8 +694,7 @@ def store_resources(args):
             skip_errors=True,
             read_metadata=args.read_metadata,
             override_file_metadata=args.override_file_metadata,
-            **args.metadata,
-            **core_field_args(args),
+            metadata={**args.metadata, **core_field_args(args)},
         ):
             n_failed += "error" in res
             if args.json_out:
@@ -824,7 +823,10 @@ def set_resource_metadata(args):
     fields = {k: v or None for k, v in core_field_args(args).items()}
     n_failed = 0
     for result in core.update(
-        args.registry_url, *args.id, auth=args.auth, **args.metadata, **fields
+        args.registry_url,
+        *args.id,
+        auth=args.auth,
+        metadata={**args.metadata, **fields},
     ):
         json.dump(result, fp=sys.stdout, indent=2)
         sys.stdout.write("\n")

@@ -64,7 +64,7 @@ def get_datatypes(base_url: str) -> tuple[str, None]:
     return (url_join(base_url, "datatypes/"), None)
 
 
-def get_archives(base_url: str, **params) -> tuple[str, None]:
+def get_archives(base_url: str, /, **params) -> tuple[str, None]:
     """Constructs URL to get known archive names"""
     return (url_join(base_url, "archives/"), params)
 
@@ -82,7 +82,7 @@ def find_archive_by_path(base_url: str, path: str | Path) -> tuple[str, dict]:
     )
 
 
-def find_resource(base_url: str, **params) -> tuple[str, dict]:
+def find_resource(base_url: str, /, **params) -> tuple[str, dict]:
     """Constructs URL to find resources that match params"""
     return (url_join(base_url, "resources/"), params)
 
@@ -97,12 +97,14 @@ def get_resource_bulk(base_url: str, ids: Sequence[str]) -> tuple[str, dict]:
     return (url_join(base_url, "bulk", "resources/"), {"names": list(ids)})
 
 
-def get_locations(base_url: str, id: str, **params) -> tuple[str, dict]:
+def get_locations(base_url: str, id: str, /, **params) -> tuple[str, dict]:
     """Constructs URL to look up the locations of a resource."""
     return (url_join(base_url, "resources", id, "locations/"), params)
 
 
-def get_locations_bulk(base_url: str, ids: Sequence[str], **params) -> tuple[str, dict]:
+def get_locations_bulk(
+    base_url: str, ids: Sequence[str], /, **params
+) -> tuple[str, dict]:
     """Constructs URL to bulk retrieve locations for multiple ids"""
     return (url_join(base_url, "bulk", "locations/"), {"names": list(ids), **params})
 
@@ -164,6 +166,7 @@ def add_resource(
     dtype: str | None,
     archive: str | None,
     sha1: str | None = None,
+    /,
     **metadata: Any,
 ) -> tuple[str, dict]:
     """Constructs URL to add a resource to the registry.
@@ -184,7 +187,7 @@ def add_resource(
     return (url, strip_nulls(data))
 
 
-def update_resource_metadata(base_url: str, id: str, **metadata) -> tuple[str, dict]:
+def update_resource_metadata(base_url: str, id: str, /, **metadata) -> tuple[str, dict]:
     """Constructs URL to update metadata in the registry. Set a key to None to delete.
 
     The core fields (experimenter, animal) in metadata are sent as

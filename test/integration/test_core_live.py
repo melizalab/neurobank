@@ -41,7 +41,7 @@ def test_deposit(registry, archive, dtype, tmp_path, unique):
             dtype=dtype,
             hash=True,
             auth=registry.auth,
-            pen=1,
+            metadata={"pen": 1},
         )
     )
     assert items == [{"source": src, "id": name}]
@@ -67,9 +67,7 @@ def test_deposit_core_fields(core_fields, registry, archive, dtype, tmp_path, un
         [src],
         dtype=dtype,
         auth=registry.auth,
-        experimenter=user,
-        animal=animal,
-        protocol="chorus",
+        metadata={"experimenter": user, "animal": animal, "protocol": "chorus"},
     )
     assert list(items) == [{"source": src, "id": name}]
     record = core.describe(registry.url, name)
@@ -97,7 +95,9 @@ def test_deposit_reads_metadata_from_the_file(
             }
         )
     )
-    items = core.deposit(archive.path, [src], dtype=dtype, auth=registry.auth, site=2)
+    items = core.deposit(
+        archive.path, [src], dtype=dtype, auth=registry.auth, metadata={"site": 2}
+    )
     assert list(items) == [{"source": src, "id": name}]
     record = core.describe(registry.url, name)
     assert (record["experimenter"], record["animal"]) == (user, animal)
@@ -115,7 +115,7 @@ def test_deposit_unknown_animal_is_refused(
         dtype=dtype,
         auth=registry.auth,
         skip_errors=True,
-        animal=unique("no-such-animal"),
+        metadata={"animal": unique("no-such-animal")},
     )
     assert "no such animal" in item["error"]
     assert src.exists()
@@ -321,9 +321,7 @@ def test_update_core_fields(core_fields, registry, register):
         registry.url,
         name,
         auth=registry.auth,
-        animal=None,
-        experimenter=user,
-        protocol="chorus",
+        metadata={"animal": None, "experimenter": user, "protocol": "chorus"},
     )
     assert (record["animal"], record["experimenter"]) == (None, user)
     assert record["metadata"]["protocol"] == "chorus"
@@ -432,16 +430,20 @@ def test_verify_missing_id(registry, tmp_path, unique):
 
 def test_update_metadata(registry, register):
     name = register(a=1, b=2)["name"]
-    [result] = core.update(registry.url, name, auth=registry.auth, b=3, c="new")
+    [result] = core.update(
+        registry.url, name, auth=registry.auth, metadata={"b": 3, "c": "new"}
+    )
     assert result["metadata"] == {"a": 1, "b": 3, "c": "new"}
-    [result] = core.update(registry.url, name, auth=registry.auth, a=None)
+    [result] = core.update(registry.url, name, auth=registry.auth, metadata={"a": None})
     assert result["metadata"] == {"b": 3, "c": "new"}
     assert core.describe(registry.url, name)["metadata"] == result["metadata"]
 
 
 def test_update_several(registry, register):
     names = [register()["name"] for _ in range(2)]
-    results = list(core.update(registry.url, *names, auth=registry.auth, k="v"))
+    results = list(
+        core.update(registry.url, *names, auth=registry.auth, metadata={"k": "v"})
+    )
     assert [r["name"] for r in results] == names
     assert all(r["metadata"] == {"k": "v"} for r in results)
 
@@ -449,7 +451,11 @@ def test_update_several(registry, register):
 def test_update_missing(registry, register, unique):
     missing = unique("missing")
     name = register()["name"]
-    results = list(core.update(registry.url, missing, name, auth=registry.auth, k="v"))
+    results = list(
+        core.update(
+            registry.url, missing, name, auth=registry.auth, metadata={"k": "v"}
+        )
+    )
     assert results[0] == {"name": missing, "error": "not found"}
     assert results[1]["name"] == name
 

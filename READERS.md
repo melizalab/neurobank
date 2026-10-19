@@ -141,8 +141,6 @@ each of these with a message naming the key, rather than storing something odd.
   happens to pass, as a subclass of `float`, which can hide the problem in tests.
 - **NaN and infinity:** HDF5 attributes can hold them, JSON and Postgres can't.
   Leave such keys out.
-- **Reserved keys:** `id`, `dtype`, `archive`, `sha1`, and `base_url` can't be
-  metadata keys (they collide with the arguments of the registration request).
 - **Types that don't match what users type:** `-k pen=1` gives the number 1, so
   a reader returning the string `"1"` disagrees with it and the file fails. Return
   numbers as numbers. A boolean and a number never agree (Python's `True == 1`

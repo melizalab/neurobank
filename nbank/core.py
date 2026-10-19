@@ -6,7 +6,7 @@ Created Mon Nov 25 08:52:28 2013
 """
 
 import logging
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +43,7 @@ def deposit(
     skip_errors: bool = False,
     read_metadata: bool = True,
     override_file_metadata: bool = False,
-    **metadata: Any,
+    metadata: Mapping[str, Any] | None = None,
 ) -> Iterator[dict]:
     """Registers files and moves them into the archive at archive_path.
 
@@ -51,7 +51,8 @@ def deposit(
     if the archive doesn't require it. auto_id (or the archive's auto_identifiers
     policy) gives each file a new id, a UUID if the policy's auto_id_type is "uuid" and
     otherwise assigned by the registry, instead of using the file's name. auth is for
-    the registry (default: .netrc). metadata is stored with each resource.
+    the registry (default: .netrc). metadata is stored with each resource; its
+    experimenter and animal keys are the resource's fields.
 
     If a package provides a metadata reader for dtype (see nbank.readers), each file is
     checked and its metadata read with it, unless read_metadata is False. The file's
@@ -134,6 +135,7 @@ def deposit(
             if dtype not in known_dtypes:
                 raise RuntimeError(f"'{dtype}' is not a registered datatype")
 
+        given = dict(metadata or {})
         reader = None
         if dtype is not None and read_metadata:
             reader = readers.find_reader(dtype)
@@ -173,11 +175,11 @@ def deposit(
                 if reader is not None:
                     file_metadata = readers.read_file_metadata(reader, dtype, src)
                     resource_metadata = readers.merge_metadata(
-                        file_metadata, metadata, override=override_file_metadata
+                        file_metadata, given, override=override_file_metadata
                     )
                     log.info("   metadata: %s", resource_metadata)
                 else:
-                    resource_metadata = metadata
+                    resource_metadata = given
                 if hash or archive_cfg["policy"]["require_hash"]:
                     sha1 = util.hash(src)
                     log.info("   sha1: %s", sha1)
@@ -214,7 +216,7 @@ def deposit(
             yield {"source": src, "id": result["name"]}
 
 
-def search(registry_url: str, **params) -> Iterator[dict]:
+def search(registry_url: str, /, **params) -> Iterator[dict]:
     """Yields the registry records that match the query params."""
     from nbank.registry import find_resource
     from nbank.util import query_registry_paginated
@@ -307,9 +309,15 @@ def verify(
 
 
 def update(
-    base_url: str, *ids: str, auth: RegistryAuth = None, **metadata: Any
+    base_url: str,
+    *ids: str,
+    auth: RegistryAuth = None,
+    metadata: Mapping[str, Any],
 ) -> Iterator[dict]:
     """Update metadata for one or more resources. Set a key to None to delete.
+
+    The experimenter and animal keys of metadata are the resources' fields; None
+    clears them.
 
     Yields the updated record for each resource. A resource that is not in the
     registry yields {"name": id, "error": "not found"}.
