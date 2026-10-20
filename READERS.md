@@ -11,6 +11,7 @@ registry. Readers are owned by the packages that produce the files.
 | `extracellular-arf` | arfx             | `arfx-oephys`       |
 | `spikes-pprox`      | melizalab-tools  | `group-kilo-spikes` |
 | `spikes-hdf5`       | melizalab-tools  | `group-kilo-spikes` |
+| `intracellular-abfzip` | melizalab-tools | `abf-zip` (new), and the migration of `intracellular-abfdir` |
 
 ## Discovery
 
@@ -170,6 +171,33 @@ each of these with a message naming the key, rather than storing something odd.
   file was skipped, so it should say what's wrong with the file. Any other
   exception is reported with its type, and its traceback is logged at debug
   level (`nbank --debug`).
+
+### `intracellular-abfzip` (melizalab-tools)
+
+Replaces the `intracellular-abfdir` directories, which 1.0 retires (deposit
+refuses directories).
+
+- **Producer:** a new script, `abf-zip`, turns a recording directory into one zip
+  with neurobank's canonical zip writer (so melizalab-tools needs neurobank 1.0
+  for the script; the reader still doesn't import it). It checks the contents
+  are what an ABF recording should be, takes `--experimenter`, `--animal`, and
+  `-k`, and writes them, with what the ABF headers give reliably (recording date,
+  protocol name), to a `metadata.json` member. It can deposit the zip itself
+  (`--deposit ARCHIVE`) for a one-step workflow at the rig.
+- **`metadata.json`:** a JSON object of registry metadata, in the form a reader
+  returns (`experimenter` and `animal` as the fields, everything else metadata).
+  `nbank.admin migrate-directories` writes the same file into each migrated zip
+  from the resource's registry record, so migrated and new zips look alike to the
+  reader. This is the one format neurobank and a producer both write; changes to
+  it need both.
+- **Version:** `metadata.json` names its format in a `$schema` key, as pprox files
+  do (e.g. `"$schema": "https://meliza.org/spec:2/abfzip-metadata.json#"`). The
+  reader checks it, refuses a schema it doesn't know, and leaves `$schema` out of
+  the metadata it returns. The content type has no version; a consumer learns the
+  format from the file.
+- **Validation:** a zip whose members, other than `metadata.json`, are ABF files
+  with valid headers, at least one.
+- **Metadata:** the contents of `metadata.json`, without `$schema`.
 
 ## Testing
 
