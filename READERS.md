@@ -184,20 +184,25 @@ refuses directories).
   `-k`, and writes them, with what the ABF headers give reliably (recording date,
   protocol name), to a `metadata.json` member. It can deposit the zip itself
   (`--deposit ARCHIVE`) for a one-step workflow at the rig.
-- **`metadata.json`:** a JSON object of registry metadata, in the form a reader
-  returns (`experimenter` and `animal` as the fields, everything else metadata).
-  `nbank.admin migrate-directories` writes the same file into each migrated zip
-  from the resource's registry record, so migrated and new zips look alike to the
-  reader. This is the one format neurobank and a producer both write; changes to
-  it need both.
-- **Version:** `metadata.json` names its format in a `$schema` key, as pprox files
-  do (e.g. `"$schema": "https://meliza.org/spec:2/abfzip-metadata.json#"`). The
-  reader checks it, refuses a schema it doesn't know, and leaves `$schema` out of
-  the metadata it returns. The content type has no version; a consumer learns the
-  format from the file.
-- **Validation:** a zip whose members, other than `metadata.json`, are ABF files
-  with valid headers, at least one.
-- **Metadata:** the contents of `metadata.json`, without `$schema`.
+- **Who writes `metadata.json`:** `abf-zip`, and the migration of the existing
+  `intracellular-abfdir` resources, which fills `metadata` from each resource's
+  registry record so migrated and new zips look alike to the reader. Changes to
+  the format go through the spec.
+- **Spec:** [4/abfzip](https://meliza.org/spec:4/abfzip) in lab-specs
+  (`specs/abfzip.md`, schema `specs/abfzip.json`) defines the archive and
+  `metadata.json`; the content type is `application/vnd.meliza-org.abf+zip`.
+- **`metadata.json`** has an envelope: `$schema`
+  (`https://meliza.org/spec:4/abfzip.json#` for 1.x), `version` (`MAJOR.MINOR`,
+  also the MIME type's `version` parameter), `metadata` (the registry metadata
+  of the recording), and `catalog` (records for individual members, e.g. the
+  acquisition protocol and start time of each ABF file; may be empty). The
+  reader refuses a major version it doesn't know, and returns `metadata` as it
+  is. The catalog stays in the file for analysis; it isn't registered.
+- **Validation:** a zip with `metadata.json` at the top level and at least one
+  ABF file (a member named `*.abf`) with a valid header. Other members are
+  allowed, since recording directories can hold files besides the ABF files, and
+  the migration carries them over.
+- **Metadata:** the `metadata` object of `metadata.json`.
 
 ## Testing
 
@@ -230,3 +235,8 @@ refuses directories).
   the files self-describing. Copying is the proposal here.
 - [ ] **Later:** `nbank check` could run the readers against stored files and
   report where the registry and the file disagree.
+- [x] **abfzip migration and the catalog:** the migration of
+  `intracellular-abfdir` uses melizalab-tools' zip builder, with neurobank
+  providing the canonical writer and the registry updates. Catalogs are filled
+  from the ABF headers and from the epoch lists of earlier analyses, which takes
+  review, recording by recording.
