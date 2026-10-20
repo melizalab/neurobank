@@ -12,6 +12,7 @@ import stat
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
+from itertools import chain
 from pathlib import Path
 
 from httpx import Client
@@ -36,10 +37,11 @@ class Status(enum.Enum):
     DUPLICATE = "DUPLICATE file for the same resource"
     UNEXPECTED = "UNEXPECTED file outside a resource subdirectory"
     SYMLINK = "SYMBOLIC link"
-    INCOMPLETE = "INCOMPLETE transfer (safe to delete)"
+    INCOMPLETE = "INCOMPLETE transfer or deposit (safe to delete)"
     WRONG_OWNER = "WRONG owner"
     WRONG_GROUP = "WRONG group"
     WRONG_MODE = "WRONG permissions"
+    NO_STAGING = "MISSING the staging directory"
     NO_LOCATION = "has NO locations"
     EMPTY_ARCHIVE = "has no resources"
 
@@ -152,6 +154,17 @@ def _scan_archive(archive_path: Path) -> tuple[dict[str, list[Path]], list[Findi
                 )
                 continue
             files[resource_file.stem].append(resource_file)
+    staging = archive_path / archive._staging_subdir
+    if staging.is_dir():
+        for entry in _listdir(staging):
+            problems.append(
+                Finding(
+                    Status.INCOMPLETE,
+                    None,
+                    entry,
+                    f"left in staging; last modified {_age(entry)} ago",
+                )
+            )
     return files, problems
 
 
@@ -346,7 +359,9 @@ def _archive_tree(base: Path) -> Iterator[tuple[Path, str | None]]:
 def check_archive_permissions(
     cfg: archive.ArchiveConfig, *, fix: bool = False
 ) -> Iterator[Finding]:
-    """Checks ownership and modes under resources/ against the archive's policy.
+    """Checks ownership and modes under resources/, and of the staging directory,
+    against the archive's policy. A missing staging directory is a finding, which fix
+    creates.
 
     Owners must be the policy's user (unless it's null) and group, and modes follow
     archive.mode_policy. Symbolic links, stray files, leftover partial transfers, and
@@ -368,7 +383,25 @@ def check_archive_permissions(
     if not base.exists():
         return  # reported by check_archive_contents
     pfix = archive.permission_fixer(cfg, quiet=True) if fix else None
-    for path, name in _archive_tree(base):
+    staging = archive.staging_dir(cfg)
+    if not staging.is_dir():
+        finding = Finding(
+            Status.NO_STAGING, None, staging, "needed to deposit directories as zips"
+        )
+        if pfix is not None:
+            try:
+                staging.mkdir()
+            except OSError as err:
+                finding = replace(finding, detail=f"unable to create it: {err}")
+            else:
+                pfix(staging)
+                finding = replace(finding, fixed=True)
+        yield finding
+    # lazily, so a directory fixed on the way can then be listed
+    paths = _archive_tree(base)
+    if staging.is_dir():
+        paths = chain(paths, [(staging, None)])
+    for path, name in paths:
         findings = list(_check_path(cfg, path, name, uid, gid))
         if findings and pfix is not None:
             pfix(path)

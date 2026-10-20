@@ -120,7 +120,7 @@ the archive's policies. These are the settings you may want to modify:
 -  ``auto_id_type``: If set to ``null`` (or not set at all), automatic ids are assigned by the registry. This is usually a short, random base-36 string. If set to ``"uuid"``, the ``nbank`` script will generate 128-bit UUIDs as identifiers, which are guaranteed to work everywhere but also a little painful to manipulate by hand.
 -  ``require_hash``: If set to true (the default), every resource will have a hash value calculated and stored in the registry. The registry will then be able to prevent duplicate files from being deposited under multiple identifiers.
 -  ``keep_extensions``: If set to true (the default), files keep their extensions when deposited. Only one file with a given base identifier can be deposited, so if you have a ``st32_1_2_1.wav``, the identifier is ``st32_1_2_1``, and therefore you can’t also have an ``st32_1_2_1.json`` file. If set to false, the extension is stripped, so ``st32_1_2_1.wav`` would be deposited as ``st32_1_2_1``. Usually you want this to be true, unless your archive only contains one kind of file.
--  ``allow_directories``: If set to true, directories and their contents can be deposited as resources. The identifier is given to the directory, and the user is responsible for knowing how to interpret the contents. If set to false (the default), only regular files can be deposited.
+-  ``allow_directories``: If set to true, the archive can hold directory resources, which earlier versions could deposit, and they can be copied into it. Directories can no longer be deposited: make them zip files first (``nbank.canonical_zip`` writes them in a reproducible form). The default is false.
 -  ``access``: Who owns the archive's files and who can read and write them. These are usually set by ``nbank init``.
 
    -  ``user``: The account that should own the files, or ``null`` for a shared archive (``--shared``).
@@ -161,6 +161,11 @@ The ``deposit`` command takes several options:
 -  ``--no-file-metadata``: if a package provides a metadata reader for the
    dtype, ``nbank`` checks each file with it and adds the metadata it reads from
    the file. This skips that.
+- ``--zip-directories``: Resources have to be single files, so directories can
+   only be deposited if they are first stored in a zip file. This option will
+   automatically convert directories to a zip file in a reproducible form and
+   deposit it under the directory's name. The directory is left in place. Dry
+   runs don't build the zip.
 -  ``--override-file-metadata``: a file whose metadata disagrees with what's
    given on the command line is normally skipped; with this, the given values
    are used.
@@ -179,10 +184,11 @@ registry URL somewhere, too. If you're running the experiment on machine that
 doesn't have direct access to the archive, you can use the ``nbank fetch`` command
 on the experiment machine to retrieve the resources.
 
-After the experiment, deposit the data files into the archive using the
-same command. If you deposit containers or directories, you’re
-responsible for organizing the contents and assigning any internal
-identifiers.
+After the experiment, deposit the data files into the archive using the same
+command. Directories can't be deposited as they are; bundle related files into a
+zip file first, or use ``--zip-directories``. If you deposit other kinds of
+containers, you’re responsible for organizing the contents and assigning any
+internal identifiers.
 
 Resource datatypes
 ~~~~~~~~~~~~~~~~~~
@@ -216,7 +222,10 @@ based on the identifier. Resources are sorted into subdirectories using
 the first two characters of the identifier to avoid having too many
 files in one directory. For example, if the identifier is
 ``edd0ccae-c34c-48cb-b515-a5e6f9ed91bc``, you’ll find the file under
-``resources/ed``.
+``resources/ed``. Beside ``resources``, the ``staging`` directory holds files
+while they're prepared for deposit, such as the zip files made by
+``--zip-directories``; anything left there by an interrupted deposit is safe
+to delete.
 
 ``nbank`` also acts as a command-line interface to the registry. You can
 perform the following operations:
@@ -313,7 +322,7 @@ still be removed with ``nbank archive prune``, but only the owner of a
 read-only directory resource, or root, can remove it.
 
 ``nbank check archive`` reports files and directories whose group or
-permissions don't match ``nbank.json``, and ``--fix`` repairs them. Many fixes require running this command as root, because only the owner of a file or root can change its permissions.
+permissions don't match ``nbank.json``, and ``--fix`` repairs them. Many fixes require running this command as root, because only the owner of a file or root can change its permissions. It also reports an archive that has no ``staging`` directory, which ``--fix`` creates (archives made before it existed need this before directories can be deposited with ``--zip-directories``), and anything left in ``staging``, which ``--fix`` offers to delete.
 
 License
 -------

@@ -381,7 +381,10 @@ def leftover(archive):
 
 def test_check_incomplete_transfer(cli, archive, leftover, caplog):
     assert cli("check", "archive", str(archive.path)) == 1
-    assert f" - {leftover} - INCOMPLETE transfer (safe to delete)" in caplog.text
+    assert (
+        f" - {leftover} - INCOMPLETE transfer or deposit (safe to delete)"
+        in caplog.text
+    )
     assert "permission errors: 0" in caplog.text
     assert "MISSING from the registry" not in caplog.text
 
@@ -574,15 +577,14 @@ def dir_archives(make_archive):
 
 
 def test_import_tar_directory_resource(
-    cli, registry, dir_archives, dtype, unique, tmp_path, caplog
+    store_directory, cli, registry, dir_archives, dtype, unique, tmp_path, caplog
 ):
     a, b = dir_archives
     src = tmp_path / unique("res")
     (src / "sub").mkdir(parents=True)
     (src / "sub" / "data").write_text("inside")
     (src / "top").write_text("top")
-    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
-    name = item["id"]
+    name = store_directory(a, dtype, src)
     tar = tmp_path / "archive.tar"
     with tarfile.open(tar, "w") as t:
         t.add(stored_path(a, name), arcname=name)
@@ -593,15 +595,22 @@ def test_import_tar_directory_resource(
 
 
 def test_export_and_import(
-    cli, registry, dir_archives, dtype, deposit_file, unique, tmp_path, caplog
+    store_directory,
+    cli,
+    registry,
+    dir_archives,
+    dtype,
+    deposit_file,
+    unique,
+    tmp_path,
+    caplog,
 ):
     a, b = dir_archives
     file_name = deposit_file(a, dtype, contents=unique("file contents"))
     src = tmp_path / unique("res")
     (src / "sub").mkdir(parents=True)
     (src / "sub" / "data").write_text(unique("inside"))
-    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
-    dir_name = item["id"]
+    dir_name = store_directory(a, dtype, src)
     missing = unique("missing")
     tar = tmp_path / "export.tar"
     assert cli("export", "--manifest", str(tar), file_name, dir_name, missing) == 1
@@ -629,7 +638,15 @@ def test_export_and_import(
 
 @pytest.mark.parametrize("out_name", ["export.zip", "export"])
 def test_export_zip_and_directory(
-    cli, registry, dir_archives, dtype, deposit_file, unique, tmp_path, out_name
+    store_directory,
+    cli,
+    registry,
+    dir_archives,
+    dtype,
+    deposit_file,
+    unique,
+    tmp_path,
+    out_name,
 ):
     import zipfile
 
@@ -638,8 +655,7 @@ def test_export_zip_and_directory(
     src = tmp_path / unique("res")
     (src / "sub").mkdir(parents=True)
     (src / "sub" / "data").write_text(unique("inside"))
-    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
-    dir_name = item["id"]
+    dir_name = store_directory(a, dtype, src)
     out = tmp_path / out_name
     assert cli("export", str(out), file_name, dir_name) == 0
     file_stored = stored_path(a, file_name)
@@ -655,15 +671,22 @@ def test_export_zip_and_directory(
 
 
 def test_copy(
-    cli, registry, dir_archives, dtype, deposit_file, unique, tmp_path, caplog
+    store_directory,
+    cli,
+    registry,
+    dir_archives,
+    dtype,
+    deposit_file,
+    unique,
+    tmp_path,
+    caplog,
 ):
     a, b = dir_archives
     file_name = deposit_file(a, dtype)
     src = tmp_path / unique("res")
     (src / "sub").mkdir(parents=True)
     (src / "sub" / "data").write_text(unique("inside"))
-    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
-    dir_name = item["id"]
+    dir_name = store_directory(a, dtype, src)
     missing = unique("missing")
 
     assert cli("copy", "-y", str(b.path), file_name, dir_name) == 0
@@ -721,15 +744,23 @@ def test_copy_changed_source(cli, registry, two_archives, dtype, deposit_file, c
 
 
 def test_copy_directory_to_archive_without_directories(
-    cli, registry, dir_archives, make_archive, dtype, unique, tmp_path, caplog
+    store_directory,
+    cli,
+    registry,
+    dir_archives,
+    make_archive,
+    dtype,
+    unique,
+    tmp_path,
+    caplog,
 ):
     a, _ = dir_archives
     b = make_archive(require_hash=False)
     src = tmp_path / unique("res")
     src.mkdir()
     (src / "data").write_text(unique("inside"))
-    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
-    assert cli("copy", str(b.path), item["id"]) == 1
+    name = store_directory(a, dtype, src)
+    assert cli("copy", str(b.path), name) == 1
     assert "doesn't allow directory resources" in caplog.text
 
 
@@ -933,14 +964,13 @@ def test_check_tar_hash_mismatch(cli, archive, dtype, deposit_file, tmp_path, ca
 
 
 def test_check_tar_directory_resource(
-    cli, registry, dir_archives, dtype, unique, tmp_path, caplog
+    store_directory, cli, registry, dir_archives, dtype, unique, tmp_path, caplog
 ):
     a, _ = dir_archives
     src = tmp_path / unique("res")
     (src / "sub").mkdir(parents=True)
     (src / "sub" / "data").write_text(unique("inside"))
-    [item] = core.deposit(a.path, [src], dtype=dtype, auth=registry.auth)
-    name = item["id"]
+    name = store_directory(a, dtype, src)
     tar = tmp_path / "archive.tar"
     with tarfile.open(tar, "w") as t:
         t.add(stored_path(a, name), arcname=name)

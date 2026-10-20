@@ -11,7 +11,7 @@ import httpx
 import pytest
 import respx
 
-from nbank import archive, core, registry, script, util
+from nbank import archive, canonical_zip, core, registry, script, util
 from test.test_registry import (
     archives_url,
     base_url,
@@ -120,9 +120,139 @@ def test_deposit_uuid_resource():
     pass
 
 
-@pytest.mark.skip(reason="not implemented")
-def test_deposit_directory_resource():
-    pass
+@pytest.mark.parametrize("skip_errors", [False, True])
+def test_deposit_refuses_directories(mocked_api, tmp_path, skip_errors, caplog):
+    # even when the archive's policy allows directory resources
+    root = tmp_path / "archive"
+    archive.create(root, base_url, require_hash=False, allow_directories=True)
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    src = tmp_path / "dummy_1"
+    src.mkdir()
+    (src / "data").write_text("contents")
+    caplog.set_level(logging.INFO, logger="nbank")
+    # no resource POST is mocked: nothing may be registered
+    items = list(core.deposit(root, files=[src], skip_errors=skip_errors))
+    if skip_errors:
+        assert items == [
+            {
+                "source": src,
+                "error": "is a directory; zip it first, or deposit with "
+                "--zip-directories",
+            }
+        ]
+    else:
+        assert items == []
+        assert "is a directory; zip it first" in caplog.text
+    assert (src / "data").exists()
+    assert list((root / "resources").iterdir()) == []
+
+
+@pytest.fixture
+def recording(tmp_path):
+    """A directory to deposit as a zip, and the zip it should become"""
+    src = tmp_path / "rec_1"
+    (src / "sub").mkdir(parents=True)
+    (src / "sub" / "a.abf").write_bytes(b"x" * 100)
+    (src / "notes.txt").write_text("notes")
+    expected = canonical_zip.zip_directory(src, tmp_path / "expected.zip")
+    return src, expected
+
+
+@pytest.fixture
+def zip_archive(mocked_api, tmp_path):
+    root = tmp_path / "archive"
+    archive.create(root, base_url, require_hash=True)
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    return archive.get_config(root)
+
+
+def staged_files(cfg):
+    return list(archive.staging_dir(cfg).iterdir())
+
+
+def test_deposit_zips_directories(mocked_api, zip_archive, recording):
+    src, expected = recording
+    mocked_api.post(
+        resource_url,
+        json={
+            "name": "rec_1",
+            "locations": [archive_name],
+            "sha1": util.hash(expected),
+            "metadata": {},
+        },
+    ).respond(json={"name": "rec_1"})
+    items = list(
+        core.deposit(zip_archive["path"], [src], zip_directories=True, auth=auth)
+    )
+    assert items == [{"source": src, "id": "rec_1", "zipped": True}]
+    stored = archive.resource_path(zip_archive, "rec_1", resolve_ext=True)
+    assert stored.name == "rec_1.zip"
+    assert stored.read_bytes() == expected.read_bytes()
+    # the directory is left in place, and nothing is left staged
+    assert (src / "sub" / "a.abf").exists()
+    assert staged_files(zip_archive) == []
+
+
+def test_deposit_zip_dry_run_builds_nothing(zip_archive, recording, monkeypatch):
+    src, _ = recording
+
+    def fail(*args, **kwargs):
+        raise AssertionError("the zip must not be built in a dry run")
+
+    monkeypatch.setattr(canonical_zip, "zip_directory", fail)
+    # no resource POST is mocked: nothing may be registered
+    items = list(
+        core.deposit(zip_archive["path"], [src], zip_directories=True, dry_run=True)
+    )
+    assert items == [
+        {"source": src, "id": "rec_1", "dry_run": True, "metadata": {}, "zipped": True}
+    ]
+    assert list((zip_archive["path"] / "resources").iterdir()) == []
+    assert staged_files(zip_archive) == []
+
+
+def test_deposit_zip_rejected_by_registry_is_removed(
+    mocked_api, zip_archive, recording
+):
+    src, _ = recording
+    mocked_api.post(resource_url).respond(400, json={"name": ["already exists"]})
+    [item] = core.deposit(
+        zip_archive["path"], [src], zip_directories=True, skip_errors=True, auth=auth
+    )
+    assert "already exists" in item["error"]
+    assert list((zip_archive["path"] / "resources").iterdir()) == []
+    assert staged_files(zip_archive) == []
+
+
+def test_deposit_zip_failure_leaves_nothing(zip_archive, recording):
+    src, _ = recording
+    (src / "link").symlink_to(src / "notes.txt")
+    # no resource POST is mocked: nothing may be registered
+    [item] = core.deposit(
+        zip_archive["path"], [src], zip_directories=True, skip_errors=True
+    )
+    assert "symbolic link" in item["error"]
+    assert list((zip_archive["path"] / "resources").iterdir()) == []
+    assert staged_files(zip_archive) == []
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_deposit_zip_needs_staging_directory(zip_archive, recording, dry_run):
+    src, _ = recording
+    archive.staging_dir(zip_archive).rmdir()
+    [item] = core.deposit(
+        zip_archive["path"],
+        [src],
+        zip_directories=True,
+        skip_errors=True,
+        dry_run=dry_run,
+    )
+    assert "no staging directory" in item["error"]
+    assert "nbank check archive --fix" in item["error"]
 
 
 def test_deposit_resource_archive_errors(mocked_api, tmp_archive, tmp_path):
@@ -189,14 +319,10 @@ def test_deposit_rejects_symlinks(mocked_api, tmp_path, dry_run):
     real.write_text("contents")
     link = tmp_path / "dummy_1"
     link.symlink_to(real)
-    src_dir = tmp_path / "dummy_2"
-    src_dir.mkdir()
-    (src_dir / "link").symlink_to(real)
     # no resource POST is mocked: nothing may be registered
-    for src, bad in ((link, link), (src_dir, src_dir / "link")):
-        with pytest.raises(ValueError, match=str(bad)):
-            _ = list(core.deposit(root, files=[src], dry_run=dry_run))
-        assert src.exists()
+    with pytest.raises(ValueError, match=str(link)):
+        _ = list(core.deposit(root, files=[link], dry_run=dry_run))
+    assert link.exists()
     assert list((root / "resources").iterdir()) == []
 
 
@@ -289,6 +415,7 @@ def test_store_resources_continues_past_errors(monkeypatch, capsys, caplog):
         animal=None,
         read_metadata=True,
         override_file_metadata=False,
+        zip_directories=False,
         json_out=True,
     )
     assert script.store_resources(args) == 1
@@ -321,6 +448,7 @@ def test_store_resources_reports_clean_error(monkeypatch, caplog):
         animal=None,
         read_metadata=True,
         override_file_metadata=False,
+        zip_directories=False,
         json_out=False,
     )
     with caplog.at_level(logging.ERROR, logger="nbank"):
@@ -350,6 +478,7 @@ def test_store_resources_passes_dry_run(monkeypatch):
         animal=None,
         read_metadata=True,
         override_file_metadata=False,
+        zip_directories=False,
         json_out=False,
     )
     script.store_resources(args)
@@ -359,10 +488,21 @@ def test_store_resources_passes_dry_run(monkeypatch):
 @pytest.mark.parametrize(
     "flags, expected",
     [
-        ((), {"read_metadata": True, "override_file_metadata": False}),
         (
-            ("--no-file-metadata", "--override-file-metadata"),
-            {"read_metadata": False, "override_file_metadata": True},
+            (),
+            {
+                "read_metadata": True,
+                "override_file_metadata": False,
+                "zip_directories": False,
+            },
+        ),
+        (
+            ("--no-file-metadata", "--override-file-metadata", "--zip-directories"),
+            {
+                "read_metadata": False,
+                "override_file_metadata": True,
+                "zip_directories": True,
+            },
         ),
     ],
 )

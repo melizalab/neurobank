@@ -44,6 +44,7 @@ def deposit(
     skip_errors: bool = False,
     read_metadata: bool = True,
     override_file_metadata: bool = False,
+    zip_directories: bool = False,
     metadata: Mapping[str, Any] | None = None,
 ) -> Iterator[dict]:
     """Registers files and moves them into the archive at archive_path.
@@ -65,18 +66,23 @@ def deposit(
     everything but registers and moves nothing; records have "dry_run": True, the
     "metadata" that would be registered, and "id" None if the registry would assign
     it. With skip_errors, a file that can't be deposited yields {"source": path,
-    "error": message} instead of raising. That covers missing files, directories the
-    archive doesn't allow, invalid names, symbolic links, permission problems, files
-    their dtype's reader rejects or whose metadata doesn't match what's given, and
-    resources the registry rejects (400).
+    "error": message} instead of raising. That covers missing files, directories,
+    invalid names, symbolic links, permission problems, files their dtype's reader
+    rejects or whose metadata doesn't match what's given, and resources the registry
+    rejects (400).
 
-    Otherwise, directories the archive doesn't allow are skipped with a log message, and
-    these errors are raised:
+    Directories can't be deposited as they are. With zip_directories, each one is
+    written to a zip in canonical form (see nbank.canonical_zip) and the zip is
+    deposited, named for the directory; the directory itself is left in place, and
+    the record has "zipped": True. Dry runs don't build the zip, so they don't check
+    it with the dtype's reader or hash it. Without zip_directories, and without
+    skip_errors, missing files and directories are skipped with a log message.
+    These errors are raised:
 
     - ValueError: archive_path isn't an archive, a source is or has a symbolic link,
       or the dtype's reader rejects a file or its metadata doesn't match
-    - RuntimeError: the archive or dtype isn't registered, or the dtype's reader can't
-      be loaded
+    - RuntimeError: the archive or dtype isn't registered, the dtype's reader can't be
+      loaded, or a file changed while its directory was being zipped
     - PermissionError: a source can't be read or the archive can't be written
     - FileExistsError: a file is already stored for the id (nothing is registered)
     - httpx.HTTPStatusError: the registry refuses a resource
@@ -86,9 +92,10 @@ def deposit(
     """
     import uuid
 
-    from nbank import readers, util
+    from nbank import canonical_zip, readers, util
     from nbank.archive import (
         get_config,
+        staging_dir,
         store_resource,
         verify_no_symlinks,
         verify_permissions,
@@ -113,7 +120,6 @@ def deposit(
     log.info("   registry: %s", registry_url)
     auto_id = archive_cfg["policy"]["auto_identifiers"] or auto_id
     auto_id_type = archive_cfg["policy"].get("auto_id_type", None)
-    allow_dirs = archive_cfg["policy"]["allow_directories"]
 
     with httpx.Client() as session:
         session.auth = make_auth(auth)
@@ -137,6 +143,7 @@ def deposit(
                 raise RuntimeError(f"'{dtype}' is not a registered datatype")
 
         given = dict(metadata or {})
+        staging = staging_dir(archive_cfg)
         reader = None
         if dtype is not None and read_metadata:
             reader = readers.find_reader(dtype)
@@ -155,66 +162,93 @@ def deposit(
                 else:
                     log.info("   does not exist; skipping")
                 continue
-            if not allow_dirs and src.is_dir():
+            is_dir = src.is_dir()
+            if is_dir and not zip_directories:
+                message = (
+                    "is a directory; zip it first, or deposit with --zip-directories"
+                )
                 if skip_errors:
-                    yield skipped(
-                        src, "is a directory, which the archive doesn't allow"
-                    )
+                    yield skipped(src, message)
                 else:
-                    log.info("   is a directory; skipping")
+                    log.info("   %s; skipping", message)
                 continue
+            zipped = {"zipped": True} if is_dir else {}
+            # the zip is built in the archive's staging directory, so storing it is a
+            # rename; nbank check reports it if a deposit is interrupted
+            staged = None
             try:
-                if auto_id:
-                    if auto_id_type == "uuid":
-                        id = str(uuid.uuid4())
+                try:
+                    if auto_id:
+                        if auto_id_type == "uuid":
+                            id = str(uuid.uuid4())
+                        else:
+                            id = None
                     else:
-                        id = None
-                else:
-                    id = util.id_from_fname(src)
-                verify_no_symlinks(src)
-                verify_permissions(archive_cfg, src, id)
-                if reader is not None:
-                    file_metadata = readers.read_file_metadata(reader, dtype, src)
-                    resource_metadata = readers.merge_metadata(
-                        file_metadata, given, override=override_file_metadata
-                    )
-                    log.info("   metadata: %s", resource_metadata)
-                else:
-                    resource_metadata = given
-                if hash or archive_cfg["policy"]["require_hash"]:
-                    sha1 = util.hash(src)
-                    log.info("   sha1: %s", sha1)
-                else:
-                    sha1 = None
-            except (ValueError, OSError) as err:
-                if not skip_errors:
-                    raise
-                yield skipped(src, str(err))
-                continue
-            if dry_run:
-                log.info("   OK (dry run; nothing registered or moved)")
-                yield {
-                    "source": src,
-                    "id": id,
-                    "dry_run": True,
-                    "metadata": resource_metadata,
-                }
-                continue
-            url, params = add_resource(
-                registry_url, id, dtype, archive, sha1, **resource_metadata
-            )
-            log.debug("POST %s: %s", url, params)
-            r = session.post(url, json=params)
-            if skip_errors and r.status_code == httpx.codes.BAD_REQUEST:
-                yield skipped(src, "; ".join(error_messages(r)))
-                continue
-            r.raise_for_status()
-            result = r.json()
+                        id = util.id_from_fname(src)
+                    verify_no_symlinks(src)
+                    verify_permissions(archive_cfg, src, id)
+                    checkable = not (is_dir and dry_run)
+                    if is_dir and not staging.is_dir():
+                        raise FileNotFoundError(
+                            f"the archive has no staging directory ({staging}); "
+                            "run 'nbank check archive --fix' to create it"
+                        )
+                    if is_dir and not dry_run:
+                        staged = canonical_zip.zip_directory(
+                            src, staging / f"{src.name}.zip"
+                        )
+                        log.info("   zipped as %s", staged)
+                    elif is_dir:
+                        log.info("   would be zipped (not built in a dry run)")
+                    source = staged or src
+                    if reader is not None and checkable:
+                        file_metadata = readers.read_file_metadata(
+                            reader, dtype, source
+                        )
+                        resource_metadata = readers.merge_metadata(
+                            file_metadata, given, override=override_file_metadata
+                        )
+                        log.info("   metadata: %s", resource_metadata)
+                    else:
+                        resource_metadata = given
+                    if (hash or archive_cfg["policy"]["require_hash"]) and checkable:
+                        sha1 = util.hash(source)
+                        log.info("   sha1: %s", sha1)
+                    else:
+                        sha1 = None
+                except (ValueError, OSError, RuntimeError) as err:
+                    if not skip_errors:
+                        raise
+                    yield skipped(src, str(err))
+                    continue
+                if dry_run:
+                    log.info("   OK (dry run; nothing registered or moved)")
+                    yield {
+                        "source": src,
+                        "id": id,
+                        "dry_run": True,
+                        "metadata": resource_metadata,
+                        **zipped,
+                    }
+                    continue
+                url, params = add_resource(
+                    registry_url, id, dtype, archive, sha1, **resource_metadata
+                )
+                log.debug("POST %s: %s", url, params)
+                r = session.post(url, json=params)
+                if skip_errors and r.status_code == httpx.codes.BAD_REQUEST:
+                    yield skipped(src, "; ".join(error_messages(r)))
+                    continue
+                r.raise_for_status()
+                result = r.json()
 
-            log.info("   registered as %s", full_url(registry_url, result["name"]))
-            tgt = store_resource(archive_cfg, src, id=result["name"])
-            log.info("   deposited in %s", tgt)
-            yield {"source": src, "id": result["name"]}
+                log.info("   registered as %s", full_url(registry_url, result["name"]))
+                tgt = store_resource(archive_cfg, source, id=result["name"])
+                log.info("   deposited in %s", tgt)
+                yield {"source": src, "id": result["name"], **zipped}
+            finally:
+                if staged is not None:
+                    staged.unlink(missing_ok=True)
 
 
 def search(registry_url: str, /, **params) -> Iterator[dict]:

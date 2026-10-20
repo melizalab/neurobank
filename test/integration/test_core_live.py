@@ -149,17 +149,19 @@ def test_deposit_several(registry, archive, dtype, tmp_path, unique):
     assert found == set(names)
 
 
-def test_deposit_directory(registry, make_archive, dtype, tmp_path, unique):
+def test_deposit_refuses_directories(registry, make_archive, dtype, tmp_path, unique):
+    # even when the archive's policy allows directory resources
     archive = make_archive(require_hash=False, allow_directories=True)
     name = unique("res")
     src = tmp_path / name
     src.mkdir()
     write_file(src / "a.txt", "first")
-    write_file(src / "b.txt", "second")
-    sha1 = util.hash(src)
-    deposit_one(registry, archive, dtype, src, hash=True)
-    assert core.describe(registry.url, name)["sha1"] == sha1
-    assert nbank_archive.resource_path(archive.config, name).is_dir()
+    [item] = core.deposit(
+        archive.path, [src], dtype=dtype, auth=registry.auth, skip_errors=True
+    )
+    assert "is a directory" in item["error"]
+    assert core.describe(registry.url, name) is None
+    assert (src / "a.txt").exists()
 
 
 def test_deposit_auto_id(registry, make_archive, dtype, tmp_path, unique):

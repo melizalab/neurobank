@@ -30,7 +30,7 @@ import httpx
 import pytest
 
 from nbank import archive as nbank_archive
-from nbank import core, script
+from nbank import core, script, util
 from nbank import registry as reg
 
 ROOT = Path(__file__).parents[2]
@@ -319,6 +319,24 @@ def deposit_file(registry, tmp_path, unique):
         return item["id"]
 
     return deposit
+
+
+@pytest.fixture
+def store_directory(register):
+    """Returns a function that registers a directory resource and stores it in an
+    archive, as deposit did before it refused directories. Returns the id.
+
+    For testing the handling of directory resources already in archives.
+    """
+
+    def store(archive: Archive, dtype: str, src: Path) -> str:
+        require_hash = archive.config["policy"]["require_hash"]
+        sha1 = util.hash_directory(src) if require_hash else None
+        name = register(src.name, dtype=dtype, archive=archive.name, sha1=sha1)["name"]
+        nbank_archive.store_resource(archive.config, src, id=name)
+        return name
+
+    return store
 
 
 @pytest.fixture

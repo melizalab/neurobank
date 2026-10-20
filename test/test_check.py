@@ -150,6 +150,41 @@ def permission_findings(cfg):
     return [(f.status, f.path) for f in check.check_archive_permissions(cfg)]
 
 
+def test_missing_staging_directory(tmp_archive):
+    staging = archive.staging_dir(tmp_archive)
+    staging.rmdir()
+    [finding] = check.check_archive_permissions(tmp_archive)
+    assert (finding.status, finding.path, finding.ok) == (
+        Status.NO_STAGING,
+        staging,
+        False,
+    )
+    [finding] = check.check_archive_permissions(tmp_archive, fix=True)
+    assert finding.fixed
+    assert staging.is_dir()
+    assert permission_findings(tmp_archive) == []
+
+
+def test_staging_directory_permissions_are_checked(tmp_archive):
+    staging = archive.staging_dir(tmp_archive)
+    staging.chmod(0o700)
+    assert permission_findings(tmp_archive) == [(Status.WRONG_MODE, staging)]
+    [finding] = check.check_archive_permissions(tmp_archive, fix=True)
+    assert finding.fixed
+
+
+def test_leftovers_in_staging_are_incomplete(tmp_archive):
+    leftover = archive.staging_dir(tmp_archive) / "rec_1.zip"
+    leftover.write_bytes(b"partial zip")
+    [finding] = check.check_archive_contents(tmp_archive["path"], {})
+    assert (finding.status, finding.resource, finding.path) == (
+        Status.INCOMPLETE,
+        None,
+        leftover,
+    )
+    assert "left in staging" in finding.detail
+
+
 def test_check_permissions_ok(tmp_archive, tmp_path):
     store(tmp_archive, tmp_path, "res_1")
     assert permission_findings(tmp_archive) == []

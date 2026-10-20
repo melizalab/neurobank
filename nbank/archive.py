@@ -23,6 +23,8 @@ _README_fname = "README.md"
 _config_fname = "nbank.json"
 _config_schema = "https://melizalab.github.io/neurobank/config.json#"
 _resource_subdir = "resources"
+# where files are built before they're stored (e.g. zips of deposited directories)
+_staging_subdir = "staging"
 _default_umask = 0o002
 # Linux needs setgid on directories for new files to inherit their group. BSD
 # and macOS always inherit the group of the parent directory.
@@ -34,6 +36,7 @@ data management archive. The following files and directories are part of the arc
  + README.md: this file
  + nbank.json: information and configuration for the archive
  + resources/:  registered source files and deposited data
+ + staging/:  files being prepared for deposit (anything left here is safe to delete)
 
 Files in `resources` are organized into subdirectories based on the first two
 characters of the files' identifiers.
@@ -123,6 +126,8 @@ def create(
 
     resdir = archive_path / _resource_subdir
     resdir.mkdir(parents=True, exist_ok=True)
+    staging = archive_path / _staging_subdir
+    staging.mkdir(exist_ok=True)
 
     fname = archive_path / _README_fname
     fname.write_text(_README)
@@ -154,17 +159,23 @@ def create(
     fname.chmod(0o666 & ~umask)
 
     fname = archive_path / ".gitignore"
-    fname.write_text("resources/\n")
+    fname.write_text("resources/\nstaging/\n")
     fname.chmod(0o666 & ~umask)
 
     cfg = get_config(archive_path)
     permission_fixer(cfg)(resdir)
+    permission_fixer(cfg)(staging)
     for name in _created_files:
         try:
             chown(archive_path / name, -1, gid)
         except PermissionError:
             log.warning("unable to change the group of %s", archive_path / name)
     return cfg
+
+
+def staging_dir(cfg: ArchiveConfig) -> Path:
+    """Returns the directory where files are built before they're stored."""
+    return cfg["path"] / _staging_subdir
 
 
 def id_stub(id: str) -> str:

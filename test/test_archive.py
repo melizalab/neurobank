@@ -419,6 +419,17 @@ def test_create_resources_directory_mode(tmp_path, restrictive_umask):
     assert list(check.check_archive_permissions(cfg)) == []
 
 
+def test_create_staging_directory(tmp_path, restrictive_umask):
+    cfg = archive.create(tmp_path / "archive", dummy_registry, umask=0o002)
+    staging = archive.staging_dir(cfg)
+    resdir = cfg["path"] / "resources"
+    assert staging.is_dir()
+    # the same group and mode as the resources directory
+    assert stat.S_IMODE(staging.stat().st_mode) == stat.S_IMODE(resdir.stat().st_mode)
+    assert staging.stat().st_gid == resdir.stat().st_gid
+    assert "staging/" in (cfg["path"] / ".gitignore").read_text().split()
+
+
 def test_create_shared_archive(tmp_path):
     cfg = archive.create(tmp_path / "archive", dummy_registry, shared=True)
     assert cfg["policy"]["access"]["user"] is None

@@ -303,3 +303,38 @@ def test_deposit_with_a_broken_reader_fails_before_any_file(install, archive_rou
     install(FakeEntryPoint(DTYPE, ImportError("no module named h5py")))
     with pytest.raises(RuntimeError, match="can't load the metadata reader"):
         deposit(archive_routes)
+
+
+def test_reader_gets_the_zip_of_a_directory(install, archive_routes, tmp_path):
+    import zipfile
+
+    seen = []
+
+    def reader(path):
+        seen.append(path)
+        with zipfile.ZipFile(path) as zf:
+            return json.loads(zf.read("metadata.json"))["metadata"]
+
+    install(FakeEntryPoint(DTYPE, reader))
+    src = tmp_path / "rec_1"
+    src.mkdir()
+    (src / "metadata.json").write_text(json.dumps({"metadata": {"pen": 1}}))
+    # the file's metadata disagrees with what's given, so nothing is registered
+    [item] = deposit(archive_routes, src, zip_directories=True, metadata={"pen": 2})
+    [path] = seen
+    assert path.suffix == ".zip" and path != src
+    assert "pen: 1 in the file, 2 given" in item["error"]
+    # the zip was removed
+    assert list((archive_routes / "staging").iterdir()) == []
+
+
+def test_dry_run_doesnt_read_a_directory(install, archive_routes, tmp_path):
+    def reader(path):
+        raise AssertionError("the reader must not be called in a dry run")
+
+    install(FakeEntryPoint(DTYPE, reader))
+    src = tmp_path / "rec_1"
+    src.mkdir()
+    (src / "data").write_text("x")
+    [item] = deposit(archive_routes, src, zip_directories=True, dry_run=True)
+    assert item["zipped"] and "error" not in item

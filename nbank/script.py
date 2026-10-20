@@ -253,6 +253,12 @@ def main(argv=None):
         help="don't check the files or read their metadata with the dtype's reader",
     )
     pp.add_argument(
+        "--zip-directories",
+        action="store_true",
+        help="deposit each directory as a zip file of its contents (the directory "
+        "is left in place)",
+    )
+    pp.add_argument(
         "--override-file-metadata",
         action="store_true",
         help="where the given metadata differs from a file's, use the given values",
@@ -694,6 +700,7 @@ def store_resources(args):
             skip_errors=True,
             read_metadata=args.read_metadata,
             override_file_metadata=args.override_file_metadata,
+            zip_directories=args.zip_directories,
             metadata={**args.metadata, **core_field_args(args)},
         ):
             n_failed += "error" in res
@@ -1055,7 +1062,7 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     if args.fix:
         log.info("Permission errors fixed: %d", n_fixed)
         log.info("Files registered elsewhere resolved: %d", n_resolved)
-        log.info("Incomplete transfers deleted: %d", n_deleted)
+        log.info("Incomplete transfers and deposits deleted: %d", n_deleted)
     n_errors += perm_counts.total() - n_fixed
     return n_errors == 0 and not unable_to_check
 

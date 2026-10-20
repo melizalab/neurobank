@@ -3,6 +3,7 @@
 
 import io
 import json
+import zipfile
 
 import pytest
 
@@ -75,6 +76,22 @@ def test_deposit(cli, registry, archive, dtype, tmp_path, unique, capsys):
         record = core.describe(registry.url, name)
         assert record["sha1"] == sha1
         assert record["metadata"] == {"n": 3}
+
+
+def test_deposit_zip_directories(cli, registry, archive, dtype, tmp_path, unique):
+    name = unique("res")
+    src = tmp_path / name
+    (src / "sub").mkdir(parents=True)
+    (src / "sub" / "a.abf").write_text(unique("contents"))
+    args = ("-d", dtype, "-H", "--zip-directories", str(archive.path), str(src))
+    assert cli("deposit", *args) == 0
+    stored = nbank_archive.resource_path(archive.config, name, resolve_ext=True)
+    assert stored.suffix == ".zip"
+    with zipfile.ZipFile(stored) as zf:
+        assert zf.namelist() == ["sub/a.abf"]
+    assert core.describe(registry.url, name)["sha1"] == util.hash(stored)
+    assert (src / "sub" / "a.abf").exists()
+    assert cli("check", "archive", str(archive.path)) == 0
 
 
 def test_deposit_names_from_stdin(
