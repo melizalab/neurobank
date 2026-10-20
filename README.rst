@@ -227,6 +227,22 @@ while they're prepared for deposit, such as the zip files made by
 ``--zip-directories``; anything left there by an interrupted deposit is safe
 to delete.
 
+Resources made of several files are stored as zip files, with their members
+stored without compression, so they can be read without unpacking them. In
+Python, ``nbank.zipped`` lists a zip's members, opens one as a file, gives the
+offset and size of its data for memory-mapping (e.g. with ``numpy.memmap``),
+or extracts one to a directory for libraries that only read files by path:
+
+.. code:: python
+
+   from nbank import zipped
+
+   zipped.members(path)                        # ['metadata.json', 'cell1_0000.abf', ...]
+   with zipped.open_member(path, "metadata.json") as fp:
+       ...
+   offset, size = zipped.member_extent(path, "cell1_0000.abf")
+   zipped.extract_member(path, "cell1_0000.abf", tmp_dir)
+
 ``nbank`` also acts as a command-line interface to the registry. You can
 perform the following operations:
 
