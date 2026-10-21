@@ -106,7 +106,10 @@ class _Slice(io.RawIOBase):
         if count == 0:
             return 0
         self._fp.seek(self._offset + self._pos)
-        n = self._fp.readinto(memoryview(buffer)[:count])
+        # released explicitly: a view left for the garbage collector (as on PyPy)
+        # keeps the caller from resizing the buffer
+        with memoryview(buffer) as view, view[:count] as part:
+            n = self._fp.readinto(part)
         self._pos += n
         return n
 

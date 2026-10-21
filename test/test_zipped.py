@@ -117,3 +117,24 @@ def test_extract_member(request, which, tmp_path):
     out = zipped.extract_member(path, "sub/2016_05_26_0000.abf", tmp_path / "out")
     assert out == tmp_path / "out" / "sub" / "2016_05_26_0000.abf"
     assert out.read_bytes() == DATA
+
+
+def test_open_member_releases_buffers(stored, monkeypatch):
+    # readinto must not leave a view on the caller's buffer: PyPy's read()
+    # resizes the buffer after readinto, which fails while a view exists
+    # (BufferError). PyPy frees objects later than CPython, so keeping every view
+    # alive shows the same thing here.
+    kept = []
+
+    def kept_memoryview(obj):
+        view = memoryview(obj)
+        kept.append(view)
+        return view
+
+    monkeypatch.setattr(zipped, "memoryview", kept_memoryview, raising=False)
+    with zipped.open_member(stored, "sub/2016_05_26_0000.abf") as fp:
+        buf = bytearray(100)
+        assert fp.raw.readinto(buf) == 100
+        del buf[10:]  # resizing, as PyPy's read() does
+        assert bytes(buf) == DATA[:10]
+    assert kept
