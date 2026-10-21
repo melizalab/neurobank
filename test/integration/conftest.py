@@ -243,16 +243,11 @@ def register(client, registry, unique, dtype):
 
 
 @pytest.fixture
-def core_fields(client, registry) -> tuple[str, str]:
+def core_fields(registry) -> tuple[str, str]:
     """Returns the identifiers of two animals in the registry.
 
-    Skips the test if the registry has no experimenter and animal fields, or there
-    are no animals to use.
+    Skips the test if there are no animals to use.
     """
-    url, _ = reg.get_info(registry.url)
-    version = client.get(url).json()["api_version"]
-    if tuple(int(x) for x in version.split(".")) < (1, 2):
-        pytest.skip(f"registry API {version} has no core fields")
     if len(registry.animals) < 2:
         pytest.skip("no animals in the registry to use (see NBANK_TEST_ANIMALS)")
     return registry.animals[0], registry.animals[1]

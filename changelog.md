@@ -1,3 +1,66 @@
+## 0.13.0
+
+This is a transitional release implementing the machinery to migrate
+intracellular-abfdir resources to intracellular-abfzip. Not intended for general
+use as a CLI or a dependency, as there are lots of breaking API changes that
+should not be considered finalized. Requires django-neurobank 0.12.0 (registry
+API 1.2) or later.
+
+### New
+
+- `nbank deposit`, `search` and `modify` take `--experimenter` (a registry
+  username) and `--animal`, which the registry stores as resource fields rather
+  than metadata. `search --animal` matches the start of the animal's id, and
+  `modify` clears a field given an empty value. In the library they're the
+  `experimenter` and `animal` keys of `metadata=`.
+- Deposit reads registry metadata from the files themselves, using reader plugins
+  that the packages producing each dtype register as `nbank.metadata_readers`
+  entry points. A file the reader rejects isn't deposited, and metadata given
+  with `-k` that disagrees with the file fails it. `--no-file-metadata` skips the
+  reader, and `--override-file-metadata` lets the given values win. Dry runs show
+  the metadata that would be registered.
+- `nbank deposit --zip-directories` deposits each directory as a zip file, built
+  in the archive's new `staging/` directory. `nbank check archive` reports a
+  missing `staging/` (`--fix` creates it) and leftovers in it.
+- `nbank.canonical_zip` writes zip files that are the same bytes for the same
+  contents: members stored uncompressed and sorted, with fixed timestamps and
+  permissions.
+- `nbank.zipped` reads members of zip resources without unpacking them: their
+  offsets for memory-mapping, file objects, or extracting one member.
+- `nbank.admin delete --record FILE` appends the deleted registry records to a
+  JSON lines file.
+
+### Changed
+
+These may break scripts or code that calls nbank:
+
+- `nbank deposit` refuses directories, whatever the archive's `allow_directories`
+  policy. Convert them to zip files first (for ABF recordings, `abf-zip` in
+  melizalab-tools), or use `--zip-directories`.
+- `-k` and `-K` values are read as JSON, and anything that isn't JSON is kept as a
+  string (#64). Before, they were read as Python literals, so `20140603_1_1`
+  became the number 2014060311. `True`, `False` and `None` are still accepted.
+  Python-only forms are now strings: hex, octal and underscored numbers, `1.`,
+  `.5`, `+2`, and single-quoted strings. A value starting with `[` or `{` that
+  doesn't parse is an error. Quote a string that looks like a number:
+  `-k 'name="20140603"'`.
+- `-k` and `-K` refuse `experimenter` and `animal`; use the options. The lab alias
+  `bird` isn't translated.
+- `core.deposit` and `core.update` take metadata as a dict (`metadata=`) instead of
+  keyword arguments, so any key can be metadata.
+- Optional arguments are keyword-only in `core.deposit`, `core.find`, `core.get`,
+  `core.verify`, `archive.create`, `archive.store_resource`,
+  `check.check_archive_contents`, `check.check_archive_permissions`,
+  `util.query_registry` and `util.query_registry_bulk`. The registry URL builders'
+  and `core.search`'s fixed arguments are positional-only.
+- Deposit checks that nothing is already stored under the name before
+  registering it (#59). `archive.verify_permissions` raises FileExistsError for
+  that case.
+
+### Fixed
+
+- `-k` with a key such as `archive`, `dtype`, `sha1` or `id` crashed deposit.
+
 ## 0.12.1
 
 ### New

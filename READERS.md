@@ -15,7 +15,7 @@ registry. Readers are owned by the packages that produce the files.
 
 ## What exists, and where
 
-- **neurobank master (unreleased, 1.0):**
+- **neurobank master (unreleased; to be released as 0.13.0):**
   - **reader support in deposit:** discovery, checking, merging, the CLI options;
   - **`nbank.canonical_zip`:** `write_zip(out_path, members)` and
     `zip_directory(src_dir, out_path, extra=[("metadata.json", bytes)])` write
@@ -27,10 +27,10 @@ registry. Readers are owned by the packages that produce the files.
   - **`archive.staging_dir(cfg)`:** archives have `staging/`; `nbank check
     archive --fix` creates it in older archives.
 
-  The last release is 0.12.1, and melizalab-tools pins `neurobank>=0.12,<0.13`.
-  Readers don't import neurobank, so they don't care. `abf-zip`, and the
-  migration, use `canonical_zip`, so until neurobank 1.0 is released they need
-  neurobank from git.
+  The last release is 0.12.1. Readers don't import neurobank, so they don't care.
+  `abf-zip` and the migration use `canonical_zip`, so melizalab-tools depends on
+  neurobank from git until 0.13.0 is released, and then pins
+  `neurobank>=0.13,<0.14`.
 - **django-neurobank 0.12.0 (API 1.2, in production):** the `experimenter` and
   `animal` fields; animals are `birds.Animal` records, by UUID. A resource's
   dtype can be changed through the API, and a superuser can change its sha1, which
@@ -40,7 +40,11 @@ registry. Readers are owned by the packages that produce the files.
   `melizalab_specs.validate(document)` checks a document against the schema named
   in its `$schema`; it needs the `validate` extra. melizalab-tools should depend
   on `melizalab-specs[validate]` and drop its copies in `dlab/schemas/`.
-- **Not built yet:** the four readers; `abf-zip`; the migration; the
+- **melizalab-tools master (unreleased):** the `spikes-pprox`, `spikes-hdf5` and
+  `intracellular-abfzip` readers (`dlab/readers.py`); `abf-zip`
+  (`dlab/abfzip.py`); `group-kilo-spikes` writing `experimenter`, `animal` and
+  `presenter`. Details in `readers-report.md`.
+- **Not built yet:** the `extracellular-arf` reader (arfx); the migration; the
   `intracellular-abfzip` dtype in the registry (extension `zip`, content type
   `application/vnd.meliza-org.abf+zip`; the registry's content types carry no
   version).
@@ -141,24 +145,20 @@ def read_metadata(path: pathlib.Path) -> dict[str, Any]: ...
 - **Validation:** JSON with a known pprox `$schema` and a `pprox` list of trials.
   Checking the whole file against the schema (`melizalab_specs.validate`) is
   optional, since the files can be large; checking the top level is required.
-- **Metadata:** the top-level scalars (strings, numbers, booleans), except
-  `$schema`. Lists and objects (`pprox`, `entry_metadata`, `processed_by`) are left
-  out. That keeps what the registry has for these files now: the `kilosort_*`
-  values, `recording`, and the copy of the recording's metadata.
-- **Producer change:** `group-kilo-spikes` copies the recording's registry
-  `metadata` into the file. Under API 2.0 that no longer includes `experimenter`
-  and `animal`, so it should write them from the recording's record explicitly,
-  as top-level `experimenter` and `animal`.
+- **Metadata:** only the fields that are searched on: `animal`, `experimenter`,
+  `recording`, `protocol`, `processed_by` (joined with "; "), `sorted_by` and
+  `presenter`. Everything else stays in the file and can be registered later.
+  Legacy `bird` and `experiment` are renamed.
+- **Producer change (done):** `group-kilo-spikes` writes `experimenter` and
+  `animal` from the recording's record at the top level, and records `presenter`.
 
 ### `spikes-hdf5` (melizalab-tools)
 
 - **Validation:** an HDF5 file with the waveform dataset and spike times that
   `save_waveforms` writes.
-- **Metadata:** the root attributes, the same set as the matching pprox file
-  except for the recording's metadata, which isn't copied here.
-- **Producer change:** `save_waveforms` gets `experimenter` and `animal` (and the
-  rest of the recording's metadata, if wanted) as root attributes, so the file is
-  as self-describing as the pprox.
+- **Metadata:** the same fields as the pprox reader, from the root attributes.
+- **Producer change (done):** the waveform file gets the recording's metadata and
+  `presenter` as root attributes, so it's as self-describing as the pprox.
 
 ### `intracellular-abfzip` (melizalab-tools)
 
@@ -187,28 +187,38 @@ archives), which 1.0 retires.
 - **Producer, `abf-zip`:** reads the ABF headers for the catalog (protocol and
   start time of each file), takes `--experimenter`, `--animal`, and `-k` for
   `metadata`, validates the result, and builds the zip with
-  `canonical_zip.zip_directory(src, out, extra=[("metadata.json", data)])`.
-  Everything in `metadata.json` is fixed by the zip's hash once it's built, so
-  the catalog should be reviewed first: e.g. `abf-zip` writes `metadata.json` for
-  review, then builds the zip from the reviewed file (`--metadata FILE`). It can
-  deposit the zip itself for a one-step workflow at the rig. (`nbank deposit
+  `canonical_zip`. Everything in `metadata.json` is fixed by the zip's hash once
+  it's built, so the catalog is reviewed first: `abf-zip catalog DIR` writes
+  `DIR.json` for review, and `abf-zip build --metadata DIR.json DIR` builds the
+  zip from the reviewed file. A `--deposit` option for a one-step workflow at the
+  rig is planned. (`nbank deposit
   --zip-directories` doesn't write `metadata.json`, so the abfzip reader rejects
   what it makes; ABF recordings go through `abf-zip`.)
-- **Migration of `intracellular-abfdir`:** per resource,
+- **Migration of `intracellular-abfdir`:** a one-off script in melizalab-tools
+  (`migrations/abfdir_to_abfzip.py`, not installed, deleted once done), since
+  building the catalogs needs the ABF headers. It uses neurobank's library
+  (`canonical_zip`, `archive`, the registry API) and needs no registry change:
+  a superuser can change a resource's sha1 and dtype in one request. The plan is
+  in `readers-report.md`. Per resource:
   1. verify the directory against its registered hash;
-  2. build the zip in the archive's `staging/` (`archive.staging_dir`) with the
-     same builder as `abf-zip`, with `metadata` from the resource's registry
-     record, and the catalog from the ABF headers and the epoch lists of earlier
-     analyses, reviewed recording by recording;
-  3. change the resource's sha1 (as a superuser) and dtype
-     (`intracellular-abfdir` to `intracellular-abfzip`) in the registry, store
-     `<id>.zip`, and remove the directory.
+  2. build the zip in the archive's `staging/` (`archive.staging_dir`) with
+     `abf-zip`'s builder, `metadata` from the normalized registry record, and the
+     catalog from the ABF headers and the epoch lists of earlier analyses, and
+     check it with the reader;
+  3. store `<id>.zip`, change the resource's sha1 and dtype
+     (`intracellular-abfdir` to `intracellular-abfzip`), and remove the
+     directory last, so the data is on disk at every step. A resumed run tells
+     how far it got from the files present and the registered hash.
 
-  Dry run; resumable; one archive at a time. Before it, run `nbank check archive
-  --fix` on each archive (it creates `staging/`), and register the
-  `intracellular-abfzip` dtype. After it, run `nbank check all`. Whether this
-  lives in `nbank.admin` (with melizalab-tools building the zips) or in
-  melizalab-tools (calling neurobank) is open.
+  Old clients keep working: `archive.resolve_extension` finds the bare `<id>`
+  directory while it exists, and `<id>.zip` once it's gone, so location keys
+  (#60) aren't needed first.
+
+  Dry run; resumable; one archive at a time. Before it: normalize the registry
+  metadata (including `name` to `recording`, and recovering the integer names
+  left by the `-k` bug, #64), register the `intracellular-abfzip` dtype, and run
+  `nbank check archive --fix` on each archive (it creates `staging/`). After it,
+  run `nbank check all`.
 - **Reading:** `nbank.zipped` opens members, gives their offsets for
   memory-mapping, or extracts them. ABF readers take paths only: neo's
   `AxonRawIO` (which memory-maps, and has lighter dependencies than pyabf) and
@@ -267,9 +277,11 @@ stored, neurobank refuses the file with a message naming the key.
   fields reach the registry. `test/test_readers.py` shows the fake reader.
 - **melizalab-specs (done):** the abfzip schema rejects malformed
   `metadata.json` and accepts newer minor versions.
-- **Producers:** each reader tested against small files written by the producer
-  (and by older versions, for the legacy names); `abf-zip` tested for
-  reproducible output and a `metadata.json` that validates.
+- **melizalab-tools (done):** each reader tested against small files written by
+  the producer (and by older versions, for the legacy names), and three ABF2
+  files from the archive (header versions 2.4, 2.6 and 2.9); `abf-zip` tested
+  for reproducible output, invalid archives and metadata, and archives written
+  outside it.
 
 ## Open questions
 
@@ -283,13 +295,9 @@ stored, neurobank refuses the file with a message naming the key.
 - [ ] **Override:** deposit refuses on disagreement unless
   `--override-file-metadata` (built). Keep that, or let the given values always
   win, with a warning?
-- [ ] **Inheritance:** pprox and spikes HDF5 files name their `recording`.
-  Instead of the producers copying `experimenter` and `animal` in, deposit could
-  look the recording up and fill them in. That makes readers depend on the
-  registry, which the contract rules out; copying in the producer keeps the files
-  self-describing. Copying is the proposal here.
-- [ ] **Where the abfzip migration lives:** `nbank.admin` with melizalab-tools
-  building the zips, or melizalab-tools calling neurobank.
+- [ ] **The two abfdir resources without ABF files:** `6edc858d` (one .tif) and
+  `f5bbaa66` (empty). The abfzip reader refuses both, and directory support is
+  going, so each needs another form or deletion.
 - [ ] **Spec number:** check that `spec:4` isn't already used on meliza.org.
 - [ ] **Later:** `nbank check` could run the readers against stored files and
   report where the registry and the file disagree.
@@ -298,6 +306,14 @@ Decided:
 
 - [x] **ARF attributes:** `arfx-oephys` records which attributes came from `-k`,
   and the reader takes exactly those.
-- [x] **abfzip migration and the catalog:** built with melizalab-tools' zip
-  builder; catalogs filled from the ABF headers and the epoch lists of earlier
-  analyses, reviewed recording by recording.
+- [x] **abfzip migration and the catalog:** a script in melizalab-tools, built
+  with `abf-zip`'s builder; catalogs filled from the ABF headers and the epoch
+  lists of earlier analyses. Reviewed by hand only where the two disagree, plus
+  a random sample.
+- [x] **`name` in abfdir metadata** becomes `recording` during normalization, to
+  match the unit readers and not be confused with the resource's name.
+- [x] **Inheritance:** the producers copy `experimenter` and `animal` into the
+  unit files, rather than deposit looking up the recording, so readers stay off
+  the registry and the files stay self-describing.
+- [x] **Unit readers register only the searched fields,** not every top-level
+  scalar.

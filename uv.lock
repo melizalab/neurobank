@@ -63,9 +63,9 @@ resolution-markers = [
     "python_full_version < '3.12'",
 ]
 dependencies = [
-    { name = "asgiref" },
-    { name = "sqlparse" },
-    { name = "tzdata", marker = "sys_platform == 'win32'" },
+    { name = "asgiref", marker = "python_full_version < '3.12'" },
+    { name = "sqlparse", marker = "python_full_version < '3.12'" },
+    { name = "tzdata", marker = "python_full_version < '3.12' and sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d5/d8/43e9d000519adceb189620b6869ff88031e046df91c2e9da72f8f6918399/django-5.2.17.tar.gz", hash = "sha256:9d4d93be539a18ab80d058eb515900e10951e04c537c5a6b394fc49528d3251f", size = 10889740, upload-time = "2026-08-04T15:04:03.173Z" }
 wheels = [
@@ -80,9 +80,9 @@ resolution-markers = [
     "python_full_version >= '3.12'",
 ]
 dependencies = [
-    { name = "asgiref" },
-    { name = "sqlparse" },
-    { name = "tzdata", marker = "sys_platform == 'win32'" },
+    { name = "asgiref", marker = "python_full_version >= '3.12'" },
+    { name = "sqlparse", marker = "python_full_version >= '3.12'" },
+    { name = "tzdata", marker = "python_full_version >= '3.12' and sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f8/d4/8314b5bdef20832f0ac6ae3b3e4d4924e4759fa3b4af27609dd747e7a6be/django-6.1.1.tar.gz", hash = "sha256:7ab93536d8e677aa14554c56426290c69480bf2ee68d7513d4a22f57d6bfeb84", size = 11284905, upload-time = "2026-09-02T17:20:45.621Z" }
 wheels = [
@@ -104,7 +104,7 @@ wheels = [
 
 [[package]]
 name = "django-neurobank"
-version = "0.11.0"
+version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "basehash" },
@@ -115,9 +115,9 @@ dependencies = [
     { name = "djangorestframework" },
     { name = "djangorestframework-link-header-pagination" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4f/6d/0464d18066e9f245bec0f72622868f6f5295d97c3b18abb4cb2a6e87a473/django_neurobank-0.11.0.tar.gz", hash = "sha256:32924e72c7edbf38a3f68e5b184f11f0a37af9bdd5f499546f59fe38a7fec226", size = 14769, upload-time = "2026-09-29T20:11:45.641Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/05/8f/8fef8d842643cea6b02fe8c413bfd4555642c99921142d9b98d998e15701/django_neurobank-0.12.0.tar.gz", hash = "sha256:4a023f21958ca2694e0f72646f9338af58c380fa89387a253d63d5160a591088", size = 28509, upload-time = "2026-10-19T21:04:47.481Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d3/11/5cc2b9689bbc26576cd9deffd6933762a4f32cddaf6165bd24023902ce45/django_neurobank-0.11.0-py3-none-any.whl", hash = "sha256:b9f59ee2aa2e17d07954f64a7c8a4f641e8db4a9273c0286654d535b150b5c36", size = 25061, upload-time = "2026-09-29T20:11:44.416Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/c0/b83f895d7a8e2e887a39cc816de19d2fa7b40df55f4aeedce6bfdb889a11/django_neurobank-0.12.0-py3-none-any.whl", hash = "sha256:485917291672d3bf0d6b9f62c894ba04f78a5c8734f6ba77137f87adb8424701", size = 38973, upload-time = "2026-10-19T21:04:45.863Z" },
 ]
 
 [[package]]
@@ -215,7 +215,7 @@ wheels = [
 
 [[package]]
 name = "neurobank"
-version = "0.12.1"
+version = "0.13.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -243,7 +243,7 @@ dev = [
     { name = "respx", specifier = ">=0.20" },
     { name = "ruff", specifier = ">=0.7.0" },
 ]
-integration = [{ name = "django-neurobank", specifier = ">=0.11.0" }]
+integration = [{ name = "django-neurobank", specifier = ">=0.12.0" }]
 postgres = [{ name = "psycopg", extras = ["binary"], specifier = ">=3.1" }]
 
 [[package]]
