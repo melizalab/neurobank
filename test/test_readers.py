@@ -18,7 +18,7 @@ class FakeEntryPoint:
     def __init__(self, name, reader, package="fake-producer"):
         self.name = name
         self.value = f"{package.replace('-', '_')}:read_metadata"
-        self.dist = SimpleNamespace(name=package)
+        self.dist = SimpleNamespace(name=package, version="1.0")
         self._reader = reader
 
     def load(self):
@@ -74,6 +74,14 @@ def test_no_reader(install):
 def test_reader_is_found_by_dtype(install):
     install(FakeEntryPoint("other", None), FakeEntryPoint(DTYPE, fake_reader))
     assert readers.find_reader(DTYPE) is fake_reader
+
+
+def test_reader_found_is_logged(install, caplog):
+    install(FakeEntryPoint(DTYPE, fake_reader))
+    with caplog.at_level("DEBUG", logger="nbank"):
+        readers.find_reader(DTYPE)
+    assert f"metadata reader for {DTYPE}: fake_producer:read_metadata " in caplog.text
+    assert "(fake-producer 1.0)" in caplog.text
 
 
 def test_two_readers_for_a_dtype_is_an_error(install):
@@ -265,6 +273,16 @@ def test_deposit_dry_run_shows_merged_metadata(install, archive_routes, make_fil
     assert not archive.resource_path(
         archive.get_config(archive_routes), "res_1"
     ).exists()
+
+
+def test_deposit_logs_file_metadata(install, archive_routes, make_file, caplog):
+    """In debug mode, what the reader returned is shown apart from the merged
+    metadata."""
+    install(FakeEntryPoint(DTYPE, fake_reader))
+    src = make_file("res_1", {"pen": 1})
+    with caplog.at_level("DEBUG", logger="nbank"):
+        deposit(archive_routes, src, metadata={"site": 2}, dry_run=True)
+    assert "from the file: {'pen': 1}" in caplog.text
 
 
 def test_deposit_without_reading_metadata(install, archive_routes, make_file):

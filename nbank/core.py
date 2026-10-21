@@ -205,6 +205,7 @@ def deposit(
                         file_metadata = readers.read_file_metadata(
                             reader, dtype, source
                         )
+                        log.debug("   from the file: %s", file_metadata)
                         resource_metadata = readers.merge_metadata(
                             file_metadata, given, override=override_file_metadata
                         )

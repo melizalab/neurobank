@@ -46,6 +46,14 @@ def find_reader(dtype: str) -> Reader | None:
         raise RuntimeError(
             f"the metadata reader for '{dtype}' from {package_name(ep)} is not callable"
         )
+    version = getattr(ep.dist, "version", None)
+    log.debug(
+        "   metadata reader for %s: %s (%s%s)",
+        dtype,
+        ep.value,
+        package_name(ep),
+        f" {version}" if version else "",
+    )
     return reader
 
 
