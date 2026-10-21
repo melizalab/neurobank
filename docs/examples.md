@@ -27,7 +27,9 @@ The base command to do a deposit is `nbank deposit -d <data-type> <archive-direc
 
 To use automatic IDs, add `-A` to the command (e.g. `nbank deposit -A -d vocalization-wav /home/data/my-project stim1.wav stim2.wav`).
 
-To add metadata, add `-k key=value` to the command. For example nbank `deposit -d spikes-pprox -k experimenter=dmeliza /home/data/my-project data1.json`. You can add as many of these as needed. Note that the metadata will apply to all the deposited files, so you may need to split up your deposit commands.
+To add metadata, add `-k key=value` to the command. For example `nbank deposit -d spikes-pprox -k condition=awake /home/data/my-project data1.json`. You can add as many of these as needed. Note that the metadata will apply to all the deposited files, so you may need to split up your deposit commands. Use `--experimenter` and `--animal` for those fields, not `-k`.
+
+The value is read as JSON if it parses, and otherwise kept as a string, so `-k rate=44100` stores a number and `-k condition=awake` stores a string. Lists and objects work too, but need shell quoting: `-k 'tags=["a", "b"]'`. To store a string that looks like a number, quote it as JSON: `-k 'name="20140603"'`. `True`, `False` and `None` are accepted as aliases for `true`, `false` and `null`.
 
 You can also add `-j` to the command to have it output the newly deposited files as line-delimited JSON. This is especially useful with automatic IDs to create a catalog of the stimuli you'll use in an experiment
 

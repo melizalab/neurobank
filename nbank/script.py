@@ -54,13 +54,29 @@ def octalint(arg):
     return int(arg, base=8)
 
 
+# -k values accepted for compatibility with Python literals
+_KEYVAL_ALIASES = {"True": True, "False": False, "None": None}
+
+
+def _reject_constant(name):
+    # NaN and Infinity aren't JSON, and the registry can't store them
+    raise ValueError(f"{name} is not a JSON value")
+
+
 class ParseKeyVal(argparse.Action):
     def parse_value(self, value):
-        import ast
+        """Returns value parsed as JSON if it is JSON, and otherwise as a string.
 
+        Raises ValueError for a value that looks like a JSON list or object but
+        doesn't parse, so a typo isn't stored as a string.
+        """
+        if value in _KEYVAL_ALIASES:
+            return _KEYVAL_ALIASES[value]
         try:
-            return ast.literal_eval(value)
-        except (ValueError, SyntaxError):
+            return json.loads(value, parse_constant=_reject_constant)
+        except ValueError as err:
+            if value.lstrip().startswith(("[", "{")):
+                raise ValueError(f"{value} is not a valid JSON list or object") from err
             return value
 
     def __call__(self, parser, namespace, arg, option_string=None):
@@ -75,7 +91,10 @@ class ParseKeyVal(argparse.Action):
                 parser.error(
                     f"{option_string} {key}: {key} is not metadata; use --{key}"
                 )
-            kv[key] = self.parse_value(val)
+            try:
+                kv[key] = self.parse_value(val)
+            except ValueError as err:
+                parser.error(f"{option_string} {key}: {err}")
         setattr(namespace, self.dest, kv)
 
 
@@ -233,7 +252,8 @@ def main(argv=None):
     )
     pp.add_argument(
         "-k",
-        help="specify metadata field (use multiple -k for multiple values)",
+        help="specify metadata field (use multiple -k for multiple values;"
+        " VALUE is read as JSON if it parses, otherwise as a string)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -311,7 +331,8 @@ def main(argv=None):
     )
     pp.add_argument(
         "-k",
-        help="filter by metadata field (use multiple -k for multiple values)",
+        help="filter by metadata field (use multiple -k for multiple values;"
+        " VALUE is read as JSON if it parses, otherwise as a string)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -319,7 +340,8 @@ def main(argv=None):
     )
     pp.add_argument(
         "-K",
-        help="exclude by metadata field (use multiple -K for multiple values)",
+        help="exclude by metadata field (use multiple -K for multiple values;"
+        " VALUE is read as JSON if it parses, otherwise as a string)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
@@ -348,7 +370,8 @@ def main(argv=None):
     pp.add_argument(
         "-k",
         help="set metadata key=value, replacing any previous "
-        "value for this key (use multiple -k for multiple fields)",
+        "value for this key (use multiple -k for multiple fields;"
+        " VALUE is read as JSON if it parses, otherwise as a string)",
         action=ParseKeyVal,
         default=dict(),
         metavar="KEY=VALUE",
