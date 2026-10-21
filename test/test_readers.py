@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from nbank import archive, core, readers
+from nbank import archive, core, readers, script
 from test.test_nbank import archive_name, auth, auth_enc
-from test.test_registry import archives_url, datatypes_url, resource_url
+from test.test_registry import archives_url, base_url, datatypes_url, resource_url
 
 DTYPE = "fake-json"
 
@@ -82,6 +82,35 @@ def test_reader_found_is_logged(install, caplog):
         readers.find_reader(DTYPE)
     assert f"metadata reader for {DTYPE}: fake_producer:read_metadata " in caplog.text
     assert "(fake-producer 1.0)" in caplog.text
+
+
+def test_installed_readers_are_not_loaded(install):
+    install(
+        FakeEntryPoint(DTYPE, ImportError("not loaded"), "pkg-b"),
+        FakeEntryPoint(DTYPE, fake_reader, "pkg-a"),
+        FakeEntryPoint("other", fake_reader),
+    )
+    assert readers.installed_readers() == {
+        DTYPE: "pkg-a 1.0, pkg-b 1.0",
+        "other": "fake-producer 1.0",
+    }
+
+
+def test_dtype_list_shows_readers(install, mocked_api, capsys):
+    install(FakeEntryPoint(DTYPE, fake_reader))
+    mocked_api.get(datatypes_url).respond(
+        json=[
+            {"name": DTYPE, "content_type": "application/json"},
+            {"name": "plain", "content_type": "text/plain"},
+        ]
+    )
+    script.main(["-r", base_url, "dtype", "list"])
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].split("\t")[1:] == [
+        "(application/json)",
+        "reader: fake-producer 1.0",
+    ]
+    assert lines[1].split("\t")[1:] == ["(text/plain)"]
 
 
 def test_two_readers_for_a_dtype_is_an_error(install):
@@ -186,12 +215,16 @@ def test_merge_override_uses_given_values():
 # deposit
 
 
-@pytest.fixture
-def archive_routes(mocked_api, tmp_archive):
-    root = tmp_archive["path"]
+def route_archive(mocked_api, root):
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(json=[{"name": archive_name, "root": str(root)}])
+
+
+@pytest.fixture
+def archive_routes(mocked_api, tmp_archive):
+    root = tmp_archive["path"]
+    route_archive(mocked_api, root)
     mocked_api.get(datatypes_url).respond(
         json=[{"name": DTYPE, "content_type": "application/json"}]
     )
@@ -201,7 +234,7 @@ def archive_routes(mocked_api, tmp_archive):
 def deposit(root, *files, **kwargs):
     return list(
         core.deposit(
-            root, files=files, dtype=DTYPE, auth=auth, skip_errors=True, **kwargs
+            root, files=files, auth=auth, skip_errors=True, **{"dtype": DTYPE, **kwargs}
         )
     )
 
@@ -301,6 +334,18 @@ def test_deposit_without_a_reader(install, archive_routes, make_file):
     src = make_file("res_1", {"pen": 1})
     [item] = deposit(archive_routes, src, dry_run=True)
     assert item["metadata"] == {}
+
+
+def test_deposit_without_a_dtype_warns(
+    install, mocked_api, tmp_archive, make_file, caplog
+):
+    install(FakeEntryPoint(DTYPE, fake_reader))
+    root = tmp_archive["path"]
+    route_archive(mocked_api, root)
+    src = make_file("res_1", {"pen": 1})
+    [item] = deposit(root, src, dtype=None, dry_run=True)
+    assert item["metadata"] == {}
+    assert "no dtype given" in caplog.text
 
 
 def test_deposit_reader_is_loaded_once(install, archive_routes, make_file):

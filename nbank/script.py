@@ -21,7 +21,7 @@ from urllib.parse import urlunparse
 
 import httpx
 
-from nbank import __version__, archive, check, core, registry, transfer, util
+from nbank import __version__, archive, check, core, readers, registry, transfer, util
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -897,8 +897,12 @@ def fetch_resources(args):
 
 def list_datatypes(args):
     url, params = registry.get_datatypes(args.registry_url)
+    installed = readers.installed_readers()
     for dtype in util.query_registry_paginated(httpx, url, params):
-        print(f"{dtype['name']:<25}\t({dtype['content_type']})")
+        line = f"{dtype['name']:<25}\t({dtype['content_type']})"
+        if dtype["name"] in installed:
+            line += f"\treader: {installed[dtype['name']]}"
+        print(line)
 
 
 def add_datatype(args):

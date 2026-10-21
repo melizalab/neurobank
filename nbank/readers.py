@@ -46,19 +46,27 @@ def find_reader(dtype: str) -> Reader | None:
         raise RuntimeError(
             f"the metadata reader for '{dtype}' from {package_name(ep)} is not callable"
         )
-    version = getattr(ep.dist, "version", None)
-    log.debug(
-        "   metadata reader for %s: %s (%s%s)",
-        dtype,
-        ep.value,
-        package_name(ep),
-        f" {version}" if version else "",
-    )
+    log.debug("   metadata reader for %s: %s (%s)", dtype, ep.value, package_label(ep))
     return reader
+
+
+def installed_readers() -> dict[str, str]:
+    """Returns the package (with its version) that provides the reader for each
+    dtype that has one installed, without loading the readers. Two packages for
+    one dtype are both listed."""
+    found: dict[str, list[str]] = {}
+    for ep in entry_points(group=ENTRY_POINT_GROUP):
+        found.setdefault(ep.name, []).append(package_label(ep))
+    return {dtype: ", ".join(sorted(labels)) for dtype, labels in found.items()}
 
 
 def package_name(ep) -> str:
     return ep.dist.name if ep.dist is not None else ep.value
+
+
+def package_label(ep) -> str:
+    version = getattr(ep.dist, "version", None)
+    return f"{package_name(ep)} {version}" if version else package_name(ep)
 
 
 def read_file_metadata(reader: Reader, dtype: str, path: Path) -> dict[str, Any]:

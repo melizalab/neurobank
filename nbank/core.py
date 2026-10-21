@@ -141,6 +141,11 @@ def deposit(
             }
             if dtype not in known_dtypes:
                 raise RuntimeError(f"'{dtype}' is not a registered datatype")
+        else:
+            log.warning(
+                "   warning: no dtype given, so file metadata won't be read "
+                "(and the registry may refuse the deposit)"
+            )
 
         given = dict(metadata or {})
         staging = staging_dir(archive_cfg)
