@@ -5,10 +5,12 @@ import os
 import subprocess
 import sys
 
+import httpx
 import pytest
 
 from nbank import admin, core, util
 from nbank import archive as nbank_archive
+from nbank import registry as nbank_registry
 
 
 @pytest.fixture
@@ -104,3 +106,38 @@ def test_requires_registry_url(admin_cli, tmp_path):
     result = admin_cli("delete", str(listing(tmp_path)), url=None)
     assert result.returncode != 0
     assert "supply a registry url" in result.stderr
+
+
+@pytest.fixture
+def supersede_supported(registry):
+    url, _ = nbank_registry.get_info(registry.url)
+    info = httpx.get(url).json()
+    major, minor = (int(x) for x in info["api_version"].split(".")[:2])
+    if (major, minor) < (1, 3):
+        pytest.skip("the registry doesn't support superseded resources (API 1.3)")
+
+
+def test_supersede(admin_cli, registry, supersede_supported, register):
+    old, new = (register()["name"] for _ in range(2))
+    result = admin_cli("supersede", "--by", new, "--note", "duplicate", old)
+    assert result.returncode == 0, result.stderr
+    record = core.describe(registry.url, old)
+    assert record["superseded_on"] is not None
+    assert record["superseded_by"] == new
+    assert record["superseded_note"] == "duplicate"
+
+    result = admin_cli("supersede", "--clear", old)
+    assert result.returncode == 0, result.stderr
+    record = core.describe(registry.url, old)
+    assert record["superseded_on"] is None
+    assert record["superseded_by"] is None
+    assert record["superseded_note"] == ""
+
+
+def test_supersede_refused_by_registry(
+    admin_cli, registry, supersede_supported, register
+):
+    old = register()["name"]
+    result = admin_cli("supersede", "--by", old, old)
+    assert "registry error" in result.stderr
+    assert core.describe(registry.url, old)["superseded_on"] is None

@@ -6,6 +6,7 @@ files deposited by mistake.
 
 """
 
+import datetime
 import json
 import logging
 from contextlib import nullcontext
@@ -143,6 +144,90 @@ def update_hashes(args):
                     registry.log_error(err)
 
 
+def supersede_resource(
+    resource_id: str,
+    *,
+    session: httpx.Client,
+    registry_url: str,
+    by: str | None = None,
+    note: str | None = None,
+    clear: bool = False,
+    dry_run: bool = False,
+):
+    """Mark a resource as superseded (by another resource, if by is given), or
+    unmark it if clear. A resource that's already marked keeps the time it was
+    marked, and only the details given change.
+
+    Raises ValueError if clear is given with by or note, and RuntimeError if the
+    registry doesn't support superseded resources (API 1.3).
+    """
+    if clear and (by is not None or note is not None):
+        raise ValueError("clearing removes the replacement and note; don't give them")
+    log.info("%s:", resource_id)
+    url, _params = registry.get_resource(registry_url, resource_id)
+    r = session.get(url)
+    r.raise_for_status()
+    record = r.json()
+    # a registry that doesn't know the fields would ignore them
+    if "superseded_on" not in record:
+        raise RuntimeError(
+            "the registry doesn't support superseded resources (needs API 1.3)"
+        )
+    if clear:
+        data = {"superseded_on": None}
+    else:
+        data = {}
+        if record["superseded_on"] is None:
+            data["superseded_on"] = datetime.datetime.now(datetime.UTC).isoformat()
+        if by is not None:
+            data["superseded_by"] = by
+        if note is not None:
+            data["superseded_note"] = note
+    if not data:
+        log.info("  - already superseded; nothing to change")
+        return
+    if dry_run:
+        log.info("  - would send %s", data)
+        return
+    r = session.patch(url, json=data)
+    r.raise_for_status()
+    updated = r.json()
+    if updated["superseded_on"] is None:
+        log.info("  - not superseded")
+    else:
+        log.info(
+            "  - superseded on %s%s%s",
+            updated["superseded_on"],
+            f" by {updated['superseded_by']}" if updated["superseded_by"] else "",
+            f" ({updated['superseded_note']})" if updated["superseded_note"] else "",
+        )
+
+
+def supersede_resources(args):
+    if args.dry_run:
+        log.info("DRY RUN")
+    with httpx.Client(auth=args.auth) as session:
+        for resource_id in args.ids:
+            try:
+                supersede_resource(
+                    resource_id,
+                    session=session,
+                    registry_url=args.registry_url,
+                    by=args.by,
+                    note=args.note,
+                    clear=args.clear,
+                    dry_run=args.dry_run,
+                )
+            except httpx.HTTPStatusError as err:
+                if err.response.status_code == 404:
+                    log.error("  - not in the registry, skipping")
+                else:
+                    registry.log_error(err)
+            except (ValueError, RuntimeError) as err:
+                log.error("  - error: %s", err)
+                return
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -197,6 +282,33 @@ if __name__ == "__main__":
     pp.add_argument(
         "resources", type=Path, help="file with a list of resources to update"
     )
+
+    pp = sub.add_parser(
+        "supersede",
+        aliases=["supercede"],
+        help="mark resources as superseded or not to be used",
+        description="Mark resources as superseded by another resource (--by), "
+        "or as not to be used (--note says why). The registry keeps the record, "
+        "so the names stay valid. Needs a superuser.",
+    )
+    pp.set_defaults(func=supersede_resources)
+    pp.add_argument(
+        "-y",
+        "--dry-run",
+        help="if set, don't actually change anything",
+        action="store_true",
+    )
+    group = pp.add_mutually_exclusive_group()
+    group.add_argument("--by", metavar="ID", help="the resource to use instead")
+    group.add_argument(
+        "--clear",
+        action="store_true",
+        help="unmark the resources, clearing --by and --note",
+    )
+    pp.add_argument(
+        "--note", help="why the resources shouldn't be used, or what replaces them"
+    )
+    pp.add_argument("ids", nargs="+", help="the resources to mark")
 
     args = p.parse_args()
     if not hasattr(args, "func"):
