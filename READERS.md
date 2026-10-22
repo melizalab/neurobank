@@ -9,13 +9,14 @@ registry. Readers are owned by the packages that produce the files.
 | dtype                  | Package         | Producer                                  |
 |------------------------|-----------------|-------------------------------------------|
 | `extracellular-arf`    | arfx            | `arfx-oephys`                             |
+| `eeg-arf`              | arfx            | `arfx-oephys`                             |
 | `spikes-pprox`         | melizalab-tools | `group-kilo-spikes`                       |
 | `spikes-hdf5`          | melizalab-tools | `group-kilo-spikes`                       |
 | `intracellular-abfzip` | melizalab-tools | `abf-zip` (new); the `-abfdir` migration  |
 
 ## What exists, and where
 
-- **neurobank master (unreleased; to be released as 0.13.0):**
+- **neurobank 0.13.0:**
   - **reader support in deposit:** discovery, checking, merging, the CLI options;
   - **`nbank.canonical_zip`:** `write_zip(out_path, members)` and
     `zip_directory(src_dir, out_path, extra=[("metadata.json", bytes)])` write
@@ -27,10 +28,12 @@ registry. Readers are owned by the packages that produce the files.
   - **`archive.staging_dir(cfg)`:** archives have `staging/`; `nbank check
     archive --fix` creates it in older archives.
 
-  The last release is 0.12.1. Readers don't import neurobank, so they don't care.
-  `abf-zip` and the migration use `canonical_zip`, so melizalab-tools depends on
-  neurobank from git until 0.13.0 is released, and then pins
-  `neurobank>=0.13,<0.14`.
+  Readers don't import neurobank. `abf-zip` and the migration use
+  `canonical_zip`, so melizalab-tools should pin `neurobank>=0.13,<0.14`
+  instead of depending on git.
+- **neurobank master (unreleased):** `nbank dtype list` shows the package and
+  version of each dtype's reader; deposit warns when no dtype is given, since no
+  reader runs; `--debug` shows the reader and what it read.
 - **django-neurobank 0.12.0 (API 1.2, in production):** the `experimenter` and
   `animal` fields; animals are `birds.Animal` records, by UUID. A resource's
   dtype can be changed through the API, and a superuser can change its sha1, which
@@ -40,14 +43,20 @@ registry. Readers are owned by the packages that produce the files.
   `melizalab_specs.validate(document)` checks a document against the schema named
   in its `$schema`; it needs the `validate` extra. melizalab-tools should depend
   on `melizalab-specs[validate]` and drop its copies in `dlab/schemas/`.
-- **melizalab-tools master (unreleased):** the `spikes-pprox`, `spikes-hdf5` and
+- **melizalab-tools 2026.10.22:** the `spikes-pprox`, `spikes-hdf5` and
   `intracellular-abfzip` readers (`dlab/readers.py`); `abf-zip`
   (`dlab/abfzip.py`); `group-kilo-spikes` writing `experimenter`, `animal` and
-  `presenter`. Details in `readers-report.md`.
-- **Not built yet:** the `extracellular-arf` reader (arfx); the migration; the
-  `intracellular-abfzip` dtype in the registry (extension `zip`, content type
-  `application/vnd.meliza-org.abf+zip`; the registry's content types carry no
-  version).
+  `presenter`, and adding itself to the recording's `processed_by`. Details in
+  `readers-report.md`.
+- **arfx master (3.1.1, not yet tagged):** the `extracellular-arf` and `eeg-arf`
+  reader (`arfx/nbank.py`); `arfx-oephys --experimenter/--animal`, and the
+  stimulus presenter's metadata stored as entry attributes.
+- **Tested end to end** on P314_1_6 and P314_1_7 (2026-10-21): `arfx-oephys`,
+  deposit with the reader, `group-kilo-spikes`, deposit of the units.
+- **django-neurobank (production):** the `intracellular-abfzip` dtype (extension
+  `zip`, content type `application/vnd.meliza-org.abf+zip`; the registry's
+  content types carry no version).
+- **Not built yet:** the migration.
 
 ## Discovery
 
@@ -123,22 +132,23 @@ def read_metadata(path: pathlib.Path) -> dict[str, Any]: ...
 - **Validation:** an HDF5 file with the ARF root attributes, at least one entry,
   and in each entry the datasets `arfx-oephys` writes (continuous extracellular
   data with a sampling rate).
-- **Which attributes:** entries hold the user's `-k` attributes together with
+- **Which attributes:** entries hold the user's attributes together with
   attributes from the open-ephys structure and ARF's own (`timestamp`, `uuid`,
-  `entry_creator`). `arfx-oephys` records the names of the attributes that came
-  from `-k` (and from `--experimenter`/`--animal`, if added) in an entry
-  attribute, and the reader takes exactly those. Files written before that have
-  no such list; see the open questions.
+  `entry_creator`). `arfx-oephys` lists the names of the user's attributes in
+  `user_attributes`, and the reader takes exactly those, plus `entry_creator` as
+  `processed_by`. Legacy names are renamed (`bird` to `animal`, `experiment` to
+  `protocol`). Files written before the list existed are read for a fixed set of
+  known keys.
 - **Differences between entries:** the registry describes the file as a whole,
-  so an attribute is registered only if it has one value for the file. When
-  entries differ, some differences are acceptable (the attribute is left out) and
-  others mean the file is inconsistent (the reader raises `ValueError`); see the
-  open questions.
-- **Producer changes:** `arfx-oephys` records the names of the `-k` attributes in
-  each entry. Users write `animal` (a full colony UUID) and `experimenter` (a
-  username) instead of `bird`; ideally `arfx-oephys` gets
-  `--experimenter`/`--animal` options and checks the UUID form, to catch errors
-  when the file is made rather than when it's deposited.
+  so an attribute is registered only if it has one value for the file. Entries
+  that disagree about `experimenter` or `animal` make the reader raise
+  `ValueError`; any other attribute that varies is left out. `processed_by` joins
+  every version that wrote an entry.
+- **Producer:** the user's attributes come from `-k`, `--experimenter` and
+  `--animal` (which warns if it isn't a full UUID), and from the metadata the
+  stimulus presenter logged (pen, site, coordinates; not its animal, which is a
+  band name). A given value that differs from the logged one is an error unless
+  `--override-presenter-metadata`, as at deposit.
 
 ### `spikes-pprox` (melizalab-tools)
 
@@ -285,16 +295,6 @@ stored, neurobank refuses the file with a message naming the key.
 
 ## Open questions
 
-- [ ] **ARF differences between entries:** which are acceptable, so the attribute
-  is left out, and which make the file fail? For instance, entries with different
-  `experimenter` or `animal` values are probably an error, while some recording
-  parameters may legitimately vary. Decide while writing the reader.
-- [ ] **ARF files without the list of `-k` attributes** (written before the
-  `arfx-oephys` change): read nothing, use a fixed list of known keys, or
-  something else?
-- [ ] **Override:** deposit refuses on disagreement unless
-  `--override-file-metadata` (built). Keep that, or let the given values always
-  win, with a warning?
 - [ ] **The two abfdir resources without ABF files:** `6edc858d` (one .tif) and
   `f5bbaa66` (empty). The abfzip reader refuses both, and directory support is
   going, so each needs another form or deletion.
@@ -304,8 +304,14 @@ stored, neurobank refuses the file with a message naming the key.
 
 Decided:
 
-- [x] **ARF attributes:** `arfx-oephys` records which attributes came from `-k`,
-  and the reader takes exactly those.
+- [x] **ARF attributes:** `arfx-oephys` records which attributes came from the
+  user or the presenter, and the reader takes exactly those.
+- [x] **ARF differences between entries:** `experimenter` or `animal` differing
+  is an error; any other attribute that varies is left out.
+- [x] **ARF files without the list:** read a fixed set of known keys.
+- [x] **Override:** a disagreement is refused unless overridden, at deposit
+  (`--override-file-metadata`) and in `arfx-oephys`
+  (`--override-presenter-metadata`).
 - [x] **abfzip migration and the catalog:** a script in melizalab-tools, built
   with `abf-zip`'s builder; catalogs filled from the ABF headers and the epoch
   lists of earlier analyses. Reviewed by hand only where the two disagree, plus

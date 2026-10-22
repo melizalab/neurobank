@@ -360,6 +360,12 @@ def main(argv=None):
     )
     pp.set_defaults(func=verify_file_hash)
     pp.add_argument(
+        "--metadata",
+        action="store_true",
+        help="also read each file with its dtype's metadata reader and check what "
+        "it reads against the registry (--debug shows it)",
+    )
+    pp.add_argument(
         "files", nargs="+", type=Path, help="the files or directories to verify"
     )
 
@@ -1977,32 +1983,77 @@ def copy_resources(args):
 
 
 def verify_file_hash(args):
-    """Returns 1 if any file is missing or doesn't match a registry record."""
+    """Returns 1 if any file is missing or doesn't match a registry record, or
+    with --metadata, if its metadata doesn't match or can't be read."""
     from nbank.util import id_from_fname
 
     n_failed = 0
+    found_readers = {}
     for path in args.files:
         if not path.exists():
             print(f"{path}: no such file or directory")
             n_failed += 1
             continue
         # if the name isn't a registered id, look for the file's hash instead
+        matched = []
         try:
             test_id = id_from_fname(path)
             if core.verify(args.registry_url, path, id=test_id):
                 print(f"{path}: OK")
+                if args.metadata:
+                    matched.append(core.describe(args.registry_url, test_id))
             else:
                 print(f"{path}: FAILED to match record for {test_id}")
                 n_failed += 1
         except ValueError:
-            i = 0
             for resource in core.verify(args.registry_url, path):
                 print(f"{path}: matches registry resource {resource['name']}")
-                i += 1
-            if i == 0:
+                matched.append(resource)
+            if not matched:
                 print(f"{path}: no matches in registry")
                 n_failed += 1
+        if args.metadata:
+            for record in matched:
+                if not check_file_metadata(path, record, found_readers):
+                    n_failed += 1
     return 1 if n_failed else None
+
+
+def check_file_metadata(path: Path, record: dict, found_readers: dict) -> bool:
+    """Prints whether the metadata that the reader for record's dtype reads from
+    path matches the record. Returns False if it doesn't, or can't be read.
+    found_readers caches the reader for each dtype."""
+    dtype = record.get("dtype")
+    if dtype is None:
+        print(f"{path}: no dtype registered; metadata not checked")
+        return True
+    if dtype not in found_readers:
+        try:
+            found_readers[dtype] = readers.find_reader(dtype)
+        except RuntimeError as err:
+            found_readers[dtype] = err
+    reader = found_readers[dtype]
+    if isinstance(reader, RuntimeError):
+        print(f"{path}: metadata FAILED: {reader}")
+        return False
+    if reader is None:
+        print(f"{path}: no metadata reader for {dtype}; metadata not checked")
+        return True
+    try:
+        from_file = readers.read_file_metadata(reader, dtype, path)
+    except ValueError as err:
+        print(f"{path}: metadata FAILED: {err}")
+        return False
+    log.debug("   from the file: %s", from_file)
+    conflicts = readers.compare_metadata(from_file, readers.registered_metadata(record))
+    if conflicts:
+        print(
+            f"{path}: metadata FAILED to match record for {record['name']} "
+            f"({'; '.join(conflicts)})"
+        )
+        return False
+    print(f"{path}: metadata OK")
+    return True
 
 
 # Variables:

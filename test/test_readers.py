@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from nbank import archive, core, readers, script
-from test.test_nbank import archive_name, auth, auth_enc
+from nbank import archive, core, readers, registry, script, util
+from test.test_nbank import archive_name, auth, auth_enc, run_main
 from test.test_registry import archives_url, base_url, datatypes_url, resource_url
 
 DTYPE = "fake-json"
@@ -401,3 +401,120 @@ def test_dry_run_doesnt_read_a_directory(install, archive_routes, tmp_path):
     (src / "data").write_text("x")
     [item] = deposit(archive_routes, src, zip_directories=True, dry_run=True)
     assert item["zipped"] and "error" not in item
+
+
+# comparing with the registry
+
+
+def test_registered_metadata_takes_core_fields_from_the_record():
+    record = {
+        "metadata": {"pen": 1, "animal": "old copy"},
+        "experimenter": "dmeliza",
+        "animal": "P50",
+    }
+    assert readers.registered_metadata(record) == {
+        "pen": 1,
+        "experimenter": "dmeliza",
+        "animal": "P50",
+    }
+
+
+def test_compare_ignores_keys_in_only_one():
+    assert readers.compare_metadata({"pen": 1}, {"site": 2}) == []
+
+
+def test_compare_values_as_the_registry_stores_them():
+    assert readers.compare_metadata({"sites": (1, 2)}, {"sites": [1, 2]}) == []
+
+
+@pytest.mark.parametrize(
+    "from_file,registered",
+    [({"pen": 1}, {"pen": 2}), ({"pen": True}, {"pen": 1}), ({"pen": "1"}, {"pen": 1})],
+)
+def test_compare_finds_different_values(from_file, registered):
+    [conflict] = readers.compare_metadata(from_file, registered)
+    assert conflict.startswith("pen: ") and "registered" in conflict
+
+
+# nbank verify --metadata
+
+
+def route_record(mocked_api, path, metadata, **fields):
+    record = {
+        "name": util.id_from_fname(path),
+        "sha1": util.hash(path),
+        "dtype": DTYPE,
+        "metadata": metadata,
+        "experimenter": None,
+        "animal": None,
+        **fields,
+    }
+    mocked_api.get(registry.full_url(base_url, record["name"])).respond(json=record)
+    return record
+
+
+def test_verify_metadata_matches(install, mocked_api, make_file, capsys):
+    install(FakeEntryPoint(DTYPE, fake_reader))
+    path = make_file("res_1.json", {"pen": 1, "animal": "P50"})
+    route_record(mocked_api, path, {"pen": 1, "site": 2}, animal="P50")
+    assert run_main("verify", "--metadata", str(path)) is None
+    assert capsys.readouterr().out == f"{path}: OK\n{path}: metadata OK\n"
+
+
+def test_verify_metadata_mismatch(install, mocked_api, make_file, capsys):
+    install(FakeEntryPoint(DTYPE, fake_reader))
+    path = make_file("res_1.json", {"pen": 1})
+    route_record(mocked_api, path, {"pen": 2})
+    assert run_main("verify", "--metadata", str(path)) == 1
+    out = capsys.readouterr().out
+    assert "metadata FAILED to match record for res_1 (pen: 1 in the file, 2" in out
+
+
+def test_verify_metadata_shows_file_metadata_with_debug(
+    install, mocked_api, make_file, caplog
+):
+    install(FakeEntryPoint(DTYPE, fake_reader))
+    path = make_file("res_1.json", {"pen": 1})
+    route_record(mocked_api, path, {"pen": 1})
+    assert run_main("--debug", "verify", "--metadata", str(path)) is None
+    assert "from the file: {'pen': 1}" in caplog.text
+
+
+def test_verify_metadata_reader_rejects_file(install, mocked_api, make_file, capsys):
+    install(FakeEntryPoint(DTYPE, fake_reader))
+    path = make_file("res_1.json", schema="other")
+    route_record(mocked_api, path, {})
+    assert run_main("verify", "--metadata", str(path)) == 1
+    assert (
+        f"{path}: metadata FAILED: not a valid {DTYPE} file" in capsys.readouterr().out
+    )
+
+
+def test_verify_metadata_without_a_reader(install, mocked_api, make_file, capsys):
+    path = make_file("res_1.json", {"pen": 1})
+    route_record(mocked_api, path, {"pen": 2})
+    assert run_main("verify", "--metadata", str(path)) is None
+    assert f"no metadata reader for {DTYPE}; metadata not checked" in (
+        capsys.readouterr().out
+    )
+
+
+def test_verify_metadata_by_hash(install, mocked_api, make_file, capsys):
+    install(FakeEntryPoint(DTYPE, fake_reader))
+    path = make_file("not an id.json", {"pen": 1})
+    record = {"name": "res_1", "dtype": DTYPE, "metadata": {"pen": 2}}
+    mocked_api.get(resource_url, params={"sha1": util.hash(path)}).respond(
+        json=[record]
+    )
+    assert run_main("verify", "--metadata", str(path)) == 1
+    assert "metadata FAILED to match record for res_1" in capsys.readouterr().out
+
+
+def test_verify_without_metadata_doesnt_read(install, mocked_api, make_file):
+    def reader(path):
+        raise AssertionError("the reader must not be called without --metadata")
+
+    install(FakeEntryPoint(DTYPE, reader))
+    path = make_file("res_1.json", {"pen": 1})
+    route_record(mocked_api, path, {"pen": 2})
+    assert run_main("verify", str(path)) is None

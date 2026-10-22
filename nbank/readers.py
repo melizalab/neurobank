@@ -14,6 +14,8 @@ from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any
 
+from nbank.registry import core_fields
+
 log = logging.getLogger("nbank")
 
 ENTRY_POINT_GROUP = "nbank.metadata_readers"
@@ -139,6 +141,31 @@ def merge_metadata(
             from_file[key],
         )
     return {**from_file, **given}
+
+
+def registered_metadata(record: dict[str, Any]) -> dict[str, Any]:
+    """The metadata of a registry record, with its core fields (experimenter,
+    animal) as keys, as a reader returns them."""
+    metadata = dict(record.get("metadata") or {})
+    for field in core_fields:
+        if record.get(field) is not None:
+            metadata[field] = record[field]
+    return metadata
+
+
+def compare_metadata(
+    from_file: dict[str, Any], registered: dict[str, Any]
+) -> list[str]:
+    """Describes each key whose value read from a file differs from the
+    registry's. Keys in only one of them aren't compared."""
+    out = []
+    for key in sorted(from_file.keys() & registered.keys()):
+        # compare the file's value as the registry would store it (e.g. a tuple
+        # as a list)
+        value = json.loads(json.dumps(from_file[key]))
+        if not same_value(value, registered[key]):
+            out.append(f"{key}: {value!r} in the file, {registered[key]!r} registered")
+    return out
 
 
 def same_value(a, b) -> bool:
