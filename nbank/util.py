@@ -8,13 +8,14 @@ Created Tue Jul  8 14:23:35 2014
 import json
 import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path, PurePath, PurePosixPath
 from typing import Any, BinaryIO
 
 from httpx import Client
 
 # imported so that their resource classes register their location schemes
-from nbank import archive, tape_archive  # noqa: F401
+from nbank import archive, registry, tape_archive  # noqa: F401
 from nbank.types import (
     FetchableResource,
     NotFetchableError,
@@ -27,6 +28,48 @@ log = logging.getLogger("nbank")  # root logger
 
 # names per request to the registry's bulk endpoints
 bulk_batch_size = 500
+
+# the registry API version this client asks for in every request
+API_VERSION = "2.0"
+# registries whose API version has been checked in this process
+_checked_registries: set[str] = set()
+
+
+class RegistryVersionError(RuntimeError):
+    """The registry doesn't support the API version this client needs."""
+
+
+@contextmanager
+def registry_session(registry_url: str | None = None, *, auth=None) -> Iterator[Client]:
+    """Yields an HTTP client that asks for API_VERSION in every request.
+
+    If registry_url is given, first checks that the registry supports it (see
+    check_registry_version).
+    """
+    headers = {"Accept": f"application/json; version={API_VERSION}"}
+    with Client(auth=auth, headers=headers) as session:
+        if registry_url is not None:
+            check_registry_version(session, registry_url)
+        yield session
+
+
+def check_registry_version(session: Client, registry_url: str) -> None:
+    """Raises RegistryVersionError if the registry at registry_url doesn't
+    report an API with API_VERSION's major version. Each registry is checked once
+    per process.
+    """
+    url, params = registry.get_info(registry_url)
+    if url in _checked_registries:
+        return
+    info = query_registry(session, url, params)
+    version = (info or {}).get("api_version")
+    if version is None or version.split(".")[0] != API_VERSION.split(".")[0]:
+        major = API_VERSION.split(".")[0]
+        raise RegistryVersionError(
+            f"the registry at {registry_url} has API version {version or 'unknown'}; "
+            f"this version of neurobank needs API {major}.x"
+        )
+    _checked_registries.add(url)
 
 
 @location_scheme
@@ -229,12 +272,7 @@ def query_registry(
     auth: str | None = None,
 ) -> dict | None:
     """Perform a GET request to url with params. Returns None for 404 HTTP errors"""
-    r = session.get(
-        url,
-        params=params,
-        headers={"Accept": "application/json"},
-        auth=auth,
-    )
+    r = session.get(url, params=params, auth=auth)
     if r.status_code == 404:
         return None
     r.raise_for_status()
@@ -245,14 +283,14 @@ def query_registry_paginated(
     session: Client, url: str, params: Mapping[str, Any] | None = None
 ) -> Iterator[dict]:
     """Perform GET request(s) to yield records from a paginated endpoint"""
-    r = session.get(url, params=params, headers={"Accept": "application/json"})
+    r = session.get(url, params=params)
     r.raise_for_status()
     for d in r.json():
         yield d
     while "next" in r.links:
         url = r.links["next"]["url"]
         # parameters are already part of the URL
-        r = session.get(url, headers={"Accept": "application/json"})
+        r = session.get(url)
         r.raise_for_status()
         for d in r.json():
             yield d
@@ -328,8 +366,10 @@ class JSONEncoder(json.JSONEncoder):
 
 
 __all__ = [
+    "RegistryVersionError",
     "parse_location",
     "query_registry",
     "query_registry_bulk",
     "query_registry_paginated",
+    "registry_session",
 ]

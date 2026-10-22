@@ -121,8 +121,7 @@ def deposit(
     auto_id = archive_cfg["policy"]["auto_identifiers"] or auto_id
     auto_id_type = archive_cfg["policy"].get("auto_id_type", None)
 
-    with httpx.Client() as session:
-        session.auth = make_auth(auth)
+    with util.registry_session(registry_url, auth=make_auth(auth)) as session:
         # check that archive exists for this path
         url, params = find_archive_by_path(registry_url, archive_path)
         try:
@@ -260,30 +259,30 @@ def deposit(
 def search(registry_url: str, /, **params) -> Iterator[dict]:
     """Yields the registry records that match the query params."""
     from nbank.registry import find_resource
-    from nbank.util import query_registry_paginated
+    from nbank.util import query_registry_paginated, registry_session
 
     url, _ = find_resource(registry_url)
-    with httpx.Client() as session:
+    with registry_session(registry_url) as session:
         yield from query_registry_paginated(session, url, params)
 
 
 def describe(registry_url: str, id: str) -> dict | None:
     """Returns the registry record for id, or None if it isn't registered."""
     from nbank.registry import get_resource
-    from nbank.util import query_registry
+    from nbank.util import query_registry, registry_session
 
     url, params = get_resource(registry_url, id)
-    with httpx.Client() as session:
+    with registry_session(registry_url) as session:
         return query_registry(session, url, params)
 
 
 def describe_many(registry_url: str, *ids: str) -> Iterator[dict]:
     """Yields the registry record of each resource in ids that's registered."""
     from nbank.registry import get_resource_bulk
-    from nbank.util import query_registry_bulk
+    from nbank.util import query_registry_bulk, registry_session
 
     url, query = get_resource_bulk(registry_url, ids)
-    with httpx.Client() as session:
+    with registry_session(registry_url) as session:
         yield from query_registry_bulk(session, url, query)
 
 
@@ -301,10 +300,14 @@ def find(
     """
     # TODO: consider a more transparent readout for unreachable/nonexistent conditions
     from nbank.registry import get_locations
-    from nbank.util import parse_location, query_registry_paginated
+    from nbank.util import (
+        parse_location,
+        query_registry_paginated,
+        registry_session,
+    )
 
     url, params = get_locations(registry_url, id)
-    with httpx.Client() as session:
+    with registry_session(registry_url) as session:
         for loc in query_registry_paginated(session, url, params):
             yield parse_location(loc, alt_base=alt_base, http_session=session)
 
@@ -364,9 +367,9 @@ def update(
     registry yields {"name": id, "error": "not found"}.
     """
     from nbank.registry import update_resource_metadata
+    from nbank.util import registry_session
 
-    with httpx.Client(headers={"Accept": "application/json"}) as session:
-        session.auth = make_auth(auth)
+    with registry_session(base_url, auth=make_auth(auth)) as session:
         for id in ids:
             url, params = update_resource_metadata(base_url, id, **metadata)
             r = session.patch(url, json=params)

@@ -159,15 +159,6 @@ def test_supersede_dry_run(caplog):
     assert "would send" in caplog.text
 
 
-def test_supersede_needs_a_registry_that_supports_it(caplog):
-    with respx.mock(assert_all_called=False) as mock:
-        mock.get(f"{resource_url}res_1/").respond(json={"name": "res_1"})
-        patch = mock.patch(f"{resource_url}res_1/").respond(json={})
-        admin.supersede_resources(supersede_args("res_1", by="res_2"))
-    assert not patch.called
-    assert "needs API 1.3" in caplog.text
-
-
 def test_supersede_continues_past_errors(caplog):
     with respx.mock() as mock:
         mock.get(f"{resource_url}res_1/").respond(404)

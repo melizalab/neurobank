@@ -1,15 +1,14 @@
 # -*- mode: python -*-
 """Tests of finding and copying resources for transfer, against a live registry."""
 
-import httpx
 import pytest
 
 from nbank import archive as nbank_archive
-from nbank import core, transfer
+from nbank import core, transfer, util
 
 
 def find(registry, ids, **kwargs):
-    with httpx.Client(auth=registry.auth) as session:
+    with util.registry_session(registry.url, auth=registry.auth) as session:
         return list(transfer.find_sources(session, registry.url, ids, **kwargs))
 
 
@@ -73,7 +72,7 @@ def test_receive_and_add_location(
             core.describe(registry.url, dir_id)["sha1"],
         )
     assert received_dir.verified
-    with httpx.Client(auth=registry.auth) as session:
+    with util.registry_session(registry.url, auth=registry.auth) as session:
         for id, stored in ((file_id, received), (dir_id, received_dir)):
             transfer.add_location(session, registry.url, id, dest.name, stored.path)
     for id in (file_id, dir_id):
@@ -87,7 +86,7 @@ def test_add_location_refused(registry, archive, register, unique):
     name = register()["name"]
     received = transfer.receive_file(archive.config, name, "f", io.BytesIO(b"x"), None)
     with (
-        httpx.Client(auth=registry.auth) as session,
+        util.registry_session(registry.url, auth=registry.auth) as session,
         pytest.raises(transfer.TransferError, match="refused"),
     ):
         transfer.add_location(

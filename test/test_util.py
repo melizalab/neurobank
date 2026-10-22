@@ -405,3 +405,54 @@ def test_fetch_error_body_is_readable(mocked_api, tmp_path):
         resource.fetch(p)
     assert err.value.response.json() == body
     assert not p.exists()
+
+
+@pytest.fixture
+def unchecked(monkeypatch):
+    """Checks registry versions, as outside tests."""
+    monkeypatch.setattr(util, "_checked_registries", set())
+
+
+registry_url = "https://meliza.org/neurobank/"
+info_url = f"{registry_url}info/"
+
+
+def test_registry_session_asks_for_the_api_version(mocked_api):
+    route = mocked_api.get(f"{registry_url}resources/").respond(200, json=[])
+    with util.registry_session() as session:
+        list(util.query_registry_paginated(session, f"{registry_url}resources/"))
+    assert route.calls.last.request.headers["Accept"] == (
+        f"application/json; version={util.API_VERSION}"
+    )
+
+
+def test_registry_version_is_checked_once(mocked_api, unchecked):
+    route = mocked_api.get(info_url).respond(200, json={"api_version": "2.1"})
+    for _ in range(2):
+        with util.registry_session(registry_url):
+            pass
+    assert route.call_count == 1
+
+
+@pytest.mark.parametrize("info", [{"api_version": "1.3"}, {"name": "something"}])
+def test_other_registry_versions_are_refused(mocked_api, unchecked, info):
+    mocked_api.get(info_url).respond(200, json=info)
+    with pytest.raises(util.RegistryVersionError, match=r"needs API 2\.x"):
+        with util.registry_session(registry_url):
+            pass
+
+
+def test_cli_reports_a_registry_version_it_cant_use(mocked_api, unchecked, caplog):
+    from nbank import script
+
+    mocked_api.get(info_url).respond(200, json={"api_version": "1.3"})
+    assert script.main(["-r", registry_url, "search", "-n", "res_1"]) == 1
+    assert "has API version 1.3" in caplog.text
+
+
+def test_registry_info_shows_a_registry_it_cant_use(mocked_api, unchecked, caplog):
+    from nbank import script
+
+    mocked_api.get(info_url).respond(200, json={"api_version": "1.3"})
+    assert script.main(["-r", registry_url, "registry-info"]) is None
+    assert "api_version: 1.3" in caplog.text

@@ -77,7 +77,8 @@ filesystem (which could be an NFS or SSHFS mount).
 
 ``registry-url`` specifies the registry to use, which can be any service
 that implements the API defined in
-`django-neurobank <https://github.com/melizalab/django-neurobank>`__.
+`django-neurobank <https://github.com/melizalab/django-neurobank>`__
+(version 1.0 or later, which has API 2.x).
 If not supplied, the script will try to use the value of the
 environment variable ``NBANK_REGISTRY``. The registry URL also
 determines the domain for the resource identifiers. For example, if

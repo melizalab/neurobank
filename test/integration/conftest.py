@@ -95,6 +95,12 @@ def wait_for_server(url: str, proc: subprocess.Popen, log: Path) -> None:
     pytest.fail(f"registry server did not start:\n{log.read_text()}")
 
 
+@pytest.fixture(autouse=True)
+def registry_version_checked():
+    """Checks the live registry's API version, overriding the mocked suite's
+    fixture of the same name."""
+
+
 @pytest.fixture(scope="session")
 def registry(tmp_path_factory):
     """Base URL and credentials of a registry that tests can write to."""
@@ -180,7 +186,7 @@ def unique():
 @pytest.fixture
 def client(registry):
     """An HTTP client that is authenticated to the registry."""
-    with httpx.Client(auth=registry.auth) as session:
+    with util.registry_session(registry.url, auth=registry.auth) as session:
         yield session
 
 

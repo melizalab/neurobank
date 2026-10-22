@@ -647,6 +647,8 @@ def main(argv=None):
         return args.func(args)
     except httpx.RequestError:
         log.error("registry error: unable to contact server")
+    except util.RegistryVersionError as err:
+        log.error("error: %s", err)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 403:
             log.error(
@@ -666,7 +668,10 @@ def registry_info(args):
     log.info("registry info:")
     log.info("  - address: %s", args.registry_url)
     url, params = registry.get_info(args.registry_url)
-    for k, v in util.query_registry(httpx, url, params, auth=args.auth).items():
+    # no version check, so this shows any registry's API version
+    with util.registry_session(auth=args.auth) as session:
+        info = util.query_registry(session, url, params)
+    for k, v in info.items():
         log.info("  - %s: %s", k, v)
 
 
@@ -696,7 +701,8 @@ def init_archive(args):
         args.directory,
     )
     try:
-        r = httpx.post(url, json=params, auth=args.auth)
+        with util.registry_session(args.registry_url, auth=args.auth) as session:
+            r = session.post(url, json=params)
         r.raise_for_status()
     except httpx.HTTPStatusError as e:
         registry.log_error(e)
@@ -748,7 +754,7 @@ def locate_resources(args):
     """Returns 1 if any id can't be resolved to a location reachable from this host."""
     # This subcommand can handle IDs or full neurobank URLs
     n_failed = 0
-    with httpx.Client() as session:
+    with util.registry_session() as session:
         for id in args.id:
             try:
                 base, id = registry.parse_resource_url(id)
@@ -758,6 +764,7 @@ def locate_resources(args):
                 print(f"{id:<20} [no registry to resolve short identifier]")
                 n_failed += 1
                 continue
+            util.check_registry_version(session, base)
             url, params = registry.get_locations(base, id)
             found = False
             try:
@@ -874,8 +881,10 @@ def fetch_resources(args):
     dest = args.dest or Path()
     to_fetch = set(args.ids)
     url, query = registry.get_locations_bulk(args.registry_url, to_fetch)
-    with httpx.Client() as session, concurrent.futures.ThreadPoolExecutor() as executor:
-        session.auth = core.make_auth(args.auth)
+    with (
+        util.registry_session(args.registry_url, auth=args.auth) as session,
+        concurrent.futures.ThreadPoolExecutor() as executor,
+    ):
         response = tuple(util.query_registry_bulk(session, url, query))
         to_fetch -= {resource["name"] for resource in response}
         future_to_name = {
@@ -904,7 +913,9 @@ def fetch_resources(args):
 def list_datatypes(args):
     url, params = registry.get_datatypes(args.registry_url)
     installed = readers.installed_readers()
-    for dtype in util.query_registry_paginated(httpx, url, params):
+    with util.registry_session(args.registry_url) as session:
+        dtypes = list(util.query_registry_paginated(session, url, params))
+    for dtype in dtypes:
         line = f"{dtype['name']:<25}\t({dtype['content_type']})"
         if dtype["name"] in installed:
             line += f"\treader: {installed[dtype['name']]}"
@@ -915,7 +926,8 @@ def add_datatype(args):
     url, params = registry.add_datatype(
         args.registry_url, args.dtype_name, args.content_type
     )
-    resp = httpx.post(url, json=params, auth=args.auth)
+    with util.registry_session(args.registry_url, auth=args.auth) as session:
+        resp = session.post(url, json=params)
     resp.raise_for_status()
     data = resp.json()
     log.info(f"added datatype {data['name']} (content-type: {data['content_type']})")
@@ -933,7 +945,9 @@ def list_archives(args):
         if getattr(args, argname) is not None
     }
     url, params = registry.get_archives(args.registry_url, **params)
-    for arch in util.query_registry_paginated(httpx, url, params):
+    with util.registry_session(args.registry_url) as session:
+        archives = list(util.query_registry_paginated(session, url, params))
+    for arch in archives:
         if arch["scheme"] == "neurobank":
             print(f"{arch['name']:<25}\t{arch['root']}")
         else:
@@ -959,7 +973,7 @@ def check_archive(args):
     log.info("archive: %s", archive_path)
     registry_url = archive_cfg["registry"]
     log.info("registry: %s", registry_url)
-    with httpx.Client(auth=args.auth) as session:
+    with util.registry_session(registry_url, auth=args.auth) as session:
         # check that archive exists for this path
         url, params = registry.find_archive_by_path(registry_url, archive_path)
         archive_info = util.query_registry_first(session, url, params)
@@ -1171,7 +1185,7 @@ def check_registry(args):
     otherwise.
     """
     log.info("registry: %s", args.registry_url)
-    with httpx.Client(auth=args.auth) as session:
+    with util.registry_session(args.registry_url, auth=args.auth) as session:
         ok = _check_registry(session, args.registry_url)
     return 0 if ok else 1
 
@@ -1203,7 +1217,7 @@ def check_all(args):
     log.info("registry: %s", registry_url)
     failed = []
     skipped = []
-    with httpx.Client(auth=args.auth) as session:
+    with util.registry_session(registry_url, auth=args.auth) as session:
         if not _check_registry(session, registry_url):
             failed.append("(registry)")
         url, params = registry.get_archives(registry_url)
@@ -1268,7 +1282,10 @@ def register_tar(args):
         root=archive_root,
         accessibility="offline",
     )
-    with httpx.Client(auth=args.auth) as session, tarfile.open(args.tar) as tarf:
+    with (
+        util.registry_session(args.registry_url, auth=args.auth) as session,
+        tarfile.open(args.tar) as tarf,
+    ):
         log.info(
             "- creating '%s' archive in the registry with root '%s'",
             archive_name,
@@ -1341,7 +1358,10 @@ def prune_archive(args):
     if args.dry_run:
         log.info("DRY RUN")
     log.info("registry: %s", args.registry_url)
-    with open(args.resources) as fp, httpx.Client(auth=args.auth) as session:
+    with (
+        open(args.resources) as fp,
+        util.registry_session(args.registry_url, auth=args.auth) as session,
+    ):
         # check that the archive is on the local machine
         url, _ = registry.get_archive(args.registry_url, args.archive_name)
         result = util.query_registry(session, url)
@@ -1537,7 +1557,7 @@ def check_tar(args):
     read_error = False
     seen = set()
     not_located = []
-    with httpx.Client(auth=args.auth) as session:
+    with util.registry_session(args.registry_url, auth=args.auth) as session:
         expected = {}
         if args.archive is not None:
             url, _ = registry.get_archive(args.registry_url, args.archive)
@@ -1653,7 +1673,7 @@ def import_tar(args):
     registry_url = args.registry_url or archive_cfg["registry"]
     archive_path = archive_cfg["path"]  # this will resolve the path
     log.info("registry: %s", registry_url)
-    with httpx.Client(auth=args.auth) as session:
+    with util.registry_session(registry_url, auth=args.auth) as session:
         url, params = registry.find_archive_by_path(registry_url, archive_path)
         archive_info = util.query_registry_first(session, url, params)
         if archive_info is None:
@@ -1757,7 +1777,7 @@ def _manifest_records(args, sources) -> dict | None:
         return None
     ids = [source.id for source in sources]
     records = {}
-    with httpx.Client(auth=args.auth) as session:
+    with util.registry_session(args.registry_url, auth=args.auth) as session:
         for i in range(0, len(ids), util.bulk_batch_size):
             url, query = registry.get_resource_bulk(
                 args.registry_url, ids[i : i + util.bulk_batch_size]
@@ -1793,7 +1813,7 @@ def export_resources(args):
         return 1
     log.info("registry: %s", args.registry_url)
     n_failed = n_written = total = 0
-    with httpx.Client(auth=args.auth) as session:
+    with util.registry_session(args.registry_url, auth=args.auth) as session:
         sources = list(
             transfer.find_sources(session, args.registry_url, ids, archive=args.archive)
         )
@@ -1909,7 +1929,7 @@ def copy_resources(args):
     archive_path = archive_cfg["path"]
     log.info("registry: %s", registry_url)
     n_failed = n_copied = total = 0
-    with httpx.Client(auth=args.auth) as session:
+    with util.registry_session(registry_url, auth=args.auth) as session:
         url, params = registry.find_archive_by_path(registry_url, archive_path)
         archive_info = util.query_registry_first(session, url, params)
         if archive_info is None:

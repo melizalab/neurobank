@@ -4,7 +4,7 @@ import stat
 import pytest
 import respx
 
-from nbank import archive, transfer
+from nbank import archive, transfer, util
 from test.test_registry import base_url
 
 
@@ -20,6 +20,18 @@ def writable_tmp_dirs(tmp_path_factory):
     for path in [base, *base.rglob("*")]:
         if path.is_dir() and not path.is_symlink():
             path.chmod(stat.S_IMODE(path.stat().st_mode) | stat.S_IRWXU)
+
+
+class _AllRegistries(set):
+    def __contains__(self, item):
+        return True
+
+
+@pytest.fixture(autouse=True)
+def registry_version_checked(monkeypatch):
+    """Treats every registry's API version as checked, so tests mock only the
+    requests they're about. Tests of the check replace it with an empty set."""
+    monkeypatch.setattr(util, "_checked_registries", _AllRegistries())
 
 
 @pytest.fixture

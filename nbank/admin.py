@@ -77,7 +77,7 @@ def delete_resources(args):
     with (
         open(args.resources) as fp,
         record_ctx as record_fp,
-        httpx.Client(auth=args.auth) as session,
+        util.registry_session(args.registry_url, auth=args.auth) as session,
     ):
         for line in fp:
             resource_id = line.strip()
@@ -109,7 +109,7 @@ def update_hashes(args):
                 to_update.append(resource_id)
     n_to_update = len(to_update)
     url, query = registry.get_locations_bulk(args.registry_url, to_update)
-    with httpx.Client(auth=args.auth) as session:
+    with util.registry_session(args.registry_url, auth=args.auth) as session:
         resources = util.query_registry_bulk(session, url, query)
         for i, resource in enumerate(resources, start=1):
             log.info(
@@ -158,8 +158,7 @@ def supersede_resource(
     unmark it if clear. A resource that's already marked keeps the time it was
     marked, and only the details given change.
 
-    Raises ValueError if clear is given with by or note, and RuntimeError if the
-    registry doesn't support superseded resources (API 1.3).
+    Raises ValueError if clear is given with by or note.
     """
     if clear and (by is not None or note is not None):
         raise ValueError("clearing removes the replacement and note; don't give them")
@@ -168,11 +167,6 @@ def supersede_resource(
     r = session.get(url)
     r.raise_for_status()
     record = r.json()
-    # a registry that doesn't know the fields would ignore them
-    if "superseded_on" not in record:
-        raise RuntimeError(
-            "the registry doesn't support superseded resources (needs API 1.3)"
-        )
     if clear:
         data = {"superseded_on": None}
     else:
@@ -206,7 +200,7 @@ def supersede_resource(
 def supersede_resources(args):
     if args.dry_run:
         log.info("DRY RUN")
-    with httpx.Client(auth=args.auth) as session:
+    with util.registry_session(args.registry_url, auth=args.auth) as session:
         for resource_id in args.ids:
             try:
                 supersede_resource(
@@ -223,7 +217,7 @@ def supersede_resources(args):
                     log.error("  - not in the registry, skipping")
                 else:
                     registry.log_error(err)
-            except (ValueError, RuntimeError) as err:
+            except ValueError as err:
                 log.error("  - error: %s", err)
                 return
 
@@ -326,4 +320,8 @@ if __name__ == "__main__":
     except NetrcParseError as err:
         log.error("error: unable to use netrc file: %s", err.msg)
         raise SystemExit(1) from err
-    args.func(args)
+    try:
+        args.func(args)
+    except util.RegistryVersionError as err:
+        log.error("error: %s", err)
+        raise SystemExit(1) from err

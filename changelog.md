@@ -1,3 +1,23 @@
+## 1.0.0 (unreleased)
+
+Requires django-neurobank 1.0 (registry API 2.x).
+
+### Breaking
+
+- Every request asks for registry API 2.0 (`Accept: application/json;
+  version=2.0`), and nbank checks once per registry that `info/` reports API
+  2.x, raising `nbank.util.RegistryVersionError` (an error message in the CLI)
+  if it doesn't. `nbank registry-info` skips the check, so it can show any
+  registry's version.
+- `nbank.util.registry_session()` yields an HTTP client for the registry that
+  asks for API 2.0 and checks the registry's version. Code that changes the
+  registry with its own client gets a 400 from it; the `query_registry`
+  functions still work with any client, as reads need no version.
+
+### New
+
+- `nbank.admin supersede` marks resources as superseded, or not to be used.
+
 ## 0.13.0
 
 This is a transitional release implementing the machinery to migrate
