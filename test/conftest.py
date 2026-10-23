@@ -1,6 +1,8 @@
 # -*- mode: python -*-
+import json
 import stat
 
+import httpx
 import pytest
 import respx
 
@@ -44,6 +46,21 @@ def tmp_archive(tmp_path):
 def mocked_api():
     with respx.mock(assert_all_called=True, assert_all_mocked=True) as respx_mock:
         yield respx_mock
+
+
+@pytest.fixture
+def registry_checks(mocked_api):
+    """Returns a function that mocks the registry's check endpoint, accepting
+    every resource, and returns the route."""
+
+    def accept():
+        route = mocked_api.post(f"{base_url}check/resources/")
+        route.side_effect = lambda request: httpx.Response(
+            200, json=[{} for _ in json.loads(request.content)]
+        )
+        return route
+
+    return accept
 
 
 @pytest.fixture

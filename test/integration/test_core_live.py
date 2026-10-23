@@ -134,6 +134,42 @@ def test_deposit_dry_run(registry, archive, dtype, tmp_path, unique):
     assert not nbank_archive.resource_path(archive.config, name).exists()
 
 
+def test_deposit_dry_run_asks_the_registry(
+    registry, make_archive, dtype, register, tmp_path, unique
+):
+    archive = make_archive(require_hash=True)
+    taken = register()["name"]
+    names = [taken, unique("res"), unique("res"), unique("res"), unique("res")]
+    files = [write_file(tmp_path / f"{name}.txt", name) for name in names]
+    # the same contents as the file before it
+    files[2].write_text(names[1])
+    items = list(
+        core.deposit(
+            archive.path,
+            files[:4],
+            dtype=dtype,
+            auth=registry.auth,
+            dry_run=True,
+            skip_errors=True,
+        )
+    )
+    assert "name" in items[0]["error"]
+    assert items[1]["id"] == names[1]
+    assert "the same as resource 1 in this request" in items[2]["error"]
+    assert items[3]["id"] == names[3]
+    [refused] = core.deposit(
+        archive.path,
+        files[4:],
+        dtype=dtype,
+        auth=registry.auth,
+        dry_run=True,
+        skip_errors=True,
+        metadata={"experimenter": "no-such-user"},
+    )
+    assert "experimenter" in refused["error"]
+    assert all(core.describe(registry.url, name) is None for name in names[1:])
+
+
 def test_deposit_without_hash(registry, archive, dtype, tmp_path, unique):
     src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
     name = deposit_one(registry, archive, dtype, src)

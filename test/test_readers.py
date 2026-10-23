@@ -298,7 +298,10 @@ def test_deposit_override(install, mocked_api, archive_routes, make_file):
     assert items == [{"source": src, "id": "res_1"}]
 
 
-def test_deposit_dry_run_shows_merged_metadata(install, archive_routes, make_file):
+def test_deposit_dry_run_shows_merged_metadata(
+    install, archive_routes, make_file, registry_checks
+):
+    registry_checks()
     install(FakeEntryPoint(DTYPE, fake_reader))
     src = make_file("res_1", {"pen": 1})
     [item] = deposit(archive_routes, src, metadata={"site": 2}, dry_run=True)
@@ -308,9 +311,12 @@ def test_deposit_dry_run_shows_merged_metadata(install, archive_routes, make_fil
     ).exists()
 
 
-def test_deposit_logs_file_metadata(install, archive_routes, make_file, caplog):
+def test_deposit_logs_file_metadata(
+    install, archive_routes, make_file, caplog, registry_checks
+):
     """In debug mode, what the reader returned is shown apart from the merged
     metadata."""
+    registry_checks()
     install(FakeEntryPoint(DTYPE, fake_reader))
     src = make_file("res_1", {"pen": 1})
     with caplog.at_level("DEBUG", logger="nbank"):
@@ -318,7 +324,11 @@ def test_deposit_logs_file_metadata(install, archive_routes, make_file, caplog):
     assert "from the file: {'pen': 1}" in caplog.text
 
 
-def test_deposit_without_reading_metadata(install, archive_routes, make_file):
+def test_deposit_without_reading_metadata(
+    install, archive_routes, make_file, registry_checks
+):
+    registry_checks()
+
     def reader(path):
         raise AssertionError("the reader must not be called")
 
@@ -330,15 +340,17 @@ def test_deposit_without_reading_metadata(install, archive_routes, make_file):
     assert item["metadata"] == {"site": 2}
 
 
-def test_deposit_without_a_reader(install, archive_routes, make_file):
+def test_deposit_without_a_reader(install, archive_routes, make_file, registry_checks):
+    registry_checks()
     src = make_file("res_1", {"pen": 1})
     [item] = deposit(archive_routes, src, dry_run=True)
     assert item["metadata"] == {}
 
 
 def test_deposit_without_a_dtype_warns(
-    install, mocked_api, tmp_archive, make_file, caplog
+    install, mocked_api, tmp_archive, make_file, caplog, registry_checks
 ):
+    registry_checks()
     install(FakeEntryPoint(DTYPE, fake_reader))
     root = tmp_archive["path"]
     route_archive(mocked_api, root)
@@ -348,7 +360,10 @@ def test_deposit_without_a_dtype_warns(
     assert "no dtype given" in caplog.text
 
 
-def test_deposit_reader_is_loaded_once(install, archive_routes, make_file):
+def test_deposit_reader_is_loaded_once(
+    install, archive_routes, make_file, registry_checks
+):
+    registry_checks()
     loads = []
 
     class Counting(FakeEntryPoint):
@@ -391,7 +406,11 @@ def test_reader_gets_the_zip_of_a_directory(install, archive_routes, tmp_path):
     assert list((archive_routes / "staging").iterdir()) == []
 
 
-def test_dry_run_doesnt_read_a_directory(install, archive_routes, tmp_path):
+def test_dry_run_doesnt_read_a_directory(
+    install, archive_routes, tmp_path, registry_checks
+):
+    registry_checks()
+
     def reader(path):
         raise AssertionError("the reader must not be called in a dry run")
 

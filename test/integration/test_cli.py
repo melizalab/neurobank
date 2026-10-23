@@ -427,6 +427,14 @@ def test_fetch_unknown_and_unreachable(cli, archive, register, dest, unique, cap
     assert list(dest.iterdir()) == []
 
 
+def test_deposit_dry_run_refused(cli, archive, dtype, register, tmp_path, caplog):
+    taken = register()["name"]
+    src = tmp_path / f"{taken}.txt"
+    src.write_text("contents")
+    assert cli("deposit", "--dry-run", "-d", dtype, str(archive.path), str(src)) == 1
+    assert f"{src}: error: name:" in caplog.text
+
+
 def test_fetch_verify(cli, make_archive, dtype, deposit_file, dest, capsys):
     archive = make_archive(require_hash=True)
     name = deposit_file(archive, dtype)

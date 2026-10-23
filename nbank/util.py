@@ -28,6 +28,8 @@ log = logging.getLogger("nbank")  # root logger
 
 # names per request to the registry's bulk endpoints
 bulk_batch_size = 500
+# resources per request to the registry's check endpoint (its limit is 1000)
+check_batch_size = 1000
 
 # the registry API version this client asks for in every request
 API_VERSION = "2.0"

@@ -78,7 +78,8 @@ def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
     assert items == [{"source": src, "id": name}]
 
 
-def test_deposit_dry_run(mocked_api, tmp_archive, tmp_path):
+def test_deposit_dry_run(mocked_api, tmp_archive, tmp_path, registry_checks):
+    registry_checks()
     root = tmp_archive["path"]
     name = "dummy_1"
     dtype = "dummy-dtype"
@@ -95,6 +96,85 @@ def test_deposit_dry_run(mocked_api, tmp_archive, tmp_path):
     assert items == [{"source": src, "id": name, "dry_run": True, "metadata": {}}]
     assert src.exists()  # source is untouched
     assert not archive.resource_path(tmp_archive, name).exists()  # nothing stored
+
+
+def dry_run_setup(mocked_api, tmp_archive, tmp_path, names):
+    """Mocks the archive and dtype lookups; returns the files to deposit."""
+    root = tmp_archive["path"]
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    mocked_api.get(datatypes_url).respond(
+        json=[{"name": "dummy-dtype", "content_type": "application/json"}]
+    )
+    files = []
+    for name in names:
+        src = tmp_path / name
+        src.write_text(name)
+        files.append(src)
+    return files
+
+
+def test_deposit_dry_run_asks_the_registry(mocked_api, tmp_archive, tmp_path):
+    files = dry_run_setup(mocked_api, tmp_archive, tmp_path, ["res_1", "res_2"])
+    route = mocked_api.post(f"{base_url}check/resources/").respond(
+        json=[{}, {"name": ["resource with this name already exists."]}]
+    )
+    items = list(
+        core.deposit(
+            tmp_archive["path"],
+            files=files,
+            dtype="dummy-dtype",
+            hash=True,
+            dry_run=True,
+            skip_errors=True,
+            metadata={"experimenter": "dmeliza", "pen": 1},
+        )
+    )
+    assert json.loads(route.calls.last.request.content) == [
+        {
+            "name": src.name,
+            "dtype": "dummy-dtype",
+            "locations": [archive_name],
+            "sha1": util.hash(src),
+            "experimenter": "dmeliza",
+            "metadata": {"pen": 1},
+        }
+        for src in files
+    ]
+    assert items[0]["id"] == "res_1"
+    assert items[1] == {
+        "source": files[1],
+        "error": "name: resource with this name already exists.",
+    }
+
+
+def test_deposit_dry_run_refusal_raises(mocked_api, tmp_archive, tmp_path):
+    files = dry_run_setup(mocked_api, tmp_archive, tmp_path, ["res_1"])
+    mocked_api.post(f"{base_url}check/resources/").respond(
+        json=[{"experimenter": ["no such user"]}]
+    )
+    with pytest.raises(ValueError, match="registry would refuse it: experimenter"):
+        list(
+            core.deposit(
+                tmp_archive["path"], files=files, dtype="dummy-dtype", dry_run=True
+            )
+        )
+
+
+def test_deposit_dry_run_checks_in_batches(
+    mocked_api, tmp_archive, tmp_path, registry_checks, monkeypatch
+):
+    monkeypatch.setattr(util, "check_batch_size", 2)
+    route = registry_checks()
+    files = dry_run_setup(mocked_api, tmp_archive, tmp_path, ["a", "b", "c"])
+    items = list(
+        core.deposit(
+            tmp_archive["path"], files=files, dtype="dummy-dtype", dry_run=True
+        )
+    )
+    assert [item["id"] for item in items] == ["a", "b", "c"]
+    assert [len(json.loads(c.request.content)) for c in route.calls] == [2, 1]
 
 
 def test_deposit_resource_unknown_dtype(mocked_api, tmp_archive, tmp_path):
@@ -197,7 +277,10 @@ def test_deposit_zips_directories(mocked_api, zip_archive, recording):
     assert staged_files(zip_archive) == []
 
 
-def test_deposit_zip_dry_run_builds_nothing(zip_archive, recording, monkeypatch):
+def test_deposit_zip_dry_run_builds_nothing(
+    zip_archive, recording, monkeypatch, registry_checks
+):
+    registry_checks()
     src, _ = recording
 
     def fail(*args, **kwargs):
@@ -327,7 +410,11 @@ def test_deposit_rejects_symlinks(mocked_api, tmp_path, dry_run):
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
-def test_deposit_skip_errors(mocked_api, tmp_archive, tmp_path, dry_run):
+def test_deposit_skip_errors(
+    mocked_api, tmp_archive, tmp_path, dry_run, registry_checks
+):
+    if dry_run:
+        registry_checks()
     root = tmp_archive["path"]
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}

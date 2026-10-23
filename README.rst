@@ -177,6 +177,12 @@ The ``deposit`` command takes several options:
 -  ``-A, --auto-id``: if set, ``nbank`` will ask the registry to assign
    each file an automatically generated identifier, overriding the
    ``auto_identifiers`` policy if it is set to false.
+-  ``--dry-run``: check everything without registering or moving anything:
+   the files, their metadata, and whether the registry would accept each
+   resource (its name and hash not taken, nor shared with another of the files,
+   and its dtype, experimenter, animal and metadata valid). The registry checks
+   need permission to deposit. Another deposit can still take a name before the
+   real one.
 -  ``-j, --json-out``: if set, the script will output info about each
    deposited file as line-deliminated JSON
 

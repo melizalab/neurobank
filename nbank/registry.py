@@ -219,14 +219,26 @@ def strip_nulls(d: dict) -> dict:
     return {k: v for k, v in d.items() if v is not None}
 
 
-def error_messages(response) -> list[str]:
-    """Returns the messages in a 400 (validation error) response from the registry."""
+def check_resources(base_url: str, bodies: Sequence[dict]) -> tuple[str, list]:
+    """Constructs URL to check resources as they would be added (bodies from
+    add_resource), without adding them"""
+    return (url_join(base_url, "check", "resources/"), list(bodies))
+
+
+def field_messages(errors: dict) -> list[str]:
+    """Returns the messages in the registry's errors for a resource, as 'field:
+    message'"""
     messages = []
-    for k, v in response.json().items():
+    for k, v in errors.items():
         # a field has a list of messages; "detail" has a single string
         for message in [v] if isinstance(v, str) else v:
             messages.append(f"{k}: {message}")
     return messages
+
+
+def error_messages(response) -> list[str]:
+    """Returns the messages in a 400 (validation error) response from the registry."""
+    return field_messages(response.json())
 
 
 def log_error(err):

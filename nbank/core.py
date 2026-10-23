@@ -61,9 +61,11 @@ def deposit(
     the given value is used.
 
     Yields {"source": path, "id": id} for each file deposited. With dry_run, checks
-    everything but registers and moves nothing; records have "dry_run": True, the
-    "metadata" that would be registered, and "id" None if the registry would assign
-    it. With skip_errors, a file that can't be deposited yields {"source": path,
+    everything but registers and moves nothing, including asking the registry whether
+    it would accept each resource (in batches, so records come after their files are
+    checked, and files that would share a name or hash are caught); records have
+    "dry_run": True, the "metadata" that would be registered, and "id" None if the
+    registry would assign it. With skip_errors, a file that can't be deposited yields {"source": path,
     "error": message} instead of raising. That covers missing files, directories,
     invalid names, symbolic links, permission problems, files their dtype's reader
     rejects or whose metadata doesn't match what's given, and resources the registry
@@ -84,6 +86,7 @@ def deposit(
     - PermissionError: a source can't be read or the archive can't be written
     - FileExistsError: a file is already stored for the id (nothing is registered)
     - httpx.HTTPStatusError: the registry refuses a resource
+    - ValueError: in a dry run, the registry would refuse a resource
     - httpx.ConnectError: the registry can't be reached
     - KeyError: a file for an id appeared after the check, as the archive and registry
       disagree
@@ -100,7 +103,9 @@ def deposit(
     )
     from nbank.registry import (
         add_resource,
+        check_resources,
         error_messages,
+        field_messages,
         find_archive_by_path,
         full_url,
         get_datatypes,
@@ -155,6 +160,28 @@ def deposit(
         def skipped(src: Path, message: str) -> dict:
             log.error("   error: %s", message)
             return {"source": src, "error": message}
+
+        # dry runs check resources with the registry in batches, which also
+        # catches files that would have the same name or hash as each other
+        pending = []
+
+        def check_pending() -> Iterator[dict]:
+            url, bodies = check_resources(
+                registry_url, [body for _, body, _ in pending]
+            )
+            r = session.post(url, json=bodies)
+            r.raise_for_status()
+            for (src, _, record), errors in zip(pending, r.json(), strict=True):
+                if not errors:
+                    log.info("%s: OK (dry run; nothing registered or moved)", src)
+                    yield record
+                    continue
+                message = "; ".join(field_messages(errors))
+                if not skip_errors:
+                    raise ValueError(f"{src}: the registry would refuse it: {message}")
+                log.error("%s: error: %s", src, message)
+                yield {"source": src, "error": message}
+            pending.clear()
 
         for src in files:
             log.info("processing '%s':", src)
@@ -225,14 +252,19 @@ def deposit(
                     yield skipped(src, str(err))
                     continue
                 if dry_run:
-                    log.info("   OK (dry run; nothing registered or moved)")
-                    yield {
+                    _, body = add_resource(
+                        registry_url, id, dtype, archive, sha1, **resource_metadata
+                    )
+                    record = {
                         "source": src,
                         "id": id,
                         "dry_run": True,
                         "metadata": resource_metadata,
                         **zipped,
                     }
+                    pending.append((src, body, record))
+                    if len(pending) == util.check_batch_size:
+                        yield from check_pending()
                     continue
                 url, params = add_resource(
                     registry_url, id, dtype, archive, sha1, **resource_metadata
@@ -252,6 +284,8 @@ def deposit(
             finally:
                 if staged is not None:
                     staged.unlink(missing_ok=True)
+        if pending:
+            yield from check_pending()
 
 
 def search(

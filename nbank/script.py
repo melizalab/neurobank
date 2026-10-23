@@ -248,7 +248,8 @@ def main(argv=None):
         "-y",
         "--dry-run",
         action="store_true",
-        help="run all pre-flight checks but don't register or move any files",
+        help="run all pre-flight checks, including asking the registry whether it "
+        "would accept each resource, but don't register or move any files",
     )
     pp.add_argument(
         "-k",
