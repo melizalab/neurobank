@@ -348,6 +348,21 @@ def main(argv=None):
         dest="metadata_neq",
     )
     add_core_field_args(pp, "search")
+    group = pp.add_mutually_exclusive_group()
+    group.add_argument(
+        "--superseded",
+        action="store_const",
+        const=True,
+        default=False,
+        help="find only superseded resources (by default they're left out)",
+    )
+    group.add_argument(
+        "--all",
+        action="store_const",
+        const=None,
+        dest="superseded",
+        help="find superseded resources as well as current ones",
+    )
     pp.add_argument("name", help="resource name or fragment to search by", nargs="?")
 
     pp = sub.add_parser("info", help="get info from registry about resource(s)")
@@ -595,6 +610,19 @@ def main(argv=None):
     )
     pp.set_defaults(func=check_all)
     add_check_options(pp)
+
+    pp = ppsub.add_parser(
+        "superseded",
+        help="check that resources aren't superseded, e.g. the inputs to an analysis",
+    )
+    pp.set_defaults(func=check_superseded)
+    pp.add_argument(
+        "-@",
+        dest="read_stdin",
+        action="store_true",
+        help="read additional identifiers from stdin, one per line",
+    )
+    pp.add_argument("ids", nargs="*", help="identifier(s) of the resources")
 
     pp = ppsub.add_parser(
         "tar",
@@ -848,10 +876,10 @@ def search_resources(args):
         params[f"metadata__{k}"] = v
     for k, v in args.metadata_neq.items():
         params[f"metadata__{k}__neq"] = v
-    if len(params) == 0:
+    if len(params) == 0 and args.superseded is not True:
         log.error("nbank search: error: at least one filter parameter is required")
         return 1
-    for d in core.search(args.registry_url, **params):
+    for d in core.search(args.registry_url, superseded=args.superseded, **params):
         if args.json_out:
             json.dump(d, fp=sys.stdout, indent=2)
             sys.stdout.write("\n")
@@ -1200,6 +1228,49 @@ def check_registry(args):
     with util.registry_session(args.registry_url, auth=args.auth) as session:
         ok = _check_registry(session, args.registry_url)
     return 0 if ok else 1
+
+
+def check_superseded(args):
+    """Report superseded and unregistered resources among args.ids.
+
+    Returns 1 if any is superseded or unregistered.
+    """
+    ids = list(args.ids)
+    if args.read_stdin:
+        ids.extend(name for line in sys.stdin if (name := line.strip()))
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        log.error("nbank check superseded: error: no identifiers given")
+        return 1
+    records = {}
+    with util.registry_session(args.registry_url, auth=args.auth) as session:
+        for i in range(0, len(ids), util.bulk_batch_size):
+            url, query = registry.get_resource_bulk(
+                args.registry_url, ids[i : i + util.bulk_batch_size]
+            )
+            for record in util.query_registry_bulk(session, url, query):
+                records[record["name"]] = record
+    n_superseded = n_missing = 0
+    for id in ids:
+        record = records.get(id)
+        if record is None:
+            log.error(" - %s: not in the registry", id)
+            n_missing += 1
+        elif record["superseded_on"] is not None:
+            details = [f"superseded on {record['superseded_on']}"]
+            if record["superseded_by"]:
+                details.append(f"by {record['superseded_by']}")
+            if record["superseded_note"]:
+                details.append(f"({record['superseded_note']})")
+            log.error(" - %s: %s", id, " ".join(details))
+            n_superseded += 1
+    log.info(
+        "%d resources checked; superseded: %d; not in the registry: %d",
+        len(ids),
+        n_superseded,
+        n_missing,
+    )
+    return 1 if n_superseded or n_missing else 0
 
 
 def _check_registry(session, registry_url) -> bool:

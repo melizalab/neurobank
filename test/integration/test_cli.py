@@ -430,3 +430,25 @@ def test_fetch_unknown_and_unreachable(cli, archive, register, dest, unique, cap
 @pytest.mark.skip(reason="downloading over http requires a web server with sendfile")
 def test_fetch_over_http():
     pass
+
+
+def test_superseded_resources(cli, registry, client, register, dtype, caplog, capsys):
+    old, new = (register()["name"] for _ in range(2))
+    url, _ = reg.get_resource(registry.url, old)
+    r = client.patch(
+        url, json={"superseded_on": "2026-10-23T12:00:00Z", "superseded_by": new}
+    )
+    r.raise_for_status()
+    assert [r["name"] for r in core.search(registry.url, dtype=dtype)] == [new]
+    assert [
+        r["name"] for r in core.search(registry.url, dtype=dtype, superseded=True)
+    ] == [old]
+
+    assert cli("search", "-d", dtype, "--all") == 0
+    assert sorted(capsys.readouterr().out.split()) == sorted([old, new])
+
+    assert cli("check", "superseded", new, old, "no-such-resource") == 1
+    assert f"{old}: superseded on" in caplog.text
+    assert f"by {new}" in caplog.text
+    assert "no-such-resource: not in the registry" in caplog.text
+    assert cli("check", "superseded", new) == 0

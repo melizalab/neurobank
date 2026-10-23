@@ -134,4 +134,4 @@ def test_search_keeps_underscored_values_as_strings(monkeypatch):
 
     monkeypatch.setattr(script.core, "search", fake_search)
     script.main(["-r", "https://localhost/", "search", "-k", "name=20140603_1_1"])
-    assert captured == {"metadata__name": "20140603_1_1"}
+    assert captured == {"metadata__name": "20140603_1_1", "superseded": False}

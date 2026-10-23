@@ -1296,3 +1296,105 @@ def test_registry_info_without_user(mocked_api, caplog):
     mocked_api.get(f"{base_url}info/").respond(json={"api_version": "1.2"})
     assert run_main("registry-info") is None
     assert "user" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "superseded, sent", [(False, "false"), (True, "true"), (None, None)]
+)
+def test_search_superseded(mocked_api, superseded, sent):
+    route = mocked_api.get(resource_url).respond(json=[])
+    list(core.search(base_url, dtype="wav", superseded=superseded))
+    assert route.calls.last.request.url.params.get("superseded") == sent
+
+
+def test_search_leaves_out_superseded_by_default(mocked_api):
+    route = mocked_api.get(resource_url).respond(json=[])
+    list(core.search(base_url, dtype="wav"))
+    assert route.calls.last.request.url.params["superseded"] == "false"
+
+
+def test_verify_finds_superseded_resources(mocked_api, tmp_path):
+    path = tmp_path / "file.txt"
+    path.write_text("contents")
+    route = mocked_api.get(resource_url).respond(json=[{"name": "res_1"}])
+    assert [r["name"] for r in core.verify(base_url, path)] == ["res_1"]
+    assert "superseded" not in route.calls.last.request.url.params
+
+
+@pytest.mark.parametrize(
+    "argv, sent",
+    [
+        (["-d", "wav"], "false"),
+        (["-d", "wav", "--superseded"], "true"),
+        (["--superseded"], "true"),
+        (["-d", "wav", "--all"], None),
+    ],
+)
+def test_search_superseded_options(mocked_api, capsys, argv, sent):
+    route = mocked_api.get(resource_url).respond(json=[{"name": "res_1"}])
+    assert run_main("search", *argv) is None
+    assert route.calls.last.request.url.params.get("superseded") == sent
+    assert capsys.readouterr().out == "res_1\n"
+
+
+def test_search_all_needs_a_filter(mocked_api, caplog):
+    assert run_main("search", "--all") == 1
+    assert "at least one filter" in caplog.text
+
+
+def superseded_record(name, by=None, note=""):
+    return {
+        "name": name,
+        "superseded_on": "2026-10-22T12:00:00Z",
+        "superseded_by": by,
+        "superseded_note": note,
+    }
+
+
+def current_record(name):
+    return {"name": name, "superseded_on": None, "superseded_by": None}
+
+
+def test_check_superseded(mocked_api, caplog, monkeypatch):
+    caplog.set_level(logging.INFO, logger="nbank")
+    route = mocked_api.post(f"{bulk_url}resources/").respond(
+        text="\n".join(
+            json.dumps(r)
+            for r in (
+                current_record("res_1"),
+                superseded_record("res_2", by="res_4", note="wrong animal"),
+                superseded_record("res_3"),
+            )
+        )
+    )
+    monkeypatch.setattr("sys.stdin", io.StringIO("res_3\nres_5\n\nres_1\n"))
+    assert run_main("check", "superseded", "-@", "res_1", "res_2") == 1
+    assert json.loads(route.calls.last.request.content)["names"] == [
+        "res_1",
+        "res_2",
+        "res_3",
+        "res_5",
+    ]
+    errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert errors == [
+        " - res_2: superseded on 2026-10-22T12:00:00Z by res_4 (wrong animal)",
+        " - res_3: superseded on 2026-10-22T12:00:00Z",
+        " - res_5: not in the registry",
+    ]
+    assert "4 resources checked; superseded: 2; not in the registry: 1" in caplog.text
+
+
+def test_check_superseded_all_current(mocked_api, monkeypatch):
+    monkeypatch.setattr(util, "bulk_batch_size", 1)
+    route = mocked_api.post(f"{bulk_url}resources/")
+    route.side_effect = lambda request: httpx.Response(
+        200,
+        text=json.dumps(current_record(json.loads(request.content)["names"][0])),
+    )
+    assert run_main("check", "superseded", "res_1", "res_2") == 0
+    assert route.call_count == 2
+
+
+def test_check_superseded_needs_ids(mocked_api, caplog):
+    assert run_main("check", "superseded") == 1
+    assert "no identifiers given" in caplog.text

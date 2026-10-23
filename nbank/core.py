@@ -256,11 +256,19 @@ def deposit(
                     staged.unlink(missing_ok=True)
 
 
-def search(registry_url: str, /, **params) -> Iterator[dict]:
-    """Yields the registry records that match the query params."""
+def search(
+    registry_url: str, /, superseded: bool | None = False, **params
+) -> Iterator[dict]:
+    """Yields the registry records that match the query params.
+
+    Superseded resources are left out; superseded=True gives only them, and None
+    gives both.
+    """
     from nbank.registry import find_resource
     from nbank.util import query_registry_paginated, registry_session
 
+    if superseded is not None:
+        params["superseded"] = superseded
     url, _ = find_resource(registry_url)
     with registry_session(registry_url) as session:
         yield from query_registry_paginated(session, url, params)
@@ -341,7 +349,7 @@ def verify(
     file_hash = hash(file)
     if id is None:
         log.debug("  searching by hash (%s)", file_hash)
-        return search(registry_url, sha1=file_hash)
+        return search(registry_url, sha1=file_hash, superseded=None)
     else:
         log.debug("  searching by id (%s)", id)
         resource = describe(registry_url, id=id)
