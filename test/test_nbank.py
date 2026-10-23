@@ -1239,3 +1239,60 @@ def test_check_tar_truncated(mocked_api, tmp_path, caplog):
     assert "✗ res_2 -> unable to read; stopping" in caplog.text
     assert "ends partway through 'res_2'" in caplog.text
     assert "Resources checked: 2; failed: 1" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "user, lines",
+    [
+        (None, ["user: anonymous (no credentials; use -a or a .netrc file)"]),
+        (
+            {
+                "username": "dmeliza",
+                "superuser": False,
+                "permissions": ["add_resource"],
+            },
+            ["user: dmeliza", "permissions: add_resource"],
+        ),
+        (
+            {"username": "reader", "superuser": False, "permissions": []},
+            ["user: reader", "permissions: none"],
+        ),
+        (
+            {"username": "admin", "superuser": True, "permissions": ["add_resource"]},
+            ["user: admin (superuser)"],
+        ),
+    ],
+)
+def test_registry_info_shows_the_user(mocked_api, caplog, user, lines):
+    caplog.set_level(logging.INFO, logger="nbank")
+    mocked_api.get(f"{base_url}info/").respond(
+        json={"name": "django-neurobank", "api_version": "2.0", "user": user}
+    )
+    assert run_main("registry-info") is None
+    messages = [r.getMessage() for r in caplog.records]
+    assert "  - name: django-neurobank" in messages
+    assert [m for m in messages if m.startswith(("  - user", "  - perm"))] == [
+        f"  - {line}" for line in lines
+    ]
+
+
+def test_cli_reports_a_registry_version_it_cant_use(mocked_api, monkeypatch, caplog):
+    monkeypatch.setattr(util, "_checked_registries", set())
+    mocked_api.get(f"{base_url}info/").respond(json={"api_version": "1.3"})
+    assert run_main("search", "-n", "res_1") == 1
+    assert "has API version 1.3" in caplog.text
+
+
+def test_registry_info_shows_a_registry_it_cant_use(mocked_api, monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="nbank")
+    monkeypatch.setattr(util, "_checked_registries", set())
+    mocked_api.get(f"{base_url}info/").respond(json={"api_version": "1.3"})
+    assert run_main("registry-info") is None
+    assert "api_version: 1.3" in caplog.text
+
+
+def test_registry_info_without_user(mocked_api, caplog):
+    caplog.set_level(logging.INFO, logger="nbank")
+    mocked_api.get(f"{base_url}info/").respond(json={"api_version": "1.2"})
+    assert run_main("registry-info") is None
+    assert "user" not in caplog.text

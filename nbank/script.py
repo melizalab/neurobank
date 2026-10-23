@@ -671,8 +671,20 @@ def registry_info(args):
     # no version check, so this shows any registry's API version
     with util.registry_session(auth=args.auth) as session:
         info = util.query_registry(session, url, params)
+    # registries before API 1.3 don't say who the request is from
+    has_user = "user" in info
+    user = info.pop("user", None)
     for k, v in info.items():
         log.info("  - %s: %s", k, v)
+    if not has_user:
+        return
+    if user is None:
+        log.info("  - user: anonymous (no credentials; use -a or a .netrc file)")
+    elif user["superuser"]:
+        log.info("  - user: %s (superuser)", user["username"])
+    else:
+        log.info("  - user: %s", user["username"])
+        log.info("  - permissions: %s", ", ".join(user["permissions"]) or "none")
 
 
 def init_archive(args):

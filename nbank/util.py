@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path, PurePath, PurePosixPath
 from typing import Any, BinaryIO
 
-from httpx import Client
+from httpx import USE_CLIENT_DEFAULT, Client
 
 # imported so that their resource classes register their location schemes
 from nbank import archive, registry, tape_archive  # noqa: F401
@@ -269,9 +269,10 @@ def query_registry(
     url: str,
     params: Mapping[str, Any] | None = None,
     *,
-    auth: str | None = None,
+    auth=USE_CLIENT_DEFAULT,
 ) -> dict | None:
-    """Perform a GET request to url with params. Returns None for 404 HTTP errors"""
+    """Perform a GET request to url with params. Returns None for 404 HTTP errors.
+    The request uses the session's auth unless auth is given."""
     r = session.get(url, params=params, auth=auth)
     if r.status_code == 404:
         return None
@@ -307,9 +308,10 @@ def query_registry_first(
 
 
 def query_registry_bulk(
-    session: Client, url: str, query: Mapping[str, Any], *, auth: str | None = None
+    session: Client, url: str, query: Mapping[str, Any], *, auth=USE_CLIENT_DEFAULT
 ) -> list[dict]:
-    """POSTs query to a bulk endpoint and yields the line-delimited JSON records."""
+    """POSTs query to a bulk endpoint and yields the line-delimited JSON records.
+    The request uses the session's auth unless auth is given."""
     with session.stream("POST", url, json=query, auth=auth) as r:
         if r.is_error:
             r.read()  # the body can't be read once the stream is closed

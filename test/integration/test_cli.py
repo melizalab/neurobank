@@ -29,6 +29,8 @@ def test_registry_info(cli, registry, caplog):
     cli("registry-info")
     assert f"address: {registry.url}" in caplog.text
     assert "name: django-neurobank" in caplog.text
+    user, _ = registry.auth
+    assert f"user: {user} (superuser)" in caplog.text
 
 
 def test_init(cli, registry, client, tmp_path, unique):

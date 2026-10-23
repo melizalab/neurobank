@@ -90,7 +90,8 @@ identifier is ``http://melizalab.org/neurobank/resources/st32_1_2_1/``.
 If your registry requires authentication, this must be supplied with the
 ``-a`` flag, or in your
 `netrc <https://www.gnu.org/software/inetutils/manual/html_node/The-_002enetrc-file.html>`__
-file.
+file. ``nbank registry-info`` shows which user the registry sees you as and
+what you can change.
 
 The script will attempt to contact the registry service through the
 supplied URL and add the archive. By default, the archive is named after

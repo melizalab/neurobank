@@ -17,6 +17,13 @@ Requires django-neurobank 1.0 (registry API 2.x).
 ### New
 
 - `nbank.admin supersede` marks resources as superseded, or not to be used.
+- `nbank registry-info` shows who the registry sees you as, and what you can
+  change: a username and permissions, a superuser, or anonymous (#61).
+
+### Fixed
+
+- `util.query_registry` and `query_registry_bulk` use the session's credentials;
+  they sent requests without them unless given `auth`.
 
 ## 0.13.0
 

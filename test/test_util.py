@@ -442,17 +442,11 @@ def test_other_registry_versions_are_refused(mocked_api, unchecked, info):
             pass
 
 
-def test_cli_reports_a_registry_version_it_cant_use(mocked_api, unchecked, caplog):
-    from nbank import script
-
-    mocked_api.get(info_url).respond(200, json={"api_version": "1.3"})
-    assert script.main(["-r", registry_url, "search", "-n", "res_1"]) == 1
-    assert "has API version 1.3" in caplog.text
-
-
-def test_registry_info_shows_a_registry_it_cant_use(mocked_api, unchecked, caplog):
-    from nbank import script
-
-    mocked_api.get(info_url).respond(200, json={"api_version": "1.3"})
-    assert script.main(["-r", registry_url, "registry-info"]) is None
-    assert "api_version: 1.3" in caplog.text
+def test_queries_use_the_session_auth(mocked_api):
+    get = mocked_api.get(info_url).respond(200, json={})
+    bulk = mocked_api.post(f"{registry_url}bulk/").respond(200, text="")
+    with util.registry_session(auth=("user", "pw")) as session:
+        util.query_registry(session, info_url)
+        list(util.query_registry_bulk(session, f"{registry_url}bulk/", {}))
+    for route in (get, bulk):
+        assert route.calls.last.request.headers["Authorization"].startswith("Basic ")
