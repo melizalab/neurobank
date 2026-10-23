@@ -23,6 +23,12 @@ Requires django-neurobank 1.0 (registry API 2.x).
 - `nbank.admin supersede` marks resources as superseded, or not to be used.
 - `nbank registry-info` shows who the registry sees you as, and what you can
   change: a username and permissions, a superuser, or anonymous (#61).
+- `core.find_resources` and `find_resource` give the path of a file for each
+  resource that can be read on this host: from a directory of files named by id
+  (`local_dir`), an archive on this host, or a download into a local cache
+  (`NBANK_CACHE`, or `neurobank` in the user cache directory). Downloads are
+  stored under the cached name only when complete; `verify=True` checks hashes.
+  These come from `dlab.neurobank` in melizalab-tools.
 - `nbank check superseded` reports superseded and unregistered resources among
   the given ids (or ids on stdin, with `-@`), and exits 1 if there are any.
 

@@ -335,6 +335,154 @@ def get(
             return resource
 
 
+def find_resources(
+    registry_url: str,
+    *ids: str,
+    local_dir: Path | str | None = None,
+    alt_base: Path | None = None,
+    download: bool = True,
+    verify: bool = False,
+    auth: RegistryAuth = None,
+) -> Iterator[tuple[str, Path | FileNotFoundError]]:
+    """Yields (id, path) for each id, with the path of a file that can be read on
+    this host, or a FileNotFoundError if there isn't one. Results come as they're
+    ready, not in the order of ids.
+
+    Each resource is looked for in local_dir (a directory of files named by id,
+    such as a downloaded dataset) without asking the registry, and then at its
+    locations in the order the registry gives them: an archive on this host, or
+    for one that can be downloaded, the cache (see cache.cache_dir) and then a
+    download into it. alt_base replaces the directory that contains each archive,
+    for copies of archives on another host (see archive.Resource). download=False
+    leaves out downloads, and verify=True checks each file against its registered
+    hash. auth (default: .netrc) is used for the registry and for downloads.
+    """
+    import concurrent.futures
+
+    from nbank.archive import resolve_extension
+    from nbank.registry import get_locations_bulk
+    from nbank.util import bulk_batch_size, query_registry_bulk, registry_session
+
+    to_find = list(dict.fromkeys(ids))
+    if local_dir is not None:
+        for id in list(to_find):
+            try:
+                path = resolve_extension(Path(local_dir) / id)
+            except FileNotFoundError:
+                continue
+            log.debug("%s: found in %s", id, local_dir)
+            to_find.remove(id)
+            yield id, path
+    if not to_find:
+        return
+    remaining = set(to_find)
+    with (
+        registry_session(registry_url, auth=make_auth(auth)) as session,
+        concurrent.futures.ThreadPoolExecutor() as executor,
+    ):
+        futures = {}
+        for i in range(0, len(to_find), bulk_batch_size):
+            url, query = get_locations_bulk(
+                registry_url, to_find[i : i + bulk_batch_size]
+            )
+            for record in query_registry_bulk(session, url, query):
+                future = executor.submit(
+                    _find_resource,
+                    session,
+                    record,
+                    alt_base=alt_base,
+                    download=download,
+                    verify=verify,
+                )
+                futures[future] = record["name"]
+        for future in concurrent.futures.as_completed(futures):
+            id = futures[future]
+            remaining.discard(id)
+            try:
+                yield id, future.result()
+            except FileNotFoundError as err:
+                yield id, err
+    for id in to_find:
+        if id in remaining:
+            yield (
+                id,
+                FileNotFoundError(f"{id} isn't in the registry or has no locations"),
+            )
+
+
+def find_resource(registry_url: str, id: str, **kwargs) -> Path:
+    """Returns the path of a file for id that can be read on this host. Takes the
+    options of find_resources, and raises FileNotFoundError if there isn't one."""
+    for _, result in find_resources(registry_url, id, **kwargs):
+        if isinstance(result, FileNotFoundError):
+            raise result
+        return result
+
+
+def _find_resource(
+    session: httpx.Client,
+    record: dict,
+    *,
+    alt_base: Path | None,
+    download: bool,
+    verify: bool,
+) -> Path:
+    """Returns the path of a file for a record from bulk/locations/, trying its
+    locations in order (see find_resources). Raises FileNotFoundError if none works."""
+    import os
+    import tempfile
+    from urllib.parse import urlparse
+
+    from nbank.cache import cache_dir
+    from nbank.util import HttpResource, hash, parse_location
+
+    id = record["name"]
+
+    def matches(path: Path) -> bool:
+        if not verify or record["sha1"] is None:
+            return True
+        if hash(path) == record["sha1"]:
+            return True
+        log.warning("%s: %s doesn't match its registered hash", id, path)
+        return False
+
+    for location in record["locations"]:
+        resource = parse_location(location, alt_base=alt_base, http_session=session)
+        if isinstance(resource, HttpResource):
+            target_dir = cache_dir() / urlparse(resource.url).netloc
+            target = target_dir / record.get("filename", id)
+            if target.exists():
+                if matches(target):
+                    log.debug("%s: found in the cache at %s", id, target)
+                    return target
+                target.unlink()
+            if not download:
+                continue
+            log.debug("%s: downloading from %s", id, resource.url)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            # a partial download never has the cached file's name
+            fd, partial = tempfile.mkstemp(dir=target_dir, prefix=f".{id}.")
+            os.close(fd)
+            partial = Path(partial)
+            try:
+                resource.fetch(partial)
+                if matches(partial):
+                    partial.replace(target)
+                    return target
+            except httpx.HTTPError as err:
+                log.warning("%s: unable to download from %s: %s", id, resource.url, err)
+            finally:
+                partial.unlink(missing_ok=True)
+        elif (path := getattr(resource, "path", None)) is not None and path.exists():
+            if matches(path):
+                log.debug("%s: found in a local archive at %s", id, path)
+                return path
+    raise FileNotFoundError(
+        f"{id} is registered, but isn't in an archive on this host or the cache"
+        + (", and couldn't be downloaded" if download else "")
+    )
+
+
 def verify(
     registry_url: str, file: str | Path, *, id: str | None = None
 ) -> Iterator[dict] | bool:
@@ -393,6 +541,8 @@ __all__ = [
     "describe",
     "describe_many",
     "find",
+    "find_resource",
+    "find_resources",
     "get",
     "search",
     "update",

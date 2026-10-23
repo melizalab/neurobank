@@ -350,6 +350,31 @@ def test_get_deposited(registry, archive, dtype, tmp_path, unique):
     )
 
 
+def test_find_resources(registry, archive, dtype, register, tmp_path, unique):
+    src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
+    name = deposit_one(registry, archive, dtype, src)
+    stored = nbank_archive.resource_path(archive.config, name, resolve_ext=True)
+    no_locations = register()["name"]
+    local_dir = tmp_path / "dataset"
+    local_dir.mkdir()
+    in_dir = write_file(local_dir / f"{unique('res')}.txt", "elsewhere")
+    results = dict(
+        core.find_resources(
+            registry.url,
+            name,
+            no_locations,
+            "no-such-resource",
+            in_dir.stem,
+            local_dir=local_dir,
+            verify=True,
+        )
+    )
+    assert results[name] == stored
+    assert results[in_dir.stem] == in_dir
+    assert isinstance(results[no_locations], FileNotFoundError)
+    assert isinstance(results["no-such-resource"], FileNotFoundError)
+
+
 def test_find_all_locations(
     registry, client, archive, make_archive, dtype, tmp_path, unique
 ):
