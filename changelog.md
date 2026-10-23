@@ -9,6 +9,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
   2.x, raising `nbank.util.RegistryVersionError` (an error message in the CLI)
   if it doesn't. `nbank registry-info` skips the check, so it can show any
   registry's version.
+- `core.get` and `core.find` are removed; use `core.find_resource(s)`, which
+  return paths, or `nbank locate` for every location of a resource.
+  `archive.iter_resources` is removed; use `check.check_archive_contents`.
 - `nbank.util.registry_session()` yields an HTTP client for the registry that
   asks for API 2.0 and checks the registry's version. Code that changes the
   registry with its own client gets a 400 from it; the `query_registry`

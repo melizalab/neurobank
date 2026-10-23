@@ -12,8 +12,6 @@ from typing import Any
 
 import httpx
 
-from nbank.util import FetchableResource
-
 # types that can be turned into authentication for httpx
 RegistryAuth = tuple[str, str] | httpx.Auth | None
 
@@ -294,47 +292,6 @@ def describe_many(registry_url: str, *ids: str) -> Iterator[dict]:
         yield from query_registry_bulk(session, url, query)
 
 
-def find(
-    registry_url: str, id: str, *, alt_base: Path | None = None
-) -> Iterator[FetchableResource | None]:
-    """Yields a Fetchable for each location of id (None if this host can't reach it).
-
-    An empty sequence means the resource has no locations. Raises HTTPStatusError (404)
-    if id isn't registered. alt_base, if given, replaces the directory that contains
-    each archive, for copies of archives on another host (see archive.Resource).
-
-    Deprecated: fetch() doesn't work for http(s) locations, as the session is closed,
-    and will raise NotFetchableError in a future release. Use `nbank fetch` to download.
-    """
-    # TODO: consider a more transparent readout for unreachable/nonexistent conditions
-    from nbank.registry import get_locations
-    from nbank.util import (
-        parse_location,
-        query_registry_paginated,
-        registry_session,
-    )
-
-    url, params = get_locations(registry_url, id)
-    with registry_session(registry_url) as session:
-        for loc in query_registry_paginated(session, url, params):
-            yield parse_location(loc, alt_base=alt_base, http_session=session)
-
-
-def get(
-    registry_url: str, id: str, *, alt_base: Path | None = None
-) -> FetchableResource | None:
-    """Returns the first path or URL for id that this host can reach, or None.
-
-    Raises HTTPStatusError (404) if id isn't registered. alt_base, if given, replaces
-    the directory that contains each archive, for copies of archives on another host
-    (see archive.Resource).
-    """
-    # TODO: consider a more transparent readout for unreachable/nonexistent conditions
-    for resource in find(registry_url, id, alt_base=alt_base):
-        if resource is not None:
-            return resource
-
-
 def find_resources(
     registry_url: str,
     *ids: str,
@@ -540,10 +497,8 @@ __all__ = [
     "deposit",
     "describe",
     "describe_many",
-    "find",
     "find_resource",
     "find_resources",
-    "get",
     "search",
     "update",
     "verify",

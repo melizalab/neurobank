@@ -609,32 +609,6 @@ def test_search_nonexistent_resource(mocked_api):
     assert items == data
 
 
-def test_find_resource_location(mocked_api):
-    name = "dummy_3"
-    mocked_api.get(
-        registry.url_join(registry.full_url(base_url, name) + "locations/")
-    ).respond(
-        json=[
-            {
-                "scheme": "https",
-                "root": "localhost:8000/bucket/",
-                "resource_name": name,
-            }
-        ],
-    )
-    resource = core.get(base_url, name)
-    assert resource.url == f"https://localhost:8000/bucket/{name}/"
-
-
-def test_find_resource_location_nonexistent(mocked_api):
-    name = "dummy_4"
-    mocked_api.get(
-        registry.url_join(registry.full_url(base_url, name) + "locations/")
-    ).respond(json=[])
-    item = core.get(base_url, name)
-    assert item is None
-
-
 def test_verify_resource_by_hash(mocked_api, tmp_path):
     name = "dummy_1"
     src = tmp_path / name

@@ -60,9 +60,6 @@ def test_store_and_find_resource(tmp_archive, tmp_path):
     mode = path.stat().st_mode
     assert mode & tmp_archive["policy"]["access"]["umask"] == 0
     assert path.read_text() == contents
-    with pytest.deprecated_call():
-        resources = list(archive.iter_resources(tmp_archive["path"]))
-    assert resources == [path]
 
 
 def test_parse_neurobank_location(tmp_archive, tmp_path):
@@ -193,10 +190,6 @@ def test_can_store_directories(tmp_dir_archive, tmp_path):
     fpath = path / "tempfile"
     assert fpath.is_file()
     assert (fpath.stat().st_mode & umask) == 0
-
-    with pytest.deprecated_call():
-        resources = list(archive.iter_resources(tmp_dir_archive["path"]))
-    assert resources == [path]
 
 
 def test_can_strip_extensions(tmp_noext_archive, tmp_path):

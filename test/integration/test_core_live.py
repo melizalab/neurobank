@@ -341,15 +341,6 @@ def test_search_is_paginated(registry, client, register, dtype):
     assert set(found) == set(names)
 
 
-def test_get_deposited(registry, archive, dtype, tmp_path, unique):
-    src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
-    name = deposit_one(registry, archive, dtype, src)
-    resource = core.get(registry.url, name)
-    assert resource.path == nbank_archive.resource_path(
-        archive.config, name, resolve_ext=True
-    )
-
-
 def test_find_resources(registry, archive, dtype, register, tmp_path, unique):
     src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
     name = deposit_one(registry, archive, dtype, src)
@@ -375,25 +366,7 @@ def test_find_resources(registry, archive, dtype, register, tmp_path, unique):
     assert isinstance(results["no-such-resource"], FileNotFoundError)
 
 
-def test_find_all_locations(
-    registry, client, archive, make_archive, dtype, tmp_path, unique
-):
-    other = make_archive(require_hash=False)
-    src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
-    name = deposit_one(registry, archive, dtype, src)
-    url, body = reg.add_location(registry.url, name, other.name)
-    client.post(url, json=body).raise_for_status()
-    copy = write_file(tmp_path / "copy.txt", "contents")
-    nbank_archive.store_resource(other.config, copy, id=name)
-
-    paths = {r.path for r in core.find(registry.url, name)}
-    assert paths == {
-        nbank_archive.resource_path(archive.config, name, resolve_ext=True),
-        nbank_archive.resource_path(other.config, name, resolve_ext=True),
-    }
-
-
-def test_find_unreachable_location(
+def test_find_resources_skips_unreachable_locations(
     registry, client, register, make_archive, tmp_path, unique
 ):
     # the registry lists local archives first, so the unreachable one is first
@@ -404,33 +377,13 @@ def test_find_unreachable_location(
     client.post(url, json=body).raise_for_status()
     src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
     stored = nbank_archive.store_resource(reachable.config, src, id=name)
-
-    resources = list(core.find(registry.url, name))
-    assert resources[0] is None
-    assert [r.path for r in resources[1:]] == [stored]
-    assert core.get(registry.url, name).path == stored
+    assert core.find_resource(registry.url, name) == stored
 
 
-def test_find_only_unreachable_locations(registry, register, archive):
+def test_find_resources_only_unreachable_locations(registry, register, archive):
     name = register(archive=archive.name)["name"]
-    assert list(core.find(registry.url, name)) == [None]
-    assert core.get(registry.url, name) is None
-
-
-def test_find_and_get_unknown_resource(registry, unique):
-    missing = unique("missing")
-    with pytest.raises(httpx.HTTPStatusError) as err:
-        core.get(registry.url, missing)
-    assert err.value.response.status_code == 404
-    with pytest.raises(httpx.HTTPStatusError) as err:
-        list(core.find(registry.url, missing))
-    assert err.value.response.status_code == 404
-
-
-def test_find_and_get_resource_without_locations(registry, register):
-    name = register()["name"]
-    assert list(core.find(registry.url, name)) == []
-    assert core.get(registry.url, name) is None
+    with pytest.raises(FileNotFoundError, match="is registered"):
+        core.find_resource(registry.url, name)
 
 
 def test_verify_by_hash(registry, register, tmp_path, unique):

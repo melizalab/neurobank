@@ -10,7 +10,6 @@ import os
 import shutil
 import stat
 import sys
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, NewType
 
@@ -226,23 +225,6 @@ def resolve_extension(path: Path) -> Path:
         return next(paths)
     except StopIteration as err:
         raise FileNotFoundError(f"resource '{path}' does not exist") from err
-
-
-def iter_resources(path: Path) -> Iterator[Path]:
-    """Yields the files in the archive at path.
-
-    Deprecated: raises NotADirectoryError if the resources directory contains a file.
-    Use nbank.check.check_archive_contents instead.
-    """
-    import warnings
-
-    warnings.warn(
-        "iter_resources is deprecated; use nbank.check.check_archive_contents",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    base_dir = path / _resource_subdir
-    return (f for stub_dir in base_dir.iterdir() for f in stub_dir.iterdir())
 
 
 @location_scheme
