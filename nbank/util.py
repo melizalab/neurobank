@@ -328,13 +328,15 @@ def fetch_resource(
     force: bool = False,
     extension: str | None = None,
     alt_base: Path | None = None,
+    sha1: str | None = None,
 ) -> Path | NotFetchableError | FileExistsError:
     """Copies or downloads a resource to target from the first location that works.
 
     locations are registry location dicts, tried in order. extension, if given, replaces
     the suffix of target. alt_base, if given, replaces the directory that contains each
-    archive, for copies of archives on another host (see archive.Resource). Returns the
-    path written, or (not raises) NotFetchableError if no location works and
+    archive, for copies of archives on another host (see archive.Resource). If sha1 is
+    given, a copy that doesn't match it is removed and the next location tried. Returns
+    the path written, or (not raises) NotFetchableError if no location works and
     FileExistsError if target exists and force isn't set. Raises FileNotFoundError if
     target is a directory.
     """
@@ -348,13 +350,21 @@ def fetch_resource(
             target.unlink()
         else:
             return FileExistsError(f"(target file {target} already exists)")
+    mismatched = False
     for loc in locations:
         location = parse_location(loc, alt_base=alt_base, http_session=session)
         log.debug("trying %s", location)
         try:
-            return location.fetch(target)
+            path = location.fetch(target)
         except (AttributeError, NotFetchableError):
             continue
+        if sha1 is None or hash(path) == sha1:
+            return path
+        log.debug("%s doesn't match its registered hash", location)
+        path.unlink()
+        mismatched = True
+    if mismatched:
+        return NotFetchableError("(no copy matches the registered hash)")
     return NotFetchableError("(no valid locations)")
 
 

@@ -427,6 +427,37 @@ def test_fetch_unknown_and_unreachable(cli, archive, register, dest, unique, cap
     assert list(dest.iterdir()) == []
 
 
+def test_fetch_verify(cli, make_archive, dtype, deposit_file, dest, capsys):
+    archive = make_archive(require_hash=True)
+    name = deposit_file(archive, dtype)
+    stored = nbank_archive.resource_path(archive.config, name, True)
+    stored.chmod(0o644)
+    stored.write_text("corrupted")
+    assert cli("fetch", "-d", str(dest), name) == 0
+    assert (dest / name).read_text() == "corrupted"
+    assert cli("fetch", "-f", "--verify", "-d", str(dest), name) == 1
+    assert "registered hash" in capsys.readouterr().out
+    assert not (dest / name).exists()
+
+
+def test_fetch_verify_without_hash(cli, archive, dtype, deposit_file, dest, caplog):
+    name = deposit_file(archive, dtype)
+    assert cli("fetch", "--verify", "-d", str(dest), name) == 0
+    assert f"{name}: no registered hash to check" in caplog.text
+
+
+def test_fetch_ids_from_stdin(cli, archive, dtype, deposit_file, dest, monkeypatch):
+    names = [deposit_file(archive, dtype) for _ in range(2)]
+    monkeypatch.setattr("sys.stdin", io.StringIO(f"{names[1]}\n\n"))
+    assert cli("fetch", "-@", "-d", str(dest), names[0]) == 0
+    assert sorted(p.name for p in dest.iterdir()) == sorted(names)
+
+
+def test_fetch_needs_ids(cli, caplog):
+    assert cli("fetch") == 1
+    assert "no identifiers given" in caplog.text
+
+
 @pytest.mark.skip(reason="downloading over http requires a web server with sendfile")
 def test_fetch_over_http():
     pass

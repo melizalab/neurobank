@@ -32,6 +32,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
   (`NBANK_CACHE`, or `neurobank` in the user cache directory). Downloads are
   stored under the cached name only when complete; `verify=True` checks hashes.
   These come from `dlab.neurobank` in melizalab-tools.
+- `nbank fetch --verify` checks each file against its registered hash, trying the
+  resource's other locations if it doesn't match (`util.fetch_resource(sha1=)`),
+  and warns about resources with no hash; `-@` reads ids from stdin (#8).
 - `nbank check superseded` reports superseded and unregistered resources among
   the given ids (or ids on stdin, with `-@`), and exits 1 if there are any.
 

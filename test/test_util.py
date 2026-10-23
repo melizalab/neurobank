@@ -450,3 +450,27 @@ def test_queries_use_the_session_auth(mocked_api):
         list(util.query_registry_bulk(session, f"{registry_url}bulk/", {}))
     for route in (get, bulk):
         assert route.calls.last.request.headers["Authorization"].startswith("Basic ")
+
+
+def test_fetch_resource_verifies_hash(mocked_api, tmp_path):
+    import hashlib
+
+    good = b"contents"
+    locations = [
+        {"scheme": "https", "root": f"meliza.org/{mirror}", "resource_name": "res_1"}
+        for mirror in ("first", "second")
+    ]
+    mocked_api.get("https://meliza.org/first/res_1/").respond(content=b"corrupted")
+    mocked_api.get("https://meliza.org/second/res_1/").respond(content=good)
+    target = tmp_path / "res_1"
+    with httpx.Client() as session:
+        result = util.fetch_resource(
+            session, locations, target, sha1=hashlib.sha1(good).hexdigest()
+        )
+        assert result == target
+        assert target.read_bytes() == good
+        target.unlink()
+        result = util.fetch_resource(session, locations[:1], target, sha1="0" * 40)
+    assert isinstance(result, util.NotFetchableError)
+    assert "registered hash" in str(result)
+    assert not target.exists()

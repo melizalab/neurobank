@@ -426,8 +426,20 @@ def main(argv=None):
         "-e", "--extension", help="add an extension to downloaded file names"
     )
     pp.add_argument(
+        "--verify",
+        action="store_true",
+        help="check each file against its registered hash, trying other locations "
+        "if it doesn't match",
+    )
+    pp.add_argument(
+        "-@",
+        dest="read_stdin",
+        action="store_true",
+        help="read additional identifiers from stdin, one per line",
+    )
+    pp.add_argument(
         "ids",
-        nargs="+",
+        nargs="*",
         help="identifier(s) of the resource(s) to fetch",
     )
 
@@ -920,6 +932,11 @@ def set_resource_metadata(args):
 def fetch_resources(args):
     dest = args.dest or Path()
     to_fetch = set(args.ids)
+    if args.read_stdin:
+        to_fetch.update(name for line in sys.stdin if (name := line.strip()))
+    if not to_fetch:
+        log.error("nbank fetch: error: no identifiers given")
+        return 1
     url, query = registry.get_locations_bulk(args.registry_url, to_fetch)
     with (
         util.registry_session(args.registry_url, auth=args.auth) as session,
@@ -927,6 +944,10 @@ def fetch_resources(args):
     ):
         response = tuple(util.query_registry_bulk(session, url, query))
         to_fetch -= {resource["name"] for resource in response}
+        if args.verify:
+            for resource in response:
+                if resource["sha1"] is None:
+                    log.warning("%s: no registered hash to check", resource["name"])
         future_to_name = {
             executor.submit(
                 util.fetch_resource,
@@ -936,6 +957,7 @@ def fetch_resources(args):
                 (dest / resource.get("filename", resource["name"])),
                 extension=args.extension,
                 force=args.force,
+                sha1=resource["sha1"] if args.verify else None,
             ): resource["name"]
             for resource in response
         }

@@ -184,7 +184,8 @@ Now run your experiment, making sure to record the identifiers of the stimuli.
 The short identifier suffices in most cases, but make sure you record the
 registry URL somewhere, too. If you're running the experiment on machine that
 doesn't have direct access to the archive, you can use the ``nbank fetch`` command
-on the experiment machine to retrieve the resources.
+on the experiment machine to retrieve the resources. Add ``--verify`` to check each
+file against its registered hash, and ``-@`` to read identifiers from standard input.
 
 After the experiment, deposit the data files into the archive using the same
 command. Directories can't be deposited as they are; bundle related files into a
