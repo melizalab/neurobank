@@ -213,19 +213,6 @@ def test_check_permissions_subdirectory_mode(tmp_archive, tmp_path):
     assert "missing" in findings[0].detail
 
 
-def test_check_permissions_directory_resource(tmp_path):
-    cfg = archive.create(
-        tmp_path / "archive", base_url, umask=0o027, allow_directories=True
-    )
-    src = tmp_path / "res_1"
-    src.mkdir()
-    (src / "data").write_text("contents")
-    (src / "link").symlink_to(src / "data")
-    path = archive.store_resource(cfg, src)
-    (path / "data").chmod(0o600)
-    assert permission_findings(cfg) == [(Status.WRONG_MODE, path / "data")]
-
-
 @pytest.mark.skipif(os.getuid() == 0, reason="root can own anything")
 def test_check_permissions_owner_and_group(tmp_archive, tmp_path):
     path, _ = store(tmp_archive, tmp_path, "res_1")
@@ -268,22 +255,24 @@ def test_check_contents_symlinked_subdirectory(tmp_archive, tmp_path):
     assert permission_findings(tmp_archive) == []
 
 
-def test_check_contents_symlink_in_directory_resource(tmp_path):
-    cfg = archive.create(
-        tmp_path / "archive", base_url, umask=0o027, allow_directories=True
-    )
-    src = tmp_path / "res_1"
-    (src / "sub").mkdir(parents=True)
-    (src / "sub" / "data").write_text("contents")
-    (src / "sub" / "link").symlink_to(src / "sub" / "data")
-    (src / "dirlink").symlink_to(src / "sub")
-    path = archive.store_resource(cfg, src)
-    findings = list(check.check_archive_contents(cfg["path"], {"res_1": None}))
-    assert findings == [
-        check.Finding(Status.NOT_HASHED, "res_1", path),
-        check.Finding(Status.SYMLINK, "res_1", path / "dirlink"),
-        check.Finding(Status.SYMLINK, "res_1", path / "sub" / "link"),
-    ]
+def plant_directory(cfg, name):
+    """Puts a directory where a resource would be stored, as a directory resource
+    was."""
+    path = archive.resource_path(cfg, name)
+    (path / "sub").mkdir(parents=True)
+    (path / "sub" / "data").write_text("contents")
+    return path
+
+
+def test_check_contents_directory(tmp_archive):
+    path = plant_directory(tmp_archive, "res_1")
+    findings = list(check.check_archive_contents(tmp_archive["path"], {"res_1": "0"}))
+    assert findings == [check.Finding(Status.DIRECTORY, "res_1", path)]
+    assert not findings[0].ok
+    # nothing inside the directory has its permissions checked
+    (path / "sub" / "data").chmod(0o600)
+    checked = {p for _, p in permission_findings(tmp_archive)}
+    assert not any(p.is_relative_to(path / "sub") for p in checked)
 
 
 def test_fix_permissions(tmp_archive, tmp_path):
@@ -299,25 +288,20 @@ def test_fix_permissions(tmp_archive, tmp_path):
     assert permission_findings(tmp_archive) == []
 
 
-def test_fix_permissions_reaches_unlistable_directories(tmp_path):
-    cfg = archive.create(
-        tmp_path / "archive", base_url, umask=0o027, allow_directories=True
-    )
-    src = tmp_path / "res_1"
-    (src / "sub").mkdir(parents=True)
-    (src / "sub" / "data").write_text("contents")
-    path = archive.store_resource(cfg, src)
-    (path / "sub" / "data").chmod(0o600)
-    (path / "sub").chmod(0o000)
+@pytest.mark.skipif(os.getuid() == 0, reason="root can list anything")
+def test_fix_permissions_reaches_unlistable_directories(tmp_archive, tmp_path):
+    path, _ = store(tmp_archive, tmp_path, "res_1")
+    path.chmod(0o600)
+    path.parent.chmod(0o000)
     try:
         # without fixing, the unlistable directory hides its contents
-        assert permission_findings(cfg) == [(Status.WRONG_MODE, path / "sub")]
-        findings = list(check.check_archive_permissions(cfg, fix=True))
+        assert permission_findings(tmp_archive) == [(Status.WRONG_MODE, path.parent)]
+        findings = list(check.check_archive_permissions(tmp_archive, fix=True))
     finally:
-        (path / "sub").chmod(0o750)
+        path.parent.chmod(0o750)
     assert [(f.status, f.path, f.fixed) for f in findings] == [
-        (Status.WRONG_MODE, path / "sub", True),
-        (Status.WRONG_MODE, path / "sub" / "data", True),
+        (Status.WRONG_MODE, path.parent, True),
+        (Status.WRONG_MODE, path, True),
     ]
 
 
@@ -469,6 +453,20 @@ def test_recheck_unregistered(mocked_api, tmp_archive, tmp_path):
         Status.MISSING_FROM_REGISTRY, "unknown", unknown
     )
     assert not any(f.ok for f in rechecked)
+
+
+def test_recheck_unregistered_directory(mocked_api, tmp_archive):
+    import httpx
+
+    path = plant_directory(tmp_archive, "res_1")
+    findings = list(check.check_archive_contents(tmp_archive["path"], {}))
+    assert findings == [check.Finding(Status.MISSING_FROM_REGISTRY, "res_1", path)]
+    mocked_api.post(bulk_url + "resources/").respond(
+        stream=bulk_response(resource_record("res_1", ["other"], "0" * 40))
+    )
+    with httpx.Client() as session:
+        [finding] = check.recheck_unregistered(session, base_url, findings)
+    assert finding.status == Status.DIRECTORY
 
 
 def test_recheck_unregistered_nothing_to_look_up(mocked_api, tmp_archive, tmp_path):

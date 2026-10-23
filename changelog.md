@@ -17,6 +17,11 @@ Requires django-neurobank 1.0 (registry API 2.x).
   import-tar` and `check tar` report a directory where a resource should be as
   an error for that resource ("is a directory, which isn't a resource"), skipping
   its contents in a tar file.
+- `util.DirectoryHasher` and `util.hash_directory` are removed, and `util.hash`
+  only hashes files. The `allow_directories` policy is gone (archives' `nbank.json`
+  can keep it; it's ignored), and `archive.store_resource` refuses directories.
+  `nbank check archive` reports a directory where a resource should be (status
+  `DIRECTORY`) without reading it; `--fix` can still delete one.
 - `nbank.util.registry_session()` yields an HTTP client for the registry that
   asks for API 2.0 and checks the registry's version. Code that changes the
   registry with its own client gets a 400 from it; the `query_registry`

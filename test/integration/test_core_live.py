@@ -186,8 +186,7 @@ def test_deposit_several(registry, archive, dtype, tmp_path, unique):
 
 
 def test_deposit_refuses_directories(registry, make_archive, dtype, tmp_path, unique):
-    # even when the archive's policy allows directory resources
-    archive = make_archive(require_hash=False, allow_directories=True)
+    archive = make_archive(require_hash=False)
     name = unique("res")
     src = tmp_path / name
     src.mkdir()

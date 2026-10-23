@@ -100,8 +100,7 @@ def create(
     the archive. With shared, no owner is recorded, for archives where users deposit
     under their own accounts; otherwise the current user is the owner. group defaults to
     the current user's primary group. read_only_resources makes deposited resources
-    read-only. policies can set auto_identifiers, keep_extensions, allow_directories, or
-    require_hash.
+    read-only. policies can set auto_identifiers, keep_extensions, or require_hash.
 
     Creates archive_path and its parents as needed. Raises FileExistsError if any file
     it would create already exists, ValueError if group doesn't exist, and OSError for
@@ -141,7 +140,6 @@ def create(
             "auto_identifiers": False,
             "auto_id_type": None,
             "keep_extensions": True,
-            "allow_directories": False,
             "require_hash": True,
             "access": {
                 "user": user,
@@ -289,8 +287,8 @@ def _directories_in(path: Path) -> list[Path]:
 def _can_remove(path: Path) -> bool:
     """True if this process can remove the resource at path.
 
-    For a directory resource, this includes making read-only directories inside it
-    writable.
+    For a directory (not a resource, but one may be left in an archive), this includes
+    making read-only directories inside it writable.
     """
     if not os.access(path.parent, os.W_OK | os.X_OK):
         return False
@@ -306,8 +304,9 @@ def _can_remove(path: Path) -> bool:
 def remove(path: Path) -> None:
     """Removes the resource at path.
 
-    Read-only directories inside a directory resource are made writable first. Raises
-    PermissionError if that isn't allowed.
+    A directory, which may be left in an archive, is removed with everything in it,
+    making read-only directories inside it writable first. Raises PermissionError if
+    that isn't allowed.
     """
     if not path.is_dir() or path.is_symlink():
         path.unlink()
@@ -318,18 +317,14 @@ def remove(path: Path) -> None:
     shutil.rmtree(path)
 
 
-def _same_filesystem(a: Path, b: Path) -> bool:
-    """True if a and b are on the same filesystem (mount)."""
-    return a.stat().st_dev == b.stat().st_dev
-
-
 def verify_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> None:
     """Raises PermissionError, naming the path and problem, if src can't be deposited.
 
     src must be readable, and the resources directory (and id's subdirectory, if it
-    exists) readable, writable, and searchable. For a directory going to another
-    filesystem, everything inside it must be readable too. Raises FileExistsError
-    instead if a file is already stored for the id, whatever its extension.
+    exists) readable, writable, and searchable. For a directory, which is deposited as
+    a zip of its contents, everything inside it must be readable too. Raises
+    FileExistsError instead if a file is already stored for the id, whatever its
+    extension.
     """
     if not os.access(src, os.R_OK):
         raise PermissionError(f"'{src}' is not readable")
@@ -356,7 +351,7 @@ def verify_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> 
     else:
         raise FileExistsError(f"'{existing}' is already stored for this resource")
 
-    if src.is_dir() and not _same_filesystem(src, tgt_base):
+    if src.is_dir():
         for item in src.rglob("*"):
             perm = (os.R_OK | os.X_OK) if item.is_dir() else os.R_OK
             if not os.access(item, perm):
@@ -364,7 +359,8 @@ def verify_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> 
 
 
 def verify_no_symlinks(src: Path) -> None:
-    """Raises ValueError, naming the link, if src is or contains a symbolic link."""
+    """Raises ValueError, naming the link, if src is or contains a symbolic link (a
+    directory can't, as it's deposited as a zip of its contents)."""
     if src.is_symlink():
         raise ValueError(f"'{src}' is a symbolic link")
     if src.is_dir():
@@ -383,10 +379,10 @@ def store_resource(cfg: ArchiveConfig, src: Path, *, id: str | None = None) -> P
     nbank.json.
 
     Raises KeyError if a file is already stored for id, and TypeError if src is a
-    directory and the policy doesn't allow them.
+    directory.
     """
-    if not cfg["policy"]["allow_directories"] and src.is_dir():
-        raise TypeError("policy forbids depositing directories")
+    if src.is_dir():
+        raise TypeError(f"'{src}' is a directory; zip it first")
 
     if id is None:
         id = src.name
@@ -419,14 +415,8 @@ def store_resource(cfg: ArchiveConfig, src: Path, *, id: str | None = None) -> P
             src.parent,
             src,
         )
-        if src.is_dir():
-            shutil.copytree(src, tgt_file, symlinks=True)
-        else:
-            shutil.copy2(src, tgt_file)
+        shutil.copy2(src, tgt_file)
     pfix(tgt_file)
-    if tgt_file.is_dir():
-        for f in tgt_file.rglob("*"):
-            pfix(f)
 
     return tgt_file
 

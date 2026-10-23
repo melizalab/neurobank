@@ -53,33 +53,6 @@ def make_directory(root):
     return root
 
 
-def test_hash_directory_is_unchanged(tmp_path):
-    # registered hashes of existing directory resources depend on this format,
-    # so these values must not change
-    root = make_directory(tmp_path / "res")
-    assert util.hash_directory(root) == "c080a1a8c60ebd275493b8e90bd7f0c90624e798"
-    assert util.hash_directory(root, "md5") == "99d607a5053c7272e12c9a91cba4ee0c"
-
-
-def test_directory_hasher_matches_hash_directory(tmp_path):
-    import io
-
-    root = make_directory(tmp_path / "res")
-    hasher = util.DirectoryHasher()
-    for rel in reversed(list(directory_files)):
-        hasher.add_stream(rel, io.BytesIO(directory_files[rel].encode()))
-    assert hasher.hexdigest() == util.hash_directory(root)
-
-
-def test_directory_hasher_rejects_repeated_path():
-    import io
-
-    hasher = util.DirectoryHasher()
-    hasher.add_stream("a/b", io.BytesIO(b"x"))
-    with pytest.raises(ValueError, match="a/b"):
-        hasher.add_stream("a/b", io.BytesIO(b"y"))
-
-
 def test_hash_stream_reads_in_blocks_and_copies(tmp_path, monkeypatch):
     import hashlib
     import io
@@ -102,66 +75,6 @@ def test_hash_stream_reports_progress(monkeypatch):
     seen = []
     util.hash_stream(io.BytesIO(b"x" * 25), progress=seen.append)
     assert seen == [10, 20, 25]
-
-
-def test_hash_directory_with_multiple_files(tmp_path):
-    d = tmp_path / "sub"
-    d.mkdir()
-    (d / "hello.txt").write_text("blarg1")
-    (d / "hello2.txt").write_text("blarg2")
-    hash1 = util.hash_directory(d)
-    hash2 = util.hash_directory(d)
-    assert hash1 == hash2
-
-
-def test_hash_directory_after_moving(tmp_path):
-    d = tmp_path / "sub"
-    d.mkdir()
-    (d / "hello.txt").write_text("blarg1")
-    (d / "hello2.txt").write_text("blarg2")
-    hash1 = util.hash_directory(d)
-    # rename the directory to simulate depositing it
-    new_d = d.rename(tmp_path / "new_sub")
-    hash2 = util.hash_directory(new_d)
-    assert hash1 == hash2
-
-
-def test_hash_directory_detects_extra_file(tmp_path):
-    d = tmp_path / "sub"
-    d.mkdir()
-    p = d / "hello.txt"
-    p.write_text("blarg1")
-    hash1 = util.hash_directory(d)
-    p = d / "hello2.txt"
-    p.write_text("blarg2")
-    hash2 = util.hash_directory(d)
-    assert hash1 != hash2
-
-
-def test_hash_directory_detects_missing_file(tmp_path):
-    d = tmp_path / "sub"
-    d.mkdir()
-    p = d / "hello.txt"
-    p.write_text("blarg1")
-    p = d / "hello2.txt"
-    p.write_text("blarg2")
-    hash1 = util.hash_directory(d)
-    p.unlink()
-    hash2 = util.hash_directory(d)
-    assert hash1 != hash2
-
-
-def test_hash_directory_detects_modified_file(tmp_path):
-    d = tmp_path / "sub"
-    d.mkdir()
-    p = d / "hello.txt"
-    p.write_text("blarg1")
-    p = d / "hello2.txt"
-    p.write_text("blarg2")
-    hash1 = util.hash_directory(d)
-    p.write_text("abcedf")
-    hash2 = util.hash_directory(d)
-    assert hash1 != hash2
 
 
 def test_parse_http_location():

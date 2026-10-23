@@ -204,7 +204,7 @@ def test_deposit_uuid_resource():
 def test_deposit_refuses_directories(mocked_api, tmp_path, skip_errors, caplog):
     # even when the archive's policy allows directory resources
     root = tmp_path / "archive"
-    archive.create(root, base_url, require_hash=False, allow_directories=True)
+    archive.create(root, base_url, require_hash=False)
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(json=[{"name": archive_name, "root": str(root)}])
@@ -394,7 +394,7 @@ def test_deposit_resource_source_errors(mocked_api, tmp_archive, tmp_path):
 @pytest.mark.parametrize("dry_run", [False, True])
 def test_deposit_rejects_symlinks(mocked_api, tmp_path, dry_run):
     root = tmp_path / "archive"
-    archive.create(root, base_url, require_hash=False, allow_directories=True)
+    archive.create(root, base_url, require_hash=False)
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(json=[{"name": archive_name, "root": str(root)}])

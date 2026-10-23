@@ -122,7 +122,6 @@ the archive's policies. These are the settings you may want to modify:
 -  ``auto_id_type``: If set to ``null`` (or not set at all), automatic ids are assigned by the registry. This is usually a short, random base-36 string. If set to ``"uuid"``, the ``nbank`` script will generate 128-bit UUIDs as identifiers, which are guaranteed to work everywhere but also a little painful to manipulate by hand.
 -  ``require_hash``: If set to true (the default), every resource will have a hash value calculated and stored in the registry. The registry will then be able to prevent duplicate files from being deposited under multiple identifiers.
 -  ``keep_extensions``: If set to true (the default), files keep their extensions when deposited. Only one file with a given base identifier can be deposited, so if you have a ``st32_1_2_1.wav``, the identifier is ``st32_1_2_1``, and therefore you can’t also have an ``st32_1_2_1.json`` file. If set to false, the extension is stripped, so ``st32_1_2_1.wav`` would be deposited as ``st32_1_2_1``. Usually you want this to be true, unless your archive only contains one kind of file.
--  ``allow_directories``: If set to true, the archive can hold directory resources, which earlier versions could deposit, and they can be copied into it. Directories can no longer be deposited: make them zip files first (``nbank.canonical_zip`` writes them in a reproducible form). The default is false.
 -  ``access``: Who owns the archive's files and who can read and write them. These are usually set by ``nbank init``.
 
    -  ``user``: The account that should own the files, or ``null`` for a shared archive (``--shared``).
@@ -341,11 +340,9 @@ Instead, neurobank gives deposited files the archive's group and the
 permissions allowed by its umask, and keeps the resource subdirectories
 group-writable and setgid so that any member of the group can deposit.
 
-In new archives, deposited resources are read-only, including everything
-inside directory resources, so they can't be changed after they're
-registered. New resources can still be deposited, and resources can
-still be removed with ``nbank archive prune``, but only the owner of a
-read-only directory resource, or root, can remove it.
+In new archives, deposited resources are read-only, so they can't be changed
+after they're registered. New resources can still be deposited, and resources
+can still be removed with ``nbank archive prune``.
 
 ``nbank check archive`` reports files and directories whose group or
 permissions don't match ``nbank.json``, and ``--fix`` repairs them. Many fixes require running this command as root, because only the owner of a file or root can change its permissions. It also reports an archive that has no ``staging`` directory, which ``--fix`` creates (archives made before it existed need this before directories can be deposited with ``--zip-directories``), and anything left in ``staging``, which ``--fix`` offers to delete.

@@ -37,6 +37,7 @@ class Status(enum.Enum):
     DUPLICATE = "DUPLICATE file for the same resource"
     UNEXPECTED = "UNEXPECTED file outside a resource subdirectory"
     SYMLINK = "SYMBOLIC link"
+    DIRECTORY = "a DIRECTORY, which isn't a resource"
     INCOMPLETE = "INCOMPLETE transfer or deposit (safe to delete)"
     WRONG_OWNER = "WRONG owner"
     WRONG_GROUP = "WRONG group"
@@ -180,11 +181,6 @@ def _age(path: Path) -> str:
     return "less than a minute"
 
 
-def _symlinks_in(path: Path) -> Iterator[Path]:
-    """Returns the symbolic links inside the directory at path, in sorted order."""
-    return (p for p in sorted(path.rglob("*")) if p.is_symlink())
-
-
 def check_archive_contents(
     archive_path: Path, expected: Mapping[str, str | None], *, check_hash: bool = True
 ) -> Iterator[Finding]:
@@ -210,6 +206,8 @@ def check_archive_contents(
         path = paths[0]
         if path.is_symlink():
             status = Status.SYMLINK
+        elif path.is_dir():
+            status = Status.DIRECTORY
         elif path.parent.name != archive.id_stub(name):
             status = Status.MISPLACED
         elif not os.access(path, os.R_OK):
@@ -223,9 +221,6 @@ def check_archive_contents(
         else:
             status = Status.OK
         yield Finding(status, name, path)
-        if status != Status.SYMLINK and path.is_dir():
-            for link in _symlinks_in(path):
-                yield Finding(Status.SYMLINK, name, link)
     for name in remaining:
         yield Finding(Status.MISSING_FROM_ARCHIVE, name)
 
@@ -263,7 +258,9 @@ def recheck_unregistered(
             else "the registry lists no locations"
         )
         sha1 = record["sha1"]
-        if not os.access(finding.path, os.R_OK):
+        if finding.path.is_dir():
+            status = Status.DIRECTORY
+        elif not os.access(finding.path, os.R_OK):
             status = Status.UNREADABLE
         elif sha1 is None:
             status = Status.UNVERIFIED_ELSEWHERE
@@ -325,18 +322,6 @@ def _listdir(path: Path) -> list[Path]:
         return []
 
 
-def _resource_tree(path: Path, name: str) -> Iterator[tuple[Path, str]]:
-    """Yields (path, name) for a resource and everything in it.
-
-    Each directory comes before its contents. Symbolic links are skipped.
-    """
-    yield path, name
-    if path.is_dir():
-        for child in _listdir(path):
-            if not child.is_symlink():
-                yield from _resource_tree(child, name)
-
-
 def _archive_tree(base: Path) -> Iterator[tuple[Path, str | None]]:
     """Yields (path, resource name) for the resources directory and everything in it.
 
@@ -353,7 +338,7 @@ def _archive_tree(base: Path) -> Iterator[tuple[Path, str | None]]:
                 continue
             if transfer.partial_target(resource_path.name) is not None:
                 continue
-            yield from _resource_tree(resource_path, resource_path.stem)
+            yield resource_path, resource_path.stem
 
 
 def check_archive_permissions(

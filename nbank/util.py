@@ -9,7 +9,7 @@ import json
 import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from pathlib import Path, PurePath, PurePosixPath
+from pathlib import Path, PurePath
 from typing import Any, BinaryIO
 
 from httpx import USE_CLIENT_DEFAULT, Client
@@ -196,74 +196,13 @@ def hash_stream(
     return digest.hexdigest()
 
 
-class DirectoryHasher:
-    """Computes the hash of a directory resource from its files, added in any order.
-
-    Files are named by their paths relative to the directory, with '/' separators. The
-    hash is of the lines `<path>=<file hash>`, sorted by path component and joined with
-    newlines. Directories don't contribute.
-    """
-
-    def __init__(self, method: str = "sha1"):
-        self.method = method
-        self._files: dict[PurePosixPath, str] = {}
-
-    def add(self, relpath: str | PurePath, file_hash: str) -> None:
-        """Records the hash of the file at relpath. Raises ValueError on a repeat."""
-        key = PurePosixPath(relpath)
-        if key in self._files:
-            raise ValueError(f"'{key}' was added more than once")
-        self._files[key] = file_hash
-
-    def add_stream(
-        self,
-        relpath: str | PurePath,
-        source: BinaryIO,
-        progress: Callable[[int], None] | None = None,
-    ) -> str:
-        """Hashes a file read from source and records it. Returns the file's hash.
-
-        progress is passed to hash_stream.
-        """
-        file_hash = hash_stream(source, self.method, progress=progress)
-        self.add(relpath, file_hash)
-        return file_hash
-
-    def hexdigest(self) -> str:
-        import hashlib
-
-        lines = [
-            f"{path}={self._files[path]}"
-            for path in sorted(self._files, key=lambda p: p.parts)
-        ]
-        return hashlib.new(self.method, "\n".join(lines).encode("utf-8")).hexdigest()
-
-
 def hash(fname: Path, method: str = "sha1") -> str:
-    """Returns the hash of fname, a file or directory (see hash_directory).
+    """Returns the hash of the file fname.
 
     method is any algorithm hashlib supports.
     """
-    p = fname.resolve(strict=True)
-    if p.is_dir():
-        return hash_directory(p, method)
-    with open(p, "rb") as fp:
+    with open(fname, "rb") as fp:
         return hash_stream(fp, method)
-
-
-def hash_directory(path: Path, method: str = "sha1") -> str:
-    """Returns the hash of the directory at path; see DirectoryHasher.
-
-    method is the name of a hashlib algorithm.
-    """
-    p = path.resolve(strict=True)
-    hasher = DirectoryHasher(method)
-    for fn in p.rglob("*"):
-        if not fn.is_file():
-            continue
-        with open(fn, "rb") as fp:
-            hasher.add_stream(fn.relative_to(p).as_posix(), fp)
-    return hasher.hexdigest()
 
 
 def query_registry(

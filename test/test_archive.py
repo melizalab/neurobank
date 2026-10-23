@@ -17,12 +17,6 @@ def tmp_archive(tmp_path):
 
 
 @pytest.fixture()
-def tmp_dir_archive(tmp_path):
-    root = tmp_path / "archive"
-    return archive.create(root, dummy_registry, allow_directories=True)
-
-
-@pytest.fixture()
 def tmp_noext_archive(tmp_path):
     root = tmp_path / "archive"
     return archive.create(root, dummy_registry, keep_extensions=False)
@@ -172,26 +166,6 @@ def test_cannot_violate_directory_policy(tmp_archive, tmp_path):
         archive.store_resource(tmp_archive, dir)
 
 
-def test_can_store_directories(tmp_dir_archive, tmp_path):
-    id = "dummy_1"
-    umask = tmp_dir_archive["policy"]["access"]["umask"]
-    dname = tmp_path / "tempdir"
-    fname = dname / "tempfile"
-    dname.mkdir()
-    fname.write_text("this is dumb")
-    fname.chmod(0o777)
-    assert (fname.stat().st_mode & umask) != 0
-
-    archive.store_resource(tmp_dir_archive, dname, id=id)
-    path = archive.resource_path(tmp_dir_archive, id, resolve_ext=True)
-    assert path.is_dir()
-    assert (path.stat().st_mode & umask) == 0
-
-    fpath = path / "tempfile"
-    assert fpath.is_file()
-    assert (fpath.stat().st_mode & umask) == 0
-
-
 def test_can_strip_extensions(tmp_noext_archive, tmp_path):
     name = "dummy_3"
     src = tmp_path / "temp.wav"
@@ -276,37 +250,18 @@ def test_verify_permissions_ok(tmp_archive, tmp_path):
     assert archive.verify_permissions(tmp_archive, dummy, name) is None
 
 
-def test_verify_permissions_same_filesystem_skips_content_check(
-    tmp_dir_archive, tmp_path
-):
-    # same-filesystem deposit is a plain rename, so unreadable contents don't
-    # matter (archive.tmp_path and tmp_dir_archive's path share a filesystem)
+@pytest.mark.skipif(os.getuid() == 0, reason="root can read anything")
+def test_verify_permissions_checks_directory_contents(tmp_archive, tmp_path):
+    # a directory is deposited as a zip of its contents, so they must be readable
     dname = tmp_path / "tempdir"
     dname.mkdir()
-    (dname / "unreadable").write_text("blah")
-    (dname / "unreadable").chmod(0o000)
-    assert archive.verify_permissions(tmp_dir_archive, dname, "dummy_1") is None
-
-
-def test_verify_permissions_cross_filesystem_checks_contents(
-    monkeypatch, tmp_dir_archive, tmp_path
-):
-    monkeypatch.setattr(archive, "_same_filesystem", lambda a, b: False)
-    dname = tmp_path / "tempdir"
-    dname.mkdir()
+    (dname / "readable").write_text("blah")
+    assert archive.verify_permissions(tmp_archive, dname, "dummy_1") is None
     unreadable = dname / "unreadable"
     unreadable.write_text("blah")
     unreadable.chmod(0o000)
     with pytest.raises(PermissionError, match=str(unreadable)):
-        archive.verify_permissions(tmp_dir_archive, dname, "dummy_1")
-
-
-def test_verify_permissions_cross_filesystem_ok(monkeypatch, tmp_dir_archive, tmp_path):
-    monkeypatch.setattr(archive, "_same_filesystem", lambda a, b: False)
-    dname = tmp_path / "tempdir"
-    dname.mkdir()
-    (dname / "readable").write_text("blah")
-    assert archive.verify_permissions(tmp_dir_archive, dname, "dummy_1") is None
+        archive.verify_permissions(tmp_archive, dname, "dummy_1")
 
 
 def test_store_resource_copies_when_source_dir_not_writable(
@@ -344,17 +299,6 @@ def test_store_resource_applies_mode_policy(tmp_path, restrictive_umask):
     assert stat.S_IMODE(path.stat().st_mode) == 0o444
     assert stat.S_IMODE(path.parent.stat().st_mode) & 0o777 == 0o775
     assert list(check.check_archive_permissions(cfg)) == []
-
-
-def test_store_resource_leaves_symlink_targets_alone(tmp_dir_archive, tmp_path):
-    outside = tmp_path / "outside"
-    outside.write_text("not in the archive")
-    outside.chmod(0o600)
-    src = tmp_path / "res_1"
-    src.mkdir()
-    (src / "link").symlink_to(outside)
-    archive.store_resource(tmp_dir_archive, src)
-    assert stat.S_IMODE(outside.stat().st_mode) == 0o600
 
 
 def test_verify_no_symlinks(tmp_path):
@@ -534,40 +478,30 @@ def test_mode_policy_read_only_resources(tmp_archive):
     assert archive.mode_policy(tmp_archive, resource) == (0o444 & ~umask, umask)
 
 
-def make_directory_resource(cfg, tmp_path, name="res_1"):
-    src = tmp_path / name
-    (src / "sub").mkdir(parents=True)
-    (src / "sub" / "data").write_text("contents")
-    return archive.store_resource(cfg, src)
+def plant_directory(cfg, name="res_1"):
+    """Puts a read-only directory where a resource would be stored, as a directory
+    resource was."""
+    path = archive.resource_path(cfg, name)
+    (path / "sub").mkdir(parents=True)
+    (path / "sub" / "data").write_text("contents")
+    for p in (path / "sub" / "data", path / "sub", path):
+        p.chmod(0o444 if p.is_file() else 0o555)
+    return path
 
 
-def test_store_read_only_directory_resource(tmp_dir_archive, tmp_path):
-    path = make_directory_resource(tmp_dir_archive, tmp_path)
-    for p in (path, path / "sub"):
-        assert stat.S_IMODE(p.stat().st_mode) & 0o222 == 0
-    assert stat.S_IMODE((path / "sub" / "data").stat().st_mode) == 0o444
-    # the subdirectory still accepts new resources
-    other = tmp_path / "res_2"
-    other.write_text("contents")
-    archive.store_resource(tmp_dir_archive, other)
-    assert list(check.check_archive_permissions(tmp_dir_archive)) == []
-
-
-def test_remove_read_only_directory_resource(tmp_dir_archive, tmp_path):
-    path = make_directory_resource(tmp_dir_archive, tmp_path)
-    resource = archive.Resource(tmp_dir_archive["path"], "res_1")
+def test_remove_read_only_directory(tmp_archive):
+    path = plant_directory(tmp_archive)
+    resource = archive.Resource(tmp_archive["path"], "res_1")
     assert resource.deletable
     resource.unlink()
     assert not path.exists()
 
 
-def test_cannot_remove_others_read_only_directory_resource(
-    tmp_dir_archive, tmp_path, monkeypatch
-):
-    path = make_directory_resource(tmp_dir_archive, tmp_path)
+def test_cannot_remove_others_read_only_directory(tmp_archive, tmp_path, monkeypatch):
+    path = plant_directory(tmp_archive)
     src = tmp_path / "res_2"
     src.write_text("contents")
-    file_path = archive.store_resource(tmp_dir_archive, src)
+    file_path = archive.store_resource(tmp_archive, src)
     # pretend to be some other (non-root) user in the archive's group
     monkeypatch.setattr(os, "getuid", lambda: path.stat().st_uid + 1)
     assert not archive._can_remove(path)
