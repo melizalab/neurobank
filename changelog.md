@@ -37,6 +37,8 @@ Requires django-neurobank 1.0 (registry API 2.x).
   1000): a taken name or hash, one shared with another file in the deposit, or an
   invalid dtype, experimenter, animal or metadata is an error for that file.
   Dry runs now need permission to deposit (#11).
+- `nbank modify --dtype` (`core.update(dtype=)`) changes resources' datatype
+  (#62). `metadata` is optional in `core.update`.
 - `nbank fetch --verify` checks each file against its registered hash, trying the
   resource's other locations if it doesn't match (`util.fetch_resource(sha1=)`),
   and warns about resources with no hash; `-@` reads ids from stdin (#8).

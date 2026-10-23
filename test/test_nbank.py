@@ -881,6 +881,28 @@ def test_search_by_core_fields(mocked_api, capsys):
     assert capsys.readouterr().out == "res_1\n"
 
 
+def test_modify_dtype(mocked_api, capsys):
+    mocked_api.patch(
+        registry.full_url(base_url, "res_1"),
+        json={"dtype": "intracellular-abfzip", "metadata": {"dtype": "abf"}},
+    ).respond(json={"name": "res_1"})
+    # a metadata key of the same name stays metadata
+    argv = ("--dtype", "intracellular-abfzip", "-k", "dtype=abf", "res_1")
+    assert run_main("modify", *argv) is None
+    assert json.loads(capsys.readouterr().out) == {"name": "res_1"}
+
+
+def test_update_dtype_only(mocked_api):
+    route = mocked_api.patch(registry.full_url(base_url, "res_1")).respond(
+        json={"name": "res_1"}
+    )
+    list(core.update(base_url, "res_1", dtype="wav"))
+    assert json.loads(route.calls.last.request.content) == {
+        "dtype": "wav",
+        "metadata": {},
+    }
+
+
 def test_modify_core_fields(mocked_api, capsys):
     mocked_api.patch(
         registry.full_url(base_url, "res_1"),

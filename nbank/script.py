@@ -409,6 +409,7 @@ def main(argv=None):
         dest="metadata_remove",
     )
     add_core_field_args(pp, "update")
+    pp.add_argument("-d", "--dtype", help="change the datatype of the resource(s)")
     pp.add_argument("id", nargs="+", help="identifier(s) of the resource(s)")
 
     pp = sub.add_parser(
@@ -923,6 +924,7 @@ def set_resource_metadata(args):
         *args.id,
         auth=args.auth,
         metadata={**args.metadata, **fields},
+        dtype=args.dtype,
     ):
         json.dump(result, fp=sys.stdout, indent=2)
         sys.stdout.write("\n")

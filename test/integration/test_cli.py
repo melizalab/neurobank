@@ -435,6 +435,19 @@ def test_deposit_dry_run_refused(cli, archive, dtype, register, tmp_path, caplog
     assert f"{src}: error: name:" in caplog.text
 
 
+def test_modify_dtype(cli, registry, client, register, unique):
+    name = register()["name"]
+    dtype = unique("dtype")
+    body = {"name": dtype, "content_type": "text/plain", "extension": "txt"}
+    client.post(f"{registry.url}datatypes/", json=body).raise_for_status()
+    assert cli("modify", "--dtype", dtype, name) == 0
+    record = core.describe(registry.url, name)
+    assert record["dtype"] == dtype
+    assert record["filename"] == f"{name}.txt"
+    assert cli("modify", "--dtype", unique("no-such-dtype"), name) == 1
+    assert core.describe(registry.url, name)["dtype"] == dtype
+
+
 def test_fetch_verify(cli, make_archive, dtype, deposit_file, dest, capsys):
     archive = make_archive(require_hash=True)
     name = deposit_file(archive, dtype)

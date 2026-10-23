@@ -503,12 +503,13 @@ def update(
     base_url: str,
     *ids: str,
     auth: RegistryAuth = None,
-    metadata: Mapping[str, Any],
+    metadata: Mapping[str, Any] | None = None,
+    dtype: str | None = None,
 ) -> Iterator[dict]:
     """Update metadata for one or more resources. Set a key to None to delete.
 
     The experimenter and animal keys of metadata are the resources' fields; None
-    clears them.
+    clears them. dtype, if given, changes the resources' datatype.
 
     Yields the updated record for each resource. A resource that is not in the
     registry yields {"name": id, "error": "not found"}.
@@ -518,7 +519,9 @@ def update(
 
     with registry_session(base_url, auth=make_auth(auth)) as session:
         for id in ids:
-            url, params = update_resource_metadata(base_url, id, **metadata)
+            url, params = update_resource_metadata(base_url, id, **(metadata or {}))
+            if dtype is not None:
+                params["dtype"] = dtype
             r = session.patch(url, json=params)
             if r.status_code == 404:
                 yield {"name": id, "error": "not found"}
