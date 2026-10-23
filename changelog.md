@@ -47,6 +47,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Fixed
 
+- `nbank.admin` exits with status 1 when a resource can't be deleted, updated or
+  marked (including one that isn't in the registry, or for `update-hash` has no
+  copy on this host), and reports registry errors instead of a traceback.
 - `util.query_registry` and `query_registry_bulk` use the session's credentials;
   they sent requests without them unless given `auth`.
 

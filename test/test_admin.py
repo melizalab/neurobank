@@ -41,7 +41,7 @@ def test_delete_record(id_file, tmp_path):
     with respx.mock(assert_all_called=False) as mock:
         records = mock_registry(mock, ["res_1", "res_2"])
         deletes = [mock.delete(f"{resource_url}{i}/").respond(204) for i in records]
-        admin.delete_resources(make_args(id_file, record))
+        assert admin.delete_resources(make_args(id_file, record)) is None
         assert all(d.called for d in deletes)
     lines = [json.loads(line) for line in record.read_text().splitlines()]
     assert lines == list(records.values())
@@ -53,7 +53,7 @@ def test_delete_record_skips_failed_purge(id_file, tmp_path):
         records = mock_registry(mock, ["res_1", "res_2"])
         mock.delete(f"{resource_url}res_1/").respond(404)
         mock.delete(f"{resource_url}res_2/").respond(204)
-        admin.delete_resources(make_args(id_file, record))
+        assert admin.delete_resources(make_args(id_file, record)) == 1
     lines = [json.loads(line) for line in record.read_text().splitlines()]
     assert lines == [records["res_2"]]
 
@@ -114,7 +114,8 @@ def test_supersede_marks_with_the_time(caplog):
     caplog.set_level(logging.INFO, logger="nbank")
     with respx.mock() as mock:
         patch = route_superseded(mock, "res_1")
-        admin.supersede_resources(supersede_args("res_1", by="res_2", note="dup"))
+        args = supersede_args("res_1", by="res_2", note="dup")
+        assert admin.supersede_resources(args) is None
     [data] = sent(patch)
     assert data["superseded_by"] == "res_2" and data["superseded_note"] == "dup"
     assert data["superseded_on"].endswith("+00:00")
@@ -145,7 +146,8 @@ def test_supersede_clear():
 def test_supersede_clear_refuses_a_note(caplog):
     with respx.mock(assert_all_called=False) as mock:
         patch = route_superseded(mock, "res_1", "2026-01-01T00:00:00Z")
-        admin.supersede_resources(supersede_args("res_1", clear=True, note="x"))
+        args = supersede_args("res_1", clear=True, note="x")
+        assert admin.supersede_resources(args) == 1
     assert not patch.called
     assert "don't give them" in caplog.text
 
@@ -166,7 +168,8 @@ def test_supersede_continues_past_errors(caplog):
         bad.side_effect = None
         bad.respond(400, json={"superseded_by": ["no such resource 'nope'"]})
         patch = route_superseded(mock, "res_3")
-        admin.supersede_resources(supersede_args("res_1", "res_2", "res_3", by="nope"))
+        args = supersede_args("res_1", "res_2", "res_3", by="nope")
+        assert admin.supersede_resources(args) == 1
     assert "not in the registry" in caplog.text
     assert "no such resource 'nope'" in caplog.text
     assert patch.called

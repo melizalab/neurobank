@@ -70,6 +70,8 @@ def delete_resource(
 
 
 def delete_resources(args):
+    """Returns 1 if any resource isn't in the registry."""
+    n_failed = 0
     if args.dry_run:
         log.info("DRY RUN")
 
@@ -94,11 +96,16 @@ def delete_resources(args):
             except httpx.HTTPStatusError as err:
                 if err.response.status_code == 404:
                     log.error("  - not in the registry, skipping")
+                    n_failed += 1
                 else:
                     raise err
+    return 1 if n_failed else None
 
 
 def update_hashes(args):
+    """Returns 1 if any resource isn't in the registry, has no copy on this host,
+    or couldn't be updated."""
+    n_failed = 0
     if args.dry_run:
         log.info("DRY RUN")
     to_update = []
@@ -111,7 +118,9 @@ def update_hashes(args):
     url, query = registry.get_locations_bulk(args.registry_url, to_update)
     with util.registry_session(args.registry_url, auth=args.auth) as session:
         resources = util.query_registry_bulk(session, url, query)
+        missing = set(to_update)
         for i, resource in enumerate(resources, start=1):
+            missing.discard(resource["name"])
             log.info(
                 "- [%d/%d] %s (current hash: %s)",
                 i,
@@ -142,6 +151,17 @@ def update_hashes(args):
                     log.debug("    - %s is not local, skipping", loc)
                 except httpx.HTTPStatusError as err:
                     registry.log_error(err)
+                    n_failed += 1
+                    break
+            else:
+                log.error("    - no copy on this host, skipping")
+                n_failed += 1
+    for resource_id in sorted(missing):
+        log.error(
+            "- %s: not in the registry or has no locations, skipping", resource_id
+        )
+        n_failed += 1
+    return 1 if n_failed else None
 
 
 def supersede_resource(
@@ -198,6 +218,8 @@ def supersede_resource(
 
 
 def supersede_resources(args):
+    """Returns 1 if any resource couldn't be marked."""
+    n_failed = 0
     if args.dry_run:
         log.info("DRY RUN")
     with util.registry_session(args.registry_url, auth=args.auth) as session:
@@ -217,9 +239,11 @@ def supersede_resources(args):
                     log.error("  - not in the registry, skipping")
                 else:
                     registry.log_error(err)
+                n_failed += 1
             except ValueError as err:
                 log.error("  - error: %s", err)
-                return
+                return 1
+    return 1 if n_failed else None
 
 
 if __name__ == "__main__":
@@ -320,8 +344,14 @@ if __name__ == "__main__":
     except NetrcParseError as err:
         log.error("error: unable to use netrc file: %s", err.msg)
         raise SystemExit(1) from err
+    # commands return 1 (or None for success), as nbank's do
+    status = 1
     try:
-        args.func(args)
+        status = args.func(args) or 0
     except util.RegistryVersionError as err:
         log.error("error: %s", err)
-        raise SystemExit(1) from err
+    except httpx.RequestError:
+        log.error("registry error: unable to contact server")
+    except httpx.HTTPStatusError as err:
+        registry.log_error(err)
+    raise SystemExit(status)

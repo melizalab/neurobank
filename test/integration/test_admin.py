@@ -43,7 +43,7 @@ def test_delete(admin_cli, registry, archive, dtype, deposit_file, tmp_path, uni
     paths = [stored_path(archive, name) for name in names]
     missing = unique("missing")
     result = admin_cli("delete", str(listing(tmp_path, missing, *names)))
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 1, result.stderr
     assert "not in the registry, skipping" in result.stderr
     for name, path in zip(names, paths, strict=True):
         assert not path.exists()
@@ -94,16 +94,32 @@ def test_update_hash_skips_resources_not_on_this_host(
     absent = register(archive=archive.name)["name"]
     present = deposit_file(archive, dtype)
     result = admin_cli("update-hash", str(listing(tmp_path, absent, present)))
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 1, result.stderr
+    assert "no copy on this host" in result.stderr
     expected = util.hash(stored_path(archive, present))
     assert core.describe(registry.url, present)["sha1"] == expected
     assert core.describe(registry.url, absent)["sha1"] is None
+
+
+def test_update_hash_unregistered(admin_cli, tmp_path):
+    result = admin_cli("update-hash", str(listing(tmp_path, "no-such-resource")))
+    assert result.returncode == 1
+    assert "no-such-resource: not in the registry" in result.stderr
 
 
 def test_requires_registry_url(admin_cli, tmp_path):
     result = admin_cli("delete", str(listing(tmp_path)), url=None)
     assert result.returncode != 0
     assert "supply a registry url" in result.stderr
+
+
+def test_unreachable_registry(admin_cli, tmp_path):
+    result = admin_cli(
+        "delete", str(listing(tmp_path, "res_1")), url="http://127.0.0.1:9/neurobank/"
+    )
+    assert result.returncode == 1
+    assert "unable to contact server" in result.stderr
+    assert "Traceback" not in result.stderr
 
 
 def test_supersede(admin_cli, registry, register):
@@ -126,5 +142,6 @@ def test_supersede(admin_cli, registry, register):
 def test_supersede_refused_by_registry(admin_cli, registry, register):
     old = register()["name"]
     result = admin_cli("supersede", "--by", old, old)
+    assert result.returncode == 1
     assert "registry error" in result.stderr
     assert core.describe(registry.url, old)["superseded_on"] is None
