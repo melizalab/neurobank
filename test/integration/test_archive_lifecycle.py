@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from nbank import archive as nbank_archive
-from nbank import check, core, script, transfer, util
+from nbank import check, core, script, transfer
 from nbank import registry as nbank_registry
 
 
@@ -568,147 +568,91 @@ def test_import_tar_file_already_there(
     assert core.describe(registry.url, name)["locations"] == [a.name]
 
 
-@pytest.fixture
-def dir_archives(make_archive):
-    return (
-        make_archive(allow_directories=True, require_hash=True),
-        make_archive(allow_directories=True, require_hash=False),
-    )
-
-
-def test_import_tar_directory_resource(
-    store_directory, cli, registry, dir_archives, dtype, unique, tmp_path, caplog
+def test_import_tar_refuses_a_directory(
+    plant_directory, cli, registry, two_archives, dtype, unique, tmp_path, caplog
 ):
-    a, b = dir_archives
-    src = tmp_path / unique("res")
-    (src / "sub").mkdir(parents=True)
-    (src / "sub" / "data").write_text("inside")
-    (src / "top").write_text("top")
-    name = store_directory(a, dtype, src)
+    a, b = two_archives
+    name = plant_directory(a, dtype, unique("res"))
     tar = tmp_path / "archive.tar"
     with tarfile.open(tar, "w") as t:
-        t.add(stored_path(a, name), arcname=name)
-    assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
-    assert (stored_path(b, name) / "sub" / "data").read_text() == "inside"
-    assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
-    assert cli("check", "archive", str(b.path)) == 0
+        t.add(nbank_archive.resource_path(a.config, name), arcname=name)
+    assert cli("archive", "import-tar", str(tar), str(b.path)) == 1
+    assert f"{name} -> is a directory, which isn't a resource" in caplog.text
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, name)
+    assert core.describe(registry.url, name)["locations"] == [a.name]
 
 
 def test_export_and_import(
-    store_directory,
-    cli,
-    registry,
-    dir_archives,
-    dtype,
-    deposit_file,
-    unique,
-    tmp_path,
-    caplog,
+    cli, registry, two_archives, dtype, deposit_file, unique, tmp_path, caplog
 ):
-    a, b = dir_archives
-    file_name = deposit_file(a, dtype, contents=unique("file contents"))
-    src = tmp_path / unique("res")
-    (src / "sub").mkdir(parents=True)
-    (src / "sub" / "data").write_text(unique("inside"))
-    dir_name = store_directory(a, dtype, src)
+    a, b = two_archives
+    names = [
+        deposit_file(a, dtype, contents=unique("file contents"), hash=True)
+        for _ in range(2)
+    ]
     missing = unique("missing")
     tar = tmp_path / "export.tar"
-    assert cli("export", "--manifest", str(tar), file_name, dir_name, missing) == 1
+    assert cli("export", "--manifest", str(tar), *names, missing) == 1
     assert f"{missing} -> not in the registry" in caplog.text
     with tarfile.open(tar) as t:
         assert t.getnames()[-1] == "manifest.json"
         manifest = json.load(t.extractfile("manifest.json"))
     assert manifest["registry"] == registry.url
     entries = {e["name"]: e for e in manifest["resources"]}
-    assert set(entries) == {file_name, dir_name}
-    assert entries[file_name]["dtype"] == dtype
-    assert entries[dir_name]["path"] == dir_name
-    assert "locations" not in entries[file_name]
+    assert set(entries) == set(names)
+    assert entries[names[0]]["dtype"] == dtype
+    assert entries[names[0]]["path"] == stored_path(a, names[0]).name
+    assert "locations" not in entries[names[0]]
     assert cli("check", "tar", str(tar)) == 0
 
     assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
-    assert (
-        stored_path(b, file_name).read_bytes() == stored_path(a, file_name).read_bytes()
-    )
-    assert (stored_path(b, dir_name) / "sub" / "data").read_text().startswith("inside")
-    for name in (file_name, dir_name):
+    for name in names:
+        assert stored_path(b, name).read_bytes() == stored_path(a, name).read_bytes()
         assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
     assert cli("check", "archive", str(b.path)) == 0
 
 
 @pytest.mark.parametrize("out_name", ["export.zip", "export"])
 def test_export_zip_and_directory(
-    store_directory,
-    cli,
-    registry,
-    dir_archives,
-    dtype,
-    deposit_file,
-    unique,
-    tmp_path,
-    out_name,
+    plant_directory, cli, archive, dtype, deposit_file, unique, tmp_path, out_name
 ):
     import zipfile
 
-    a, _ = dir_archives
-    file_name = deposit_file(a, dtype)
-    src = tmp_path / unique("res")
-    (src / "sub").mkdir(parents=True)
-    (src / "sub" / "data").write_text(unique("inside"))
-    dir_name = store_directory(a, dtype, src)
+    file_name = deposit_file(archive, dtype)
+    planted = plant_directory(archive, dtype, unique("res"))
     out = tmp_path / out_name
-    assert cli("export", str(out), file_name, dir_name) == 0
-    file_stored = stored_path(a, file_name)
+    assert cli("export", str(out), file_name, planted) == 1
+    file_stored = stored_path(archive, file_name)
     if out.suffix == ".zip":
         with zipfile.ZipFile(out) as zf:
+            assert zf.namelist() == [file_stored.name]
             assert zf.read(file_stored.name) == file_stored.read_bytes()
-            assert f"{dir_name}/sub/data" in zf.namelist()
     else:
+        assert [p.name for p in out.iterdir()] == [file_stored.name]
         assert (out / file_stored.name).read_bytes() == file_stored.read_bytes()
-        assert util.hash_directory(out / dir_name) == util.hash_directory(
-            stored_path(a, dir_name)
-        )
 
 
-def test_copy(
-    store_directory,
-    cli,
-    registry,
-    dir_archives,
-    dtype,
-    deposit_file,
-    unique,
-    tmp_path,
-    caplog,
-):
-    a, b = dir_archives
-    file_name = deposit_file(a, dtype)
-    src = tmp_path / unique("res")
-    (src / "sub").mkdir(parents=True)
-    (src / "sub" / "data").write_text(unique("inside"))
-    dir_name = store_directory(a, dtype, src)
+def test_copy(cli, registry, two_archives, dtype, deposit_file, unique, caplog):
+    a, b = two_archives
+    file_name, other = (deposit_file(a, dtype) for _ in range(2))
     missing = unique("missing")
 
-    assert cli("copy", "-y", str(b.path), file_name, dir_name) == 0
+    assert cli("copy", "-y", str(b.path), file_name, other) == 0
     assert core.describe(registry.url, file_name)["locations"] == [a.name]
     with pytest.raises(FileNotFoundError):
         stored_path(b, file_name)
 
-    assert cli("copy", str(b.path), file_name, dir_name, missing) == 1
+    assert cli("copy", str(b.path), file_name, other, missing) == 1
     assert f"{missing} -> not in the registry" in caplog.text
     assert "copied: 2" in caplog.text
-    assert (
-        stored_path(b, file_name).read_bytes() == stored_path(a, file_name).read_bytes()
-    )
-    assert util.hash_directory(stored_path(b, dir_name)) == util.hash_directory(
-        stored_path(a, dir_name)
-    )
-    for name in (file_name, dir_name):
+    for name in (file_name, other):
+        assert stored_path(b, name).read_bytes() == stored_path(a, name).read_bytes()
         assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
     assert cli("check", "archive", str(b.path)) == 0
 
     caplog.clear()
-    assert cli("copy", str(b.path), file_name, dir_name) == 0
+    assert cli("copy", str(b.path), file_name, other) == 0
     assert "already in destination: 2" in caplog.text
 
 
@@ -743,25 +687,14 @@ def test_copy_changed_source(cli, registry, two_archives, dtype, deposit_file, c
         stored_path(b, name)
 
 
-def test_copy_directory_to_archive_without_directories(
-    store_directory,
-    cli,
-    registry,
-    dir_archives,
-    make_archive,
-    dtype,
-    unique,
-    tmp_path,
-    caplog,
+def test_copy_refuses_a_directory(
+    plant_directory, cli, registry, two_archives, dtype, unique, caplog
 ):
-    a, _ = dir_archives
-    b = make_archive(require_hash=False)
-    src = tmp_path / unique("res")
-    src.mkdir()
-    (src / "data").write_text(unique("inside"))
-    name = store_directory(a, dtype, src)
+    a, b = two_archives
+    name = plant_directory(a, dtype, unique("res"))
     assert cli("copy", str(b.path), name) == 1
-    assert "doesn't allow directory resources" in caplog.text
+    assert "is a directory, which isn't a resource" in caplog.text
+    assert core.describe(registry.url, name)["locations"] == [a.name]
 
 
 def test_import_tar_read_error(
@@ -963,19 +896,15 @@ def test_check_tar_hash_mismatch(cli, archive, dtype, deposit_file, tmp_path, ca
     assert "failed: 1" in caplog.text
 
 
-def test_check_tar_directory_resource(
-    store_directory, cli, registry, dir_archives, dtype, unique, tmp_path, caplog
+def test_check_tar_refuses_a_directory(
+    plant_directory, cli, archive, dtype, unique, tmp_path, caplog
 ):
-    a, _ = dir_archives
-    src = tmp_path / unique("res")
-    (src / "sub").mkdir(parents=True)
-    (src / "sub" / "data").write_text(unique("inside"))
-    name = store_directory(a, dtype, src)
+    name = plant_directory(archive, dtype, unique("res"))
     tar = tmp_path / "archive.tar"
     with tarfile.open(tar, "w") as t:
-        t.add(stored_path(a, name), arcname=name)
-    assert cli("check", "tar", str(tar)) == 0
-    assert f"{name} -> OK" in caplog.text
+        t.add(nbank_archive.resource_path(archive.config, name), arcname=name)
+    assert cli("check", "tar", str(tar)) == 1
+    assert f"{name} -> is a directory, which isn't a resource" in caplog.text
 
 
 def test_check_tar_from_stdin(

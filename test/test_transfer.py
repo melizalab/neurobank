@@ -19,7 +19,7 @@ bulk_locations_url = bulk_url + "locations/"
 
 @pytest.fixture
 def tmp_archive(tmp_path):
-    return archive.create(tmp_path / "archive", base_url, allow_directories=True)
+    return archive.create(tmp_path / "archive", base_url)
 
 
 def store(cfg, tmp_path, name, contents="contents"):
@@ -183,24 +183,17 @@ def test_find_unreadable(respx_mock, tmp_archive, tmp_path):
     assert source.error == f"'{path}' is not readable"
 
 
-@pytest.mark.skipif(os.getuid() == 0, reason="root can read anything")
 @respx.mock(assert_all_mocked=True)
-def test_find_directory_with_unreadable_contents(respx_mock, tmp_archive, tmp_path):
-    src = tmp_path / "res_1"
-    (src / "sub").mkdir(parents=True)
-    (src / "sub" / "data").write_text("contents")
-    path = archive.store_resource(tmp_archive, src)
+def test_find_refuses_a_directory(respx_mock, tmp_archive):
+    path = archive.resource_path(tmp_archive, "res_1")
+    path.mkdir(parents=True)
     FakeBulkLocations(
         respx_mock,
         [record("res_1", None, location("arch", tmp_archive["path"], "res_1"))],
     )
-    inner = path / "sub" / "data"
-    inner.chmod(0o000)
-    try:
-        [source] = find(["res_1"])
-    finally:
-        inner.chmod(0o444)
-    assert source.error == f"'{inner}' is not readable"
+    [source] = find(["res_1"])
+    assert source.path is None
+    assert source.error == f"'{path}' is a directory, which isn't a resource"
 
 
 @respx.mock(assert_all_mocked=True)
@@ -360,24 +353,6 @@ def test_receive_file_never_replaces(tmp_archive, monkeypatch, hard_links):
     assert leftovers(tmp_archive) == []
 
 
-def test_receive_directory_never_replaces(tmp_archive):
-    # another process stores the resource while this one is writing it
-    target = tmp_archive["path"] / "resources" / "re" / "res_1"
-
-    def racing_entries():
-        yield ("a.txt", io.BytesIO(b"first"))
-        target.mkdir()
-        (target / "theirs").write_text("stored by someone else")
-        yield ("b.txt", io.BytesIO(b"second"))
-
-    with pytest.raises(transfer.TransferError, match="appeared"):
-        transfer.receive_directory(
-            tmp_archive, "res_1", "res_1", racing_entries(), None
-        )
-    assert [p.name for p in target.iterdir()] == ["theirs"]
-    assert leftovers(tmp_archive) == []
-
-
 def test_receive_flushes_to_disk(tmp_archive, monkeypatch):
     synced = []
     real_fsync = os.fsync
@@ -390,9 +365,6 @@ def test_receive_flushes_to_disk(tmp_archive, monkeypatch):
     transfer.receive_file(tmp_archive, "res_1", "f", io.BytesIO(b"x"), None)
     # the file, then the directory entry for its new name
     assert len(synced) == 2
-    synced.clear()
-    transfer.receive_directory(tmp_archive, "res_2", "res_2", directory_entries(), None)
-    assert len(synced) == len(directory_contents) + 1
 
 
 def test_receive_file_dry_run(tmp_archive):
@@ -404,76 +376,6 @@ def test_receive_file_dry_run(tmp_archive):
     assert not (tmp_archive["path"] / "resources" / "re").exists()
     with pytest.raises(transfer.TransferError, match="don't match"):
         transfer.receive_file(None, "res_1", "f.wav", io.BytesIO(data), sha1_of(b"x"))
-
-
-directory_contents = {"a.txt": b"first", "sub/b.bin": b"second", "sub/deeper/c": b""}
-
-
-def directory_entries(contents=directory_contents):
-    entries = [("sub", None)]
-    entries += [(rel, io.BytesIO(data)) for rel, data in contents.items()]
-    return entries
-
-
-def directory_hash(tmp_path, contents=directory_contents):
-    root = tmp_path / "reference"
-    for rel, data in contents.items():
-        path = root / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-    return util.hash_directory(root)
-
-
-def test_receive_directory(tmp_archive, tmp_path):
-    sha1 = directory_hash(tmp_path)
-    entries = list(reversed(directory_entries()))
-    received = transfer.receive_directory(tmp_archive, "res_1", "res_1", entries, sha1)
-    target = tmp_archive["path"] / "resources" / "re" / "res_1"
-    assert received == transfer.Received(target, sha1, True)
-    assert util.hash_directory(target) == sha1
-    assert (target / "sub" / "b.bin").read_bytes() == b"second"
-    for path in (target, target / "sub", target / "sub" / "b.bin"):
-        assert stat.S_IMODE(path.stat().st_mode) & 0o222 == 0
-    assert leftovers(tmp_archive) == []
-    assert list(check.check_archive_permissions(tmp_archive)) == []
-
-
-def test_receive_directory_hash_mismatch(tmp_archive):
-    with pytest.raises(transfer.TransferError, match="don't match"):
-        transfer.receive_directory(
-            tmp_archive, "res_1", "res_1", directory_entries(), sha1_of(b"x")
-        )
-    assert not (tmp_archive["path"] / "resources" / "re" / "res_1").exists()
-    assert leftovers(tmp_archive) == []
-
-
-@pytest.mark.parametrize(
-    "relpath", ["../escape", "/etc/passwd", "sub/../../escape", "", "."]
-)
-def test_receive_directory_refuses_paths_outside(tmp_archive, tmp_path, relpath):
-    entries = [*directory_entries(), (relpath, io.BytesIO(b"x"))]
-    with pytest.raises(transfer.TransferError, match="not a path inside"):
-        transfer.receive_directory(tmp_archive, "res_1", "res_1", entries, None)
-    assert leftovers(tmp_archive) == []
-    assert not (tmp_archive["path"] / "resources" / "escape").exists()
-    with pytest.raises(transfer.TransferError, match="not a path inside"):
-        transfer.receive_directory(None, "res_1", "res_1", entries, None)
-
-
-def test_receive_directory_refuses_repeated_path(tmp_archive):
-    entries = [*directory_entries(), ("a.txt", io.BytesIO(b"again"))]
-    with pytest.raises(transfer.TransferError, match="more than once"):
-        transfer.receive_directory(tmp_archive, "res_1", "res_1", entries, None)
-    assert leftovers(tmp_archive) == []
-
-
-def test_receive_directory_dry_run(tmp_archive, tmp_path):
-    sha1 = directory_hash(tmp_path)
-    received = transfer.receive_directory(
-        None, "res_1", "res_1", directory_entries(), sha1
-    )
-    assert received == transfer.Received(None, sha1, True)
-    assert not (tmp_archive["path"] / "resources" / "re").exists()
 
 
 add_location_url = f"{base_url}resources/res_1/locations/"
@@ -554,8 +456,9 @@ def tar_bytes(members):
     return buf.getvalue()
 
 
-def read_tar(members, registered, read=True):
-    """Runs iter_tar_resources over members; returns what it yields, read."""
+def read_tar(members, registered):
+    """Runs iter_tar_resources over members; returns what it yields, read, or the
+    error from reading it."""
     tar = tarfile.open(fileobj=io.BytesIO(tar_bytes(members)), mode="r|")
 
     def lookup(id, member):
@@ -563,13 +466,11 @@ def read_tar(members, registered, read=True):
 
     results = []
     for res in transfer.iter_tar_resources(tar, lookup):
-        if not read:
-            results.append((res.record["name"], res.name, res.is_dir))
-        elif res.is_dir:
-            entries = [(rel, None if s is None else s.read()) for rel, s in res.data]
-            results.append((res.record["name"], res.name, entries))
-        else:
-            results.append((res.record["name"], res.name, res.data.read()))
+        try:
+            data = res.data.read()
+        except transfer.TransferError as err:
+            data = str(err)
+        results.append((res.record["name"], res.name, data))
     return results
 
 
@@ -594,57 +495,26 @@ def test_tar_resources_full_paths():
     ]
     assert read_tar(members, {"res_1", "res_2"}) == [
         ("res_1", "res_1.wav", b"one"),
-        ("res_2", "res_2", [("data", b"two")]),
+        ("res_2", "res_2", "is a directory, which isn't a resource"),
     ]
 
 
 def test_tar_resources_directory():
     members = [
         ("unregistered_dir", None),
+        ("unregistered_dir/res_u", b"inside an unregistered directory"),
         ("res_d", None),
         ("res_d/sub", None),
-        ("res_d/sub/f", b"inside"),
-        ("res_d/g", b"top"),
-        ("res_f.txt", b"after"),
-    ]
-    assert read_tar(members, {"res_d", "res_f"}) == [
-        ("res_d", "res_d", [("sub", None), ("sub/f", b"inside"), ("g", b"top")]),
-        ("res_f", "res_f.txt", b"after"),
-    ]
-
-
-def test_tar_resources_skips_unread_directory():
-    members = [
-        ("res_d", None),
-        ("res_d/f", b"inside"),
-        ("res_d/g", b"inside"),
-        ("res_f.txt", b"after"),
-    ]
-    tar = tarfile.open(fileobj=io.BytesIO(tar_bytes(members)), mode="r|")
-    items = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
-    res = next(items)
-    assert (res.record["name"], res.is_dir, res.size) == ("res_d", True, None)
-    # the directory's entries are never read
-    res = next(items)
-    assert (res.record["name"], res.name, res.size) == ("res_f", "res_f.txt", 5)
-    assert res.data.read() == b"after"
-    assert next(items, None) is None
-
-
-def test_tar_resources_directory_with_link():
-    members = [
-        ("res_d", None),
-        ("res_d/f", b"inside"),
+        ("res_d/sub/res_f", b"inside"),
         ("res_d/link", "link"),
         ("res_f.txt", b"after"),
     ]
-    tar = tarfile.open(fileobj=io.BytesIO(tar_bytes(members)), mode="r|")
-    items = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
-    entries = next(items).data
-    with pytest.raises(transfer.TransferError, match="res_d/link"):
-        list(entries)
-    res = next(items)
-    assert (res.record["name"], res.data.read()) == ("res_f", b"after")
+    # the contents of a registered directory are skipped, even registered ids
+    assert read_tar(members, {"res_d", "res_f", "res_u"}) == [
+        ("res_u", "res_u", b"inside an unregistered directory"),
+        ("res_d", "res_d", "is a directory, which isn't a resource"),
+        ("res_f", "res_f.txt", b"after"),
+    ]
 
 
 def test_open_tar_from_stdin(monkeypatch):
@@ -674,10 +544,6 @@ def test_receive_reports_progress(tmp_archive, monkeypatch, dry_run):
 
     transfer.receive_file(cfg, "res_1", "f.wav", io.BytesIO(b"123456"), None, progress)
     assert seen == [("f.wav", 4), ("f.wav", 6)]
-    seen.clear()
-    entries = [("sub", None), ("sub/a", io.BytesIO(b"12345")), ("b", io.BytesIO(b"1"))]
-    transfer.receive_directory(cfg, "res_2", "res_2", entries, None, progress)
-    assert seen == [("sub/a", 4), ("sub/a", 5), ("b", 1)]
 
 
 class FakeTape(io.RawIOBase):
@@ -782,44 +648,15 @@ def write_export(tmp_path, fmt, *sources, compress=False):
 
 
 def export_contents(path):
-    """Returns (name, contents) for everything in an export, None for directories."""
+    """Returns (name, contents) for everything in an export."""
     if path.suffix == ".tar":
         with tarfile.open(path) as tar:
-            return [
-                (m.name, tar.extractfile(m).read() if m.isreg() else None)
-                for m in tar.getmembers()
-            ]
+            return [(m.name, tar.extractfile(m).read()) for m in tar.getmembers()]
     if path.suffix == ".zip":
         with zipfile.ZipFile(path) as zf:
             assert zf.testzip() is None
-            return [
-                (i.filename.rstrip("/"), None if i.is_dir() else zf.read(i))
-                for i in zf.infolist()
-            ]
-    return [
-        (p.relative_to(path).as_posix(), None if p.is_dir() else p.read_bytes())
-        for p in transfer._walk(path)
-    ]
-
-
-@pytest.fixture
-def dir_resource(tmp_path):
-    root = tmp_path / "src" / "res_d"
-    for rel, data in directory_contents.items():
-        path = root / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-    return root
-
-
-dir_resource_members = [
-    ("res_d", None),
-    ("res_d/a.txt", b"first"),
-    ("res_d/sub", None),
-    ("res_d/sub/b.bin", b"second"),
-    ("res_d/sub/deeper", None),
-    ("res_d/sub/deeper/c", b""),
-]
+            return [(i.filename, zf.read(i)) for i in zf.infolist()]
+    return [(p.name, p.read_bytes()) for p in sorted(path.iterdir())]
 
 
 def test_export_file_resource(tmp_path, export_format):
@@ -832,19 +669,15 @@ def test_export_file_resource(tmp_path, export_format):
     assert export_contents(out) == [("res_1.wav", b"one")]
 
 
-def test_export_directory_resource(tmp_path, export_format, dir_resource):
-    sha1 = directory_hash(tmp_path)
-    out, results = write_export(tmp_path, export_format, source_for(dir_resource, sha1))
-    assert results == [True]
-    assert export_contents(out) == dir_resource_members
-
-
-def test_export_tar_reads_back(tmp_path, dir_resource):
-    sha1 = directory_hash(tmp_path)
-    out, _ = write_export(tmp_path, "tar", source_for(dir_resource, sha1))
+def test_export_tar_reads_back(tmp_path):
+    path = tmp_path / "res_1.wav"
+    path.write_bytes(b"one")
+    out, _ = write_export(tmp_path, "tar", source_for(path, sha1_of(b"one")))
     with transfer.open_tar(out) as tar:
         res = next(transfer.iter_tar_resources(tar, lambda id, m: {"name": id}))
-        received = transfer.receive_directory(None, "res_d", res.name, res.data, sha1)
+        received = transfer.receive_file(
+            None, "res_1", res.name, res.data, sha1_of(b"one")
+        )
     assert received.verified
 
 
@@ -891,27 +724,19 @@ def test_export_leaves_out_mismatched_file(tmp_path, export_format):
     assert export_contents(out) == [("res_1", b"res_1"), ("res_3", b"res_3")]
 
 
-def test_export_leaves_out_mismatched_directory(tmp_path, export_format, dir_resource):
-    last = tmp_path / "res_2"
-    last.write_bytes(b"two")
-    out, results = write_export(
-        tmp_path,
-        export_format,
-        source_for(dir_resource, sha1_of(b"wrong")),
-        source_for(last, sha1_of(b"two")),
-    )
-    assert isinstance(results[0], transfer.TransferError)
-    assert export_contents(out) == [("res_2", b"two")]
-
-
-# the size of an export with nothing in it
 empty_size = {"tar": tarfile.RECORDSIZE, "zip": 22}
 
 
-def test_export_refuses_link_in_directory(tmp_path, export_format, dir_resource):
-    (dir_resource / "link").symlink_to("a.txt")
-    out, results = write_export(tmp_path, export_format, source_for(dir_resource, None))
-    assert "not a file or directory" in str(results[0])
+@pytest.mark.parametrize("kind", ["link", "directory"])
+def test_export_refuses_what_isnt_a_file(tmp_path, export_format, kind):
+    path = tmp_path / "res_1"
+    if kind == "link":
+        (tmp_path / "target").write_bytes(b"one")
+        path.symlink_to("target")
+    else:
+        path.mkdir()
+    out, results = write_export(tmp_path, export_format, source_for(path, None))
+    assert "is not a file" in str(results[0])
     assert export_contents(out) == []
     if export_format in empty_size:
         # nothing is left of the resource after the end of the file
@@ -919,9 +744,11 @@ def test_export_refuses_link_in_directory(tmp_path, export_format, dir_resource)
 
 
 @pytest.mark.skipif(os.getuid() == 0, reason="root can read anything")
-def test_export_unreadable_file(tmp_path, export_format, dir_resource):
-    (dir_resource / "sub" / "b.bin").chmod(0)
-    out, results = write_export(tmp_path, export_format, source_for(dir_resource, None))
+def test_export_unreadable_file(tmp_path, export_format):
+    path = tmp_path / "res_1"
+    path.write_bytes(b"one")
+    path.chmod(0)
+    out, results = write_export(tmp_path, export_format, source_for(path, None))
     assert "unable to read" in str(results[0])
     assert export_contents(out) == []
 
@@ -979,14 +806,13 @@ def test_export_directory_keeps_mtime(tmp_path):
     assert (out / "res_1").stat().st_mtime == 1_000_000_000
 
 
-def test_export_writable_copies(tmp_path, dir_resource):
+def test_export_writable_copies(tmp_path):
     # resources in an archive are read-only; exported copies needn't be
-    for path in [*transfer._walk(dir_resource), dir_resource]:
-        path.chmod(0o555 if path.is_dir() else 0o444)
-    out, _ = write_export(tmp_path, "dir", source_for(dir_resource, None))
-    archive.remove(out / "res_d")
-    for path in [*transfer._walk(dir_resource), dir_resource]:
-        path.chmod(0o755 if path.is_dir() else 0o644)
+    path = tmp_path / "res_1"
+    path.write_bytes(b"one")
+    path.chmod(0o444)
+    out, _ = write_export(tmp_path, "dir", source_for(path, None))
+    assert os.access(out / "res_1", os.W_OK) or os.getuid() == 0
 
 
 @pytest.mark.parametrize("name", ["export.tar.gz", "export.tgz", "export.tar.xz"])
@@ -1007,15 +833,17 @@ def test_export_never_overwrites_file(tmp_path, fmt):
     assert out.read_bytes() == b"already here"
 
 
-def test_export_reports_progress(tmp_path, export_format, dir_resource):
+def test_export_reports_progress(tmp_path, export_format):
+    path = tmp_path / "res_1"
+    path.write_bytes(b"first")
     calls = []
     with transfer.open_export(tmp_path / export_names[export_format]) as writer:
         transfer.write_resource(
             writer,
-            source_for(dir_resource, None),
+            source_for(path, None),
             progress=lambda path, n: calls.append((path, n)),
         )
-    assert calls == [("a.txt", 5), ("sub/b.bin", 6)]
+    assert calls == [("res_1", 5)]
 
 
 def test_export_manifest(tmp_path, export_format):
@@ -1082,45 +910,33 @@ def test_receive_source_file(tmp_archive, tmp_path, dry_run):
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
-def test_receive_source_directory(tmp_archive, tmp_path, dir_resource, dry_run):
-    sha1 = directory_hash(tmp_path)
-    dest = None if dry_run else tmp_archive
-    received = transfer.receive_source(dest, source_for(dir_resource, sha1))
-    assert received.verified
-    if not dry_run:
-        assert util.hash_directory(received.path) == sha1
-
-
-@pytest.mark.parametrize("dry_run", [False, True])
-def test_receive_source_mismatch(tmp_archive, tmp_path, dir_resource, dry_run):
+def test_receive_source_mismatch(tmp_archive, tmp_path, dry_run):
+    path = tmp_path / "res_1"
+    path.write_bytes(b"one")
     dest = None if dry_run else tmp_archive
     with pytest.raises(transfer.TransferError, match="don't match"):
-        transfer.receive_source(dest, source_for(dir_resource, sha1_of(b"wrong")))
+        transfer.receive_source(dest, source_for(path, sha1_of(b"wrong")))
     assert leftovers(tmp_archive) == []
 
 
 @pytest.mark.skipif(os.getuid() == 0, reason="root can read anything")
 @pytest.mark.parametrize("dry_run", [False, True])
-def test_receive_source_unreadable(tmp_archive, tmp_path, dir_resource, dry_run):
-    (dir_resource / "sub" / "b.bin").chmod(0)
+def test_receive_source_unreadable(tmp_archive, tmp_path, dry_run):
+    path = tmp_path / "res_1"
+    path.write_bytes(b"one")
+    path.chmod(0)
     dest = None if dry_run else tmp_archive
-    with pytest.raises(transfer.TransferError):
-        transfer.receive_source(dest, source_for(dir_resource, None))
+    with pytest.raises(transfer.TransferError, match="unable to read"):
+        transfer.receive_source(dest, source_for(path, None))
     assert leftovers(tmp_archive) == []
 
 
-def test_receive_source_refuses_link(tmp_archive, tmp_path, dir_resource):
-    (dir_resource / "link").symlink_to("a.txt")
-    with pytest.raises(transfer.TransferError, match="not a file or directory"):
-        transfer.receive_source(tmp_archive, source_for(dir_resource, None))
+def test_receive_source_refuses_a_directory(tmp_archive, tmp_path):
+    path = tmp_path / "res_1"
+    path.mkdir()
+    with pytest.raises(transfer.TransferError, match="unable to read"):
+        transfer.receive_source(tmp_archive, source_for(path, None))
     assert leftovers(tmp_archive) == []
-
-
-def test_receive_directory_needs_policy(tmp_path):
-    cfg = archive.create(tmp_path / "no_dirs", base_url)
-    with pytest.raises(transfer.TransferError, match="doesn't allow directory"):
-        transfer.receive_directory(cfg, "res_1", "res_1", directory_entries(), None)
-    assert list((cfg["path"] / "resources").iterdir()) == []
 
 
 class FailingFile(io.RawIOBase):
@@ -1174,25 +990,6 @@ def test_receive_passes_on_tar_read_error(failing_tar, tmp_archive, dry_run):
     assert leftovers(tmp_archive) == []
 
 
-def test_receive_directory_where_renaming_needs_write_access(tmp_archive, monkeypatch):
-    # macOS refuses to rename a directory the caller can't write to; Linux doesn't
-    real_rename = os.rename
-
-    def rename(src, dst, *args, **kwargs):
-        if os.path.isdir(src) and not os.access(src, os.W_OK):
-            raise PermissionError(errno.EACCES, "Permission denied", str(src))
-        return real_rename(src, dst, *args, **kwargs)
-
-    monkeypatch.setattr(os, "rename", rename)
-    received = transfer.receive_directory(
-        tmp_archive, "res_1", "res_1", directory_entries(), None
-    )
-    assert (received.path / "sub" / "b.bin").read_bytes() == b"second"
-    # read-only once it's in place
-    assert stat.S_IMODE(received.path.stat().st_mode) & 0o222 == 0
-    assert leftovers(tmp_archive) == []
-
-
 def truncated_tar(tmp_path, members, keep):
     """Writes a tar file of members cut off after keep bytes, as when a tape
     runs out partway through it."""
@@ -1213,19 +1010,6 @@ def test_truncated_member(tmp_path, tmp_archive, dry_run):
         second = next(resources)
         with pytest.raises(transfer.TarReadError, match="res_2"):
             transfer.receive_file(dest, "res_2", second.name, second.data, None)
-    assert leftovers(tmp_archive) == []
-
-
-@pytest.mark.parametrize("dry_run", [False, True])
-def test_truncated_directory_member(tmp_path, tmp_archive, dry_run):
-    members = [("res_d", None), ("res_d/a", b"x" * 5120), ("res_d/b", b"y" * 5120)]
-    # cut off partway through res_d/b
-    path = truncated_tar(tmp_path, members, 512 + 512 + 5120 + 512 + 1000)
-    dest = None if dry_run else tmp_archive
-    with transfer.open_tar(path) as tar:
-        res = next(transfer.iter_tar_resources(tar, lambda id, m: {"name": id}))
-        with pytest.raises(transfer.TarReadError, match="res_d/b"):
-            transfer.receive_directory(dest, "res_d", res.name, res.data, None)
     assert leftovers(tmp_archive) == []
 
 

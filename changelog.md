@@ -12,6 +12,11 @@ Requires django-neurobank 1.0 (registry API 2.x).
 - `core.get` and `core.find` are removed; use `core.find_resource(s)`, which
   return paths, or `nbank locate` for every location of a resource.
   `archive.iter_resources` is removed; use `check.check_archive_contents`.
+- Directory resources are gone (all have been converted to zip files):
+  `transfer.receive_directory` is removed, and `export`, `copy`, `archive
+  import-tar` and `check tar` report a directory where a resource should be as
+  an error for that resource ("is a directory, which isn't a resource"), skipping
+  its contents in a tar file.
 - `nbank.util.registry_session()` yields an HTTP client for the registry that
   asks for API 2.0 and checks the registry's version. Code that changes the
   registry with its own client gets a 400 from it; the `query_registry`

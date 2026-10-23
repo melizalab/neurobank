@@ -46,14 +46,10 @@ def test_receive_and_add_location(
 
     from nbank import util
 
-    dest = make_archive(allow_directories=True)
+    dest = make_archive()
     # unique, because the registry doesn't allow two resources with one hash
     data = unique("file contents").encode()
     file_id = register(sha1=util.hash_stream(io.BytesIO(data)))["name"]
-    src = tmp_path / "dir_resource"
-    (src / "sub").mkdir(parents=True)
-    (src / "sub" / "data").write_bytes(unique("inside").encode())
-    dir_id = register(sha1=util.hash_directory(src))["name"]
 
     received = transfer.receive_file(
         dest.config,
@@ -63,20 +59,9 @@ def test_receive_and_add_location(
         core.describe(registry.url, file_id)["sha1"],
     )
     assert received.verified
-    with open(src / "sub" / "data", "rb") as fp:
-        received_dir = transfer.receive_directory(
-            dest.config,
-            dir_id,
-            dir_id,
-            [("sub", None), ("sub/data", fp)],
-            core.describe(registry.url, dir_id)["sha1"],
-        )
-    assert received_dir.verified
     with util.registry_session(registry.url, auth=registry.auth) as session:
-        for id, stored in ((file_id, received), (dir_id, received_dir)):
-            transfer.add_location(session, registry.url, id, dest.name, stored.path)
-    for id in (file_id, dir_id):
-        assert core.describe(registry.url, id)["locations"] == [dest.name]
+        transfer.add_location(session, registry.url, file_id, dest.name, received.path)
+    assert core.describe(registry.url, file_id)["locations"] == [dest.name]
     assert cli("check", "archive", str(dest.path)) == 0
 
 

@@ -323,21 +323,19 @@ def deposit_file(registry, tmp_path, unique):
 
 
 @pytest.fixture
-def store_directory(register):
-    """Returns a function that registers a directory resource and stores it in an
-    archive, as deposit did before it refused directories. Returns the id.
+def plant_directory(register):
+    """Returns a function that registers a resource in an archive and puts a
+    directory where its file would be, as a directory resource would have been
+    stored. Returns the id."""
 
-    For testing the handling of directory resources already in archives.
-    """
-
-    def store(archive: Archive, dtype: str, src: Path) -> str:
-        require_hash = archive.config["policy"]["require_hash"]
-        sha1 = util.hash_directory(src) if require_hash else None
-        name = register(src.name, dtype=dtype, archive=archive.name, sha1=sha1)["name"]
-        nbank_archive.store_resource(archive.config, src, id=name)
+    def plant(archive: Archive, dtype: str, name: str) -> str:
+        name = register(name, dtype=dtype, archive=archive.name)["name"]
+        path = nbank_archive.resource_path(archive.config, name)
+        (path / "sub").mkdir(parents=True)
+        (path / "sub" / "data").write_text("inside")
         return name
 
-    return store
+    return plant
 
 
 @pytest.fixture

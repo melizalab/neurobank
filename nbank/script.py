@@ -1693,14 +1693,9 @@ def check_tar(args):
                             "  - %s -> not registered to %s", res.name, args.archive
                         )
                         not_located.append(res.record["name"])
-                    receive = (
-                        transfer.receive_directory
-                        if res.is_dir
-                        else transfer.receive_file
-                    )
                     progress.start(res.name, res.size)
                     try:
-                        received = receive(
+                        received = transfer.receive_file(
                             None,
                             res.record["name"],
                             res.name,
@@ -1811,12 +1806,9 @@ def import_tar(args):
                     "  ✗ %s -> '%s' is already in the destination archive", res.name, id
                 )
                 return True
-            receive = (
-                transfer.receive_directory if res.is_dir else transfer.receive_file
-            )
             progress.start(res.name, res.size)
             try:
-                received = receive(
+                received = transfer.receive_file(
                     dest, id, res.name, res.data, res.record["sha1"], progress=progress
                 )
                 if dest is not None:
@@ -1958,7 +1950,7 @@ def export_resources(args):
         ):
             for source in sources:
                 try:
-                    size = None if source.path.is_dir() else source.path.stat().st_size
+                    size = source.path.stat().st_size
                 except OSError:
                     size = None
                 progress.start(source.path.name, size)
@@ -2072,7 +2064,7 @@ def copy_resources(args):
                 if not source.ok:
                     continue
                 try:
-                    size = None if source.path.is_dir() else source.path.stat().st_size
+                    size = source.path.stat().st_size
                 except OSError:
                     size = None
                 progress.start(source.path.name, size)

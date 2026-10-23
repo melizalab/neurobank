@@ -2,8 +2,8 @@
 """Moving resources into and out of neurobank archives
 
 find_sources finds readable copies in the archives on this host, to export or copy.
-receive_file and receive_directory store a resource read from any stream in an archive,
-checking its hash, and add_location records the new copy.
+receive_file stores a resource read from any stream in an archive, checking its hash,
+and add_location records the new copy.
 
 Copyright (C) 2026 Dan Meliza <dan@meliza.org>
 """
@@ -50,17 +50,6 @@ class Source:
         return self.path is not None
 
 
-def _unreadable(path: Path) -> Path | None:
-    """Returns path, or a file or directory inside it, that can't be read; else None."""
-    if path.is_dir():
-        for item in [path, *path.rglob("*")]:
-            perm = (os.R_OK | os.X_OK) if item.is_dir() else os.R_OK
-            if not os.access(item, perm):
-                return item
-        return None
-    return None if os.access(path, os.R_OK) else path
-
-
 def _find_local_copy(record: dict, alt_base: Path | None) -> Source:
     """Returns a Source for the first readable local copy among a record's locations."""
     fields = {
@@ -74,9 +63,11 @@ def _find_local_copy(record: dict, alt_base: Path | None) -> Source:
         path = getattr(resource, "path", None)
         if path is None:
             continue
-        unreadable = _unreadable(path)
-        if unreadable is not None:
-            error = f"'{unreadable}' is not readable"
+        if path.is_dir():
+            error = f"'{path}' is a directory, which isn't a resource"
+            continue
+        if not os.access(path, os.R_OK):
+            error = f"'{path}' is not readable"
             continue
         return Source(path=path, archive=location["archive_name"], **fields)
     return Source(error=error, **fields)
@@ -158,17 +149,6 @@ def _check_hash(sha1: str, registered: str | None) -> bool:
     return True
 
 
-def _entry_path(relpath: str) -> PurePosixPath:
-    """Returns relpath as a path inside a directory resource.
-
-    Raises TransferError for empty, absolute, or '..' paths.
-    """
-    path = PurePosixPath(relpath)
-    if path.is_absolute() or ".." in path.parts or path == PurePosixPath():
-        raise TransferError(f"'{relpath}' is not a path inside the resource")
-    return path
-
-
 def _fsync_dir(path: Path) -> None:
     fd = os.open(path, os.O_RDONLY)
     try:
@@ -198,27 +178,20 @@ def _destination(cfg: nbank_archive.ArchiveConfig, id: str, name: str) -> Path:
 
 
 def _move_into_place(partial: Path, target: Path) -> None:
-    """Moves a verified file or directory into place, never replacing anything."""
-    if partial.is_dir():
+    """Moves a verified file into place, never replacing anything."""
+    try:
+        os.link(partial, target)
+    except FileExistsError:
+        raise TransferError(f"'{target}' appeared while it was being written") from None
+    except OSError:
+        # the filesystem doesn't support hard links
         if target.exists():
-            raise TransferError(f"'{target}' appeared while it was being written")
-        partial.rename(target)
-    else:
-        try:
-            os.link(partial, target)
-        except FileExistsError:
             raise TransferError(
                 f"'{target}' appeared while it was being written"
             ) from None
-        except OSError:
-            # the filesystem doesn't support hard links
-            if target.exists():
-                raise TransferError(
-                    f"'{target}' appeared while it was being written"
-                ) from None
-            partial.rename(target)
-        else:
-            partial.unlink()
+        partial.rename(target)
+    else:
+        partial.unlink()
     _fsync_dir(target.parent)
 
 
@@ -281,87 +254,6 @@ def receive_file(
             partial.unlink(missing_ok=True)
 
 
-def receive_directory(
-    cfg: nbank_archive.ArchiveConfig | None,
-    id: str,
-    name: str,
-    entries: Iterable[tuple[str, BinaryIO | None]],
-    sha1: str | None,
-    progress: Progress | None = None,
-) -> Received:
-    """Stores a directory resource in an archive, checking its hash.
-
-    cfg, name, and sha1 are as for receive_file. entries are (path, stream) pairs
-    relative to the directory; a stream of None is a subdirectory. The directory is
-    staged and moved into place like a file. Refuses absolute, '..', and repeated paths,
-    and archives that don't allow directories. progress is called with each path and the
-    bytes read so far. Raises TransferError if the resource can't be stored, and passes
-    TarReadError on.
-    """
-    if cfg is not None and not cfg["policy"]["allow_directories"]:
-        raise TransferError("the archive doesn't allow directory resources")
-    hasher = util.DirectoryHasher()
-    if cfg is None:
-        for relpath, source in entries:
-            _entry_path(relpath)
-            if source is not None:
-                try:
-                    hasher.add_stream(
-                        relpath, source, progress=_progress_for(progress, relpath)
-                    )
-                except ValueError as err:
-                    raise TransferError(str(err)) from err
-        digest = hasher.hexdigest()
-        return Received(None, digest, _check_hash(digest, sha1))
-    target = _destination(cfg, id, name)
-    partial = target.parent / _partial_name(target.name)
-    created = False
-    try:
-        try:
-            partial.mkdir()
-        except FileExistsError:
-            raise TransferError(
-                f"'{partial}' is left over from an earlier transfer; remove it first"
-            ) from None
-        created = True
-        for relpath, source in entries:
-            path = partial / _entry_path(relpath)
-            if source is None:
-                path.mkdir(parents=True, exist_ok=True)
-                continue
-            path.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                with open(path, "xb") as fp:
-                    file_hash = util.hash_stream(
-                        source,
-                        copy_to=fp,
-                        progress=_progress_for(progress, relpath),
-                    )
-                    fp.flush()
-                    os.fsync(fp.fileno())
-                hasher.add(relpath, file_hash)
-            except (FileExistsError, ValueError):
-                raise TransferError(f"'{relpath}' appears more than once") from None
-        digest = hasher.hexdigest()
-        verified = _check_hash(digest, sha1)
-        pfix = nbank_archive.permission_fixer(cfg)
-        # contents first, so read-only directories can still be entered
-        for path in sorted(partial.rglob("*"), reverse=True):
-            pfix(path)
-        # after the move, as macOS can't rename a directory that isn't writable
-        _move_into_place(partial, target)
-        created = False
-        pfix(target)
-        return Received(target, digest, verified)
-    except TarReadError:
-        raise
-    except OSError as err:
-        raise TransferError(str(err)) from err
-    finally:
-        if created and partial.exists():
-            nbank_archive.remove(partial)
-
-
 # size of each read from a tar file or tape device
 _tape_read_size = 1 << 20
 
@@ -387,6 +279,14 @@ class _MemberReader:
 
     def __getattr__(self, attr):
         return getattr(self._stream, attr)
+
+
+class _DirectoryMember:
+    """Stands in for a resource that's a directory in a tar file, which can't be
+    received: reading it raises TransferError."""
+
+    def read(self, size: int = -1) -> bytes:
+        raise TransferError("is a directory, which isn't a resource")
 
 
 class _BlockReader(io.RawIOBase):
@@ -489,16 +389,14 @@ def open_tar(path: str | Path) -> Iterator[tarfile.TarFile]:
 class TarResource(NamedTuple):
     """A registered resource read from a tar file; see iter_tar_resources.
 
-    record is its registry record and name the member's base name. data is a stream for
-    a file, or (path, stream) entries for a directory (is_dir). size is a file's size in
-    bytes, or None for a directory.
+    record is its registry record and name the member's base name. data is a stream of
+    the file, and size its size in bytes.
     """
 
     record: dict
     name: str
-    data: BinaryIO | Iterator
-    is_dir: bool
-    size: int | None
+    data: BinaryIO
+    size: int
 
 
 def iter_tar_resources(
@@ -507,41 +405,18 @@ def iter_tar_resources(
     """Yields a TarResource for each registered resource in a tar file, in order.
 
     lookup(id, member) returns the registry record for id, or None. A member is a
-    resource if the stem of its base name is a registered id. A file's data is a stream;
-    a directory's is an iterator of (path, stream) entries for receive_directory, with
-    None for subdirectories. Each resource's data has to be read before asking for the
-    next, or it's skipped. Unregistered directories, special members, and a top-level
-    manifest.json are ignored; special members inside a directory resource raise
-    TransferError from its entries.
+    resource if the stem of its base name is a registered id. Each resource's data has
+    to be read before asking for the next, or it's skipped. Unregistered directories,
+    special members, and a top-level manifest.json are ignored. A registered id that's
+    a directory is yielded with data that raises TransferError when read, and its
+    contents are skipped.
     """
-    members = iter(tar)
-    pending: list[tarfile.TarInfo] = []
-
-    def next_member() -> tarfile.TarInfo | None:
-        if pending:
-            return pending.pop()
-        return next(members, None)
-
-    def directory_entries(prefix: str) -> Iterator:
-        special = []
-        while (member := next_member()) is not None:
-            if not member.name.startswith(prefix):
-                pending.append(member)
-                break
-            relpath = member.name[len(prefix) :].rstrip("/")
-            if member.isdir():
-                yield relpath, None
-            elif member.isreg():
-                yield relpath, _MemberReader(tar.extractfile(member), member.name)
-            else:
-                special.append(member.name)
-        if special:
-            raise TransferError(
-                f"contains members that aren't files or directories: {', '.join(special)}"
-            )
-
-    while (member := next_member()) is not None:
+    inside = None
+    for member in tar:
         path = PurePosixPath(member.name)
+        if inside is not None and path.is_relative_to(inside):
+            continue
+        inside = None
         if not (member.isdir() or member.isreg()) or path == PurePosixPath(
             manifest_name
         ):
@@ -551,16 +426,10 @@ def iter_tar_resources(
             continue
         if member.isreg():
             data = _MemberReader(tar.extractfile(member), member.name)
-            yield TarResource(record, path.name, data, False, member.size)
-            continue
-        entries = directory_entries(member.name.rstrip("/") + "/")
-        yield TarResource(record, path.name, entries, True, None)
-        # skip whatever the caller didn't read
-        try:
-            for _ in entries:
-                pass
-        except TransferError:
-            pass
+            yield TarResource(record, path.name, data, member.size)
+        else:
+            inside = path
+            yield TarResource(record, path.name, _DirectoryMember(), 0)
 
 
 class _HashingReader:
@@ -606,7 +475,7 @@ class _HashingReader:
 
 
 def _stat(path: Path) -> os.stat_result:
-    """Returns the status of a file or directory to export.
+    """Returns the status of a file to export.
 
     Raises TransferError if it can't be read or is anything else.
     """
@@ -614,38 +483,22 @@ def _stat(path: Path) -> os.stat_result:
         st = path.lstat()
     except OSError as err:
         raise TransferError(f"unable to read '{path}': {err.strerror}") from err
-    if not (stat.S_ISDIR(st.st_mode) or stat.S_ISREG(st.st_mode)):
-        raise TransferError(f"'{path}' is not a file or directory")
+    if not stat.S_ISREG(st.st_mode):
+        raise TransferError(f"'{path}' is not a file")
     return st
-
-
-def _walk(root: Path) -> Iterator[Path]:
-    """Yields everything under root, sorted, each directory before its contents."""
-    try:
-        children = sorted(root.iterdir())
-    except OSError as err:
-        raise TransferError(f"unable to read '{root}': {err.strerror}") from err
-    for child in children:
-        yield child
-        if child.is_dir() and not child.is_symlink():
-            yield from _walk(child)
 
 
 class ExportWriter:
     """Writes resources to an export, one at a time.
 
-    Call begin(name) with the resource's file name, then add_dir and add_file for the
-    resource and everything in it, using member names that start with that name, then
-    commit() to keep it or abort() to remove it. st is the source's stat result, for its
-    mode and times, and add_file copies the file from reader. Errors writing the export
-    raise OSError.
+    Call begin(name) with the resource's file name, then add_file, then commit() to
+    keep it or abort() to remove it. st is the source's stat result, for its mode and
+    times, and add_file copies the file from reader. Errors writing the export raise
+    OSError.
     """
 
     def begin(self, name: str) -> None:
         pass
-
-    def add_dir(self, name: str, st: os.stat_result) -> None:
-        raise NotImplementedError
 
     def add_file(self, name: str, st: os.stat_result, reader: _HashingReader) -> None:
         raise NotImplementedError
@@ -677,11 +530,6 @@ class _TarWriter(ExportWriter):
         info.mtime = int(st.st_mtime)
         info.uid, info.gid = st.st_uid, st.st_gid
         return info
-
-    def add_dir(self, name: str, st: os.stat_result) -> None:
-        info = self._info(name, st)
-        info.type = tarfile.DIRTYPE
-        self.tar.addfile(info)
 
     def add_file(self, name: str, st: os.stat_result, reader: _HashingReader) -> None:
         info = self._info(name, st)
@@ -718,11 +566,6 @@ class _ZipWriter(ExportWriter):
         info = zipfile.ZipInfo(name, mtime[:6])
         info.external_attr = (st.st_mode & 0xFFFF) << 16
         return info
-
-    def add_dir(self, name: str, st: os.stat_result) -> None:
-        info = self._info(name + "/", st)
-        info.external_attr |= 0x10  # MS-DOS directory flag
-        self.zf.writestr(info, b"")
 
     def add_file(self, name: str, st: os.stat_result, reader: _HashingReader) -> None:
         info = self._info(name, st)
@@ -765,14 +608,8 @@ class _DirectoryWriter(ExportWriter):
             )
         self._partial = partial
 
-    def _path(self, name: str) -> Path:
-        return self._partial.joinpath(*PurePosixPath(name).parts[1:])
-
-    def add_dir(self, name: str, st: os.stat_result) -> None:
-        self._path(name).mkdir()
-
     def add_file(self, name: str, st: os.stat_result, reader: _HashingReader) -> None:
-        path = self._path(name)
+        path = self._partial
         with open(path, "xb") as fp:
             reader.copy_to(fp)
             fp.flush()
@@ -780,7 +617,7 @@ class _DirectoryWriter(ExportWriter):
         os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
 
     def add_bytes(self, name: str, data: bytes) -> None:
-        with open(self._path(name), "xb") as fp:
+        with open(self._partial, "xb") as fp:
             fp.write(data)
             fp.flush()
             os.fsync(fp.fileno())
@@ -790,10 +627,8 @@ class _DirectoryWriter(ExportWriter):
         self._partial = None
 
     def abort(self) -> None:
-        if self._partial is not None and (
-            self._partial.exists() or self._partial.is_symlink()
-        ):
-            nbank_archive.remove(self._partial)
+        if self._partial is not None:
+            self._partial.unlink(missing_ok=True)
         self._partial = None
 
 
@@ -826,8 +661,7 @@ def write_resource(
     """Writes source, found by find_sources, to writer, from open_export.
 
     The resource's hash is checked as it's read. It's stored under its file name in the
-    archive, as a tree for a directory resource. If it can't be read or doesn't match,
-    what was written is removed. progress is called with each file's path and the bytes
+    archive. If it can't be read or doesn't match, what was written is removed. progress is called with each file's path and the bytes
     read so far. Returns False if the registry has no hash to check. Raises
     TransferError for problems with the resource and OSError for problems writing the
     export.
@@ -846,21 +680,7 @@ def write_resource(
         return reader.hexdigest()
 
     try:
-        st = _stat(source.path)
-        if not stat.S_ISDIR(st.st_mode):
-            digest = add_file(name, source.path, st, name)
-        else:
-            writer.add_dir(name, st)
-            hasher = util.DirectoryHasher()
-            for path in _walk(source.path):
-                relpath = path.relative_to(source.path).as_posix()
-                member = f"{name}/{relpath}"
-                st = _stat(path)
-                if stat.S_ISDIR(st.st_mode):
-                    writer.add_dir(member, st)
-                else:
-                    hasher.add(relpath, add_file(member, path, st, relpath))
-            digest = hasher.hexdigest()
+        digest = add_file(name, source.path, _stat(source.path), name)
         verified = _check_hash(digest, source.sha1)
         writer.commit()
         return verified
@@ -883,26 +703,12 @@ def located_in(
     return found
 
 
-def _directory_entries(root: Path) -> Iterator[tuple[str, BinaryIO | None]]:
-    """Yields (path, stream) for everything in a directory, for receive_directory.
-
-    Each file is open only until the next entry is asked for.
-    """
-    for path in _walk(root):
-        relpath = path.relative_to(root).as_posix()
-        if stat.S_ISDIR(_stat(path).st_mode):
-            yield relpath, None
-        else:
-            with open(path, "rb") as fp:
-                yield relpath, fp
-
-
 def receive_source(
     cfg: nbank_archive.ArchiveConfig | None,
     source: Source,
     progress: Progress | None = None,
 ) -> Received:
-    """Stores a Source in an archive with receive_file or receive_directory.
+    """Stores a Source in an archive with receive_file.
 
     cfg is the destination archive's config, or None for a dry run, which only reads and
     checks. Errors reading the source raise TransferError, including in a dry run.
@@ -911,11 +717,6 @@ def receive_source(
         raise TransferError(source.error or "no copy to read")
     name = source.path.name
     try:
-        if source.path.is_dir():
-            entries = _directory_entries(source.path)
-            return receive_directory(
-                cfg, source.id, name, entries, source.sha1, progress
-            )
         with open(source.path, "rb") as fp:
             return receive_file(cfg, source.id, name, fp, source.sha1, progress)
     except OSError as err:
@@ -929,7 +730,7 @@ manifest_name = "manifest.json"
 def write_manifest(writer: ExportWriter, manifest: dict) -> None:
     """Writes manifest to an export as JSON, under manifest_name.
 
-    Raises TransferError if a directory export already has a manifest, and
+    Raises TransferError if an export to a directory already has a manifest, and
     OSError if the export can't be written.
     """
     data = json.dumps(manifest, indent=2).encode("utf-8") + b"\n"
