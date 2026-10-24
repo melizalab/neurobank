@@ -258,7 +258,6 @@ if __name__ == "__main__":
         dest="registry_url",
         help="URL of the registry service. "
         f"Default is to use the environment variable '{registry._env_registry}'",
-        default=registry.default_registry(),
     )
     p.add_argument(
         "-a",
@@ -332,6 +331,8 @@ if __name__ == "__main__":
     if not hasattr(args, "func"):
         p.print_usage()
         p.exit(0)
+    if args.registry_url is None:
+        args.registry_url = registry.default_registry()
     if args.registry_url is None:
         p.error(
             f"supply a registry url with '-r' or {registry._env_registry} "

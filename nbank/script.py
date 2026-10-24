@@ -164,8 +164,11 @@ def add_check_options(pp):
     )
 
 
-def main(argv=None):
-    p = argparse.ArgumentParser(description="manage source files and collected data")
+def make_parser() -> argparse.ArgumentParser:
+    """Returns the parser for the nbank command line."""
+    p = argparse.ArgumentParser(
+        prog="nbank", description="manage source files and collected data"
+    )
     p.add_argument(
         "-v", "--version", action="version", version="%(prog)s " + __version__
     )
@@ -174,7 +177,6 @@ def main(argv=None):
         dest="registry_url",
         help="URL of the registry service. "
         f"Default is to use the environment variable '{registry._env_registry}'",
-        default=registry.default_registry(),
     )
     p.add_argument(
         "-a",
@@ -653,6 +655,11 @@ def main(argv=None):
         help="the tar file: a file, a tape device, or '-' for standard input",
     )
 
+    return p
+
+
+def main(argv=None):
+    p = make_parser()
     args = p.parse_args(argv)
 
     if not hasattr(args, "func"):
@@ -663,6 +670,10 @@ def main(argv=None):
     log.debug("version: %s", __version__)
     log.debug("run time: %s", datetime.datetime.now())
 
+    # read after parsing, so the parser (and documentation built from it) doesn't
+    # hold this host's value
+    if args.registry_url is None:
+        args.registry_url = registry.default_registry()
     # resolved after parsing so that a missing ~/.netrc doesn't break the parser
     try:
         args.auth = core.make_auth(args.auth)

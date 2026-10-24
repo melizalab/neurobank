@@ -157,19 +157,9 @@ The ``deposit`` command takes several options:
    must be in the registry's animal database (in our lab, the colony database's
    UUID for the bird).
 -  ``-k``: specify a metadata key-value pair. You can use this flag
-   multiple times to set multiple fields. Use ``--experimenter`` and
-   ``--animal`` for those fields; ``-k`` refuses their names.
--  ``--no-file-metadata``: if a package provides a metadata reader for the
-   dtype, ``nbank`` checks each file with it and adds the metadata it reads from
-   the file. This skips that.
-- ``--zip-directories``: Resources have to be single files, so directories can
-   only be deposited if they are first stored in a zip file. This option will
-   automatically convert directories to a zip file in a reproducible form and
-   deposit it under the directory's name. The directory is left in place. Dry
-   runs don't build the zip.
--  ``--override-file-metadata``: a file whose metadata disagrees with what's
-   given on the command line is normally skipped; with this, the given values
-   are used.
+   multiple times to set multiple fields. Keys and values have to be legal JSON but
+   are otherwise free-form. Some datatypes have readers that will extract metadata from
+   each deposited file. 
 -  ``-H, --hash``: if set, ``nbank`` will calculate a SHA1 hash of each
    file and store it in the registry. Use this if you expect the
    contents of the file to be unique.

@@ -42,6 +42,12 @@ dev = [
     "respx>=0.20",
     "ruff>=0.7.0"
 ]
+docs = [
+    "furo>=2025.12.19",
+    "myst-parser>=4",
+    "sphinx>=8",
+    "sphinx-argparse>=0.5",
+]
 integration = [
     "django-neurobank>=0.12.0",
 ]

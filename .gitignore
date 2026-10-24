@@ -7,3 +7,6 @@
 *.so
 /examples/
 venv/
+
+# local documentation builds
+docs/_build/
