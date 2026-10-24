@@ -62,6 +62,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
 - Documentation on Read the Docs (https://neurobank.readthedocs.io): guides to
   archives, depositing, searching, accessing and managing resources, and
   references for the CLI and the Python API. The README is now a short tour.
+- `nbank locate`, `fetch`, `export` and `copy` take `--alt-base DIR` (or the
+  `NBANK_ALT_BASE` environment variable), to read archives mounted under `DIR`
+  instead of at their registered roots, as `find_resources(alt_base=)` does.
 - `nbank.admin supersede` marks resources as superseded, or not to be used.
 - `nbank registry-info` shows who the registry sees you as, and what you can
   change: a username and permissions, a superuser, or anonymous (#61).

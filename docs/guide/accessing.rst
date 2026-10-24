@@ -39,6 +39,17 @@ pipe the paths to another program:
 
    nbank search -d spikes-pprox --animal ca7cb913 | xargs nbank locate -0 | xargs -0 ls -l
 
+Archives mounted elsewhere
+--------------------------
+
+An archive is registered with the path it has on the host that manages it, such
+as ``/home/data/starlings``. On a host that mounts it somewhere else, such as a
+share at ``/mnt/data/starlings`` (or ``Z:\starlings`` on Windows), give
+``locate``, ``fetch``, ``export`` and ``copy`` the directory that holds the
+archives with ``--alt-base /mnt/data``, or set ``NBANK_ALT_BASE`` to it. The
+archive's registered parent directory is replaced, so the archive keeps its
+name. In Python, ``find_resources`` takes the same directory as ``alt_base``.
+
 Fetching copies
 ---------------
 

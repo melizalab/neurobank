@@ -386,6 +386,49 @@ def test_fetch_from_local_archive(cli, archive, dtype, deposit_file, dest, capsy
         assert nbank_archive.resource_path(archive.config, name, True).exists()
 
 
+@pytest.fixture
+def mounted(archive, dtype, deposit_file, tmp_path):
+    """A resource in an archive that has moved under another directory, as on a host
+    that mounts it somewhere other than its registered root. Returns (name, the
+    directory holding the archive, the resource's path)."""
+    name = deposit_file(archive, dtype)
+    mount = tmp_path / "mnt"
+    mount.mkdir()
+    moved = archive.path.rename(mount / archive.path.name)
+    stored = nbank_archive.resource_path(moved, name, resolve_ext=True)
+    return name, mount, stored
+
+
+def test_locate_alt_base(cli, mounted, capsys):
+    name, mount, stored = mounted
+    assert cli("locate", name) == 1
+    capsys.readouterr()
+    assert cli("locate", "--alt-base", str(mount), name) == 0
+    assert capsys.readouterr().out == f"{name:<20}\t{stored}\n"
+
+
+def test_alt_base_from_environment(cli, mounted, monkeypatch, tmp_path, capsys):
+    name, mount, stored = mounted
+    monkeypatch.setenv("NBANK_ALT_BASE", str(mount))
+    assert cli("locate", name) == 0
+    assert capsys.readouterr().out == f"{name:<20}\t{stored}\n"
+    # the option wins
+    assert cli("locate", "--alt-base", str(tmp_path / "elsewhere"), name) == 1
+
+
+def test_fetch_alt_base(cli, mounted, dest):
+    name, mount, stored = mounted
+    assert cli("fetch", "--alt-base", str(mount), "-d", str(dest), name) == 0
+    assert (dest / name).read_text() == stored.read_text()
+
+
+def test_export_alt_base(cli, mounted, tmp_path):
+    name, mount, stored = mounted
+    out = tmp_path / "exported"
+    assert cli("export", "--alt-base", str(mount), str(out), name) == 0
+    assert (out / stored.name).read_text() == stored.read_text()
+
+
 def test_fetch_uses_extension_of_dtype(
     cli, registry, client, archive, deposit_file, dest, unique
 ):

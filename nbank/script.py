@@ -9,6 +9,7 @@ import datetime
 import grp
 import json
 import logging
+import os
 import sys
 import tarfile
 import time
@@ -102,6 +103,23 @@ def metadata_key(arg):
     if arg in registry.core_fields:
         raise argparse.ArgumentTypeError(f"{arg} is not metadata; use --{arg}")
     return arg
+
+
+# where archives are mounted on this host, if not at their registered roots
+_env_alt_base = "NBANK_ALT_BASE"
+
+
+def add_alt_base_arg(pp):
+    """Adds --alt-base to a subcommand parser that reads from archives."""
+    pp.add_argument(
+        "--alt-base",
+        type=Path,
+        metavar="DIR",
+        help="the directory that holds the archives on this host, if they're not at "
+        "their registered roots (e.g. a share mounted from another host): "
+        "/home/data/starlings is read as DIR/starlings. Default is to use the "
+        f"environment variable '{_env_alt_base}'",
+    )
 
 
 def add_core_field_args(pp, action: str):
@@ -310,6 +328,7 @@ def make_parser() -> argparse.ArgumentParser:
         help="print paths to stdout separated by null, for piping to xargs -0 (local only)",
         action="store_true",
     )
+    add_alt_base_arg(pp)
     pp.add_argument("id", help="the identifier of the resource", nargs="+")
 
     pp = sub.add_parser("search", help="search for resource(s)")
@@ -438,6 +457,7 @@ def make_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="read additional identifiers from stdin, one per line",
     )
+    add_alt_base_arg(pp)
     pp.add_argument(
         "ids",
         nargs="*",
@@ -473,6 +493,7 @@ def make_parser() -> argparse.ArgumentParser:
         f"{transfer.manifest_name}",
         action="store_true",
     )
+    add_alt_base_arg(pp)
     pp.add_argument(
         "out",
         type=Path,
@@ -505,6 +526,7 @@ def make_parser() -> argparse.ArgumentParser:
         help="read identifiers from FILE, one per line ('-' for standard input)",
         metavar="FILE",
     )
+    add_alt_base_arg(pp)
     pp.add_argument("dest", type=Path, help="path of the destination neurobank archive")
     pp.add_argument("ids", nargs="*", help="identifier(s) of the resource(s) to copy")
 
@@ -673,6 +695,8 @@ def main(argv=None):
     # hold this host's value
     if args.registry_url is None:
         args.registry_url = registry.default_registry()
+    if getattr(args, "alt_base", False) is None and os.environ.get(_env_alt_base):
+        args.alt_base = Path(os.environ[_env_alt_base])
     # resolved after parsing so that a missing ~/.netrc doesn't break the parser
     try:
         args.auth = core.make_auth(args.auth)
@@ -832,7 +856,7 @@ def locate_resources(args):
             try:
                 locations = util.query_registry_paginated(session, url, params)
                 for loc in locations:
-                    resource = util.parse_location(loc)
+                    resource = util.parse_location(loc, alt_base=args.alt_base)
                     if resource is None:
                         pass
                     elif args.link is not None:
@@ -968,6 +992,7 @@ def fetch_resources(args):
                 (dest / resource.get("filename", resource["name"])),
                 extension=args.extension,
                 force=args.force,
+                alt_base=args.alt_base,
                 sha1=resource["sha1"] if args.verify else None,
             ): resource["name"]
             for resource in response
@@ -2022,7 +2047,13 @@ def export_resources(args):
     n_failed = n_written = total = 0
     with util.registry_session(args.registry_url, auth=args.auth) as session:
         sources = list(
-            transfer.find_sources(session, args.registry_url, ids, archive=args.archive)
+            transfer.find_sources(
+                session,
+                args.registry_url,
+                ids,
+                archive=args.archive,
+                alt_base=args.alt_base,
+            )
         )
     n_requested = len(sources)
 
@@ -2159,6 +2190,7 @@ def copy_resources(args):
                 registry_url,
                 [id for id in ids if id not in already],
                 archive=args.archive,
+                alt_base=args.alt_base,
             )
         )
         for source in sources:

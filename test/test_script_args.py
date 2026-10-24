@@ -145,3 +145,29 @@ def test_registry_default_is_read_when_run(monkeypatch):
     monkeypatch.setattr(script, "registry_info", lambda args: seen.append(args))
     script.main(["registry-info"])
     assert seen[0].registry_url == "https://example.org/neurobank/"
+
+
+@pytest.mark.parametrize("command", ["locate", "fetch", "export", "copy"])
+def test_alt_base_default_is_read_when_run(monkeypatch, command):
+    monkeypatch.setenv("NBANK_ALT_BASE", "/mnt/data")
+    argv = {"export": [command, "out"], "copy": [command, "dest"]}.get(
+        command, [command, "res_1"]
+    )
+    assert script.make_parser().parse_args(argv).alt_base is None
+    seen = []
+    func = {
+        "locate": "locate_resources",
+        "fetch": "fetch_resources",
+        "export": "export_resources",
+        "copy": "copy_resources",
+    }[command]
+    monkeypatch.setattr(script, func, lambda args: seen.append(args))
+    log = logging.getLogger("nbank")
+    handlers, level = list(log.handlers), log.level
+    try:
+        script.main(["-r", "https://localhost/", *argv])
+        script.main(["-r", "https://localhost/", *argv, "--alt-base", "/other"])
+    finally:
+        log.handlers[:] = handlers
+        log.setLevel(level)
+    assert [args.alt_base for args in seen] == [Path("/mnt/data"), Path("/other")]
