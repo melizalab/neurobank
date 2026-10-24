@@ -1,8 +1,7 @@
 # -*- mode: python -*-
-"""neurobank data management system
-
-Copyright (C) 2013--2024 Dan Meliza <dan@meliza.org>
-"""
+# Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
+# * SPDX-License-Identifier: BSD-3-Clause
+"""neurobank data management system"""
 
 try:
     from importlib.metadata import version

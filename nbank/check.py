@@ -1,8 +1,7 @@
 # -*- mode: python -*-
-"""Integrity checks for archives and the registry.
-
-Copyright (C) 2026 Dan Meliza <dan@meliza.org>
-"""
+# Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
+# * SPDX-License-Identifier: BSD-3-Clause
+"""Integrity checks for archives and the registry."""
 
 import enum
 import grp

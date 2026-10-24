@@ -1,11 +1,14 @@
 # -*- mode: python -*-
-"""Read the members of zip resources in place, without unpacking them.
+# Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
+# * SPDX-License-Identifier: BSD-3-Clause
+"""Functions for interacting with zipped resources without unpacking them.
 
 Members stored without compression (as nbank.canonical_zip writes them) can be read
 or memory-mapped directly from the zip file: member_extent gives where a member's
 data starts and how long it is, e.g. for np.memmap(path, offset=offset, ...).
 open_member gives a file object for any member, and extract_member writes one out
 for libraries that only read files by path.
+
 """
 
 import io

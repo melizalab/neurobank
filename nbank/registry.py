@@ -1,5 +1,10 @@
 # -*- mode: python -*-
+# Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
+# * SPDX-License-Identifier: BSD-3-Clause
 """Construct HTTP URLs and queries to the neurobank registry.
+
+None of the functions in this module actually interact with the registry. They return
+values that can be passed to an HTTP client library like httpx or requests.
 
 URL construction functions begin with `get_` if they retrieve a single record,
 `find_` if they retrieve a sequence of records, `add_` if they create a new

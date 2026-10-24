@@ -1,7 +1,10 @@
 # -*- mode: python -*-
-"""functions for managing a data archive on the local filesystem
+# Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
+# * SPDX-License-Identifier: BSD-3-Clause
+"""Functions for managing a data archive on the local filesystem: creating new archives,
+defining how resources are stored in stubbed subdirectories, storing resources, and
+managing their permissions.
 
-Copyright (C) 2013-2025 Dan Meliza <dan@meliza.org>
 """
 
 import json

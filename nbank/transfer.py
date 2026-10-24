@@ -1,11 +1,12 @@
 # -*- mode: python -*-
-"""Moving resources into and out of neurobank archives
+# Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
+# * SPDX-License-Identifier: BSD-3-Clause
+"""Moving resources into and out of neurobank archives.
 
 find_sources finds readable copies in the archives on this host, to export or copy.
 receive_file stores a resource read from any stream in an archive, checking its hash,
 and add_location records the new copy.
 
-Copyright (C) 2026 Dan Meliza <dan@meliza.org>
 """
 
 import errno

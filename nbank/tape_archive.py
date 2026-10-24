@@ -1,8 +1,7 @@
 # -*- mode: python -*-
-"""functions for managing a tape-based data archive
-
-Copyright (C) 2025 Dan Meliza <dan@meliza.org>
-"""
+# Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
+# * SPDX-License-Identifier: BSD-3-Clause
+"""Functions for managing tape-based data archives."""
 
 import logging
 from pathlib import Path

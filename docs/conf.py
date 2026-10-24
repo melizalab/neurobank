@@ -15,7 +15,7 @@ extensions = [
     "sphinxarg.ext",
 ]
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
-exclude_patterns = ["_build", "examples.md"]
+exclude_patterns = ["_build"]
 # docstrings use `name` for code
 default_role = "code"
 

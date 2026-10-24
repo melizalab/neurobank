@@ -1,9 +1,7 @@
 # -*- mode: python -*-
-"""Script entry points for neurobank
-
-Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
-Created Tue Nov 26 22:48:58 2013
-"""
+# Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
+# * SPDX-License-Identifier: BSD-3-Clause
+"""Script entry points for neurobank"""
 
 import argparse
 import concurrent.futures

@@ -1,4 +1,6 @@
 # -*- mode: python -*-
+# Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
+# * SPDX-License-Identifier: BSD-3-Clause
 """Metadata readers: plugins that read registry metadata from deposited files.
 
 A reader is a function `read_metadata(path) -> dict` registered as an entry point

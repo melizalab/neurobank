@@ -1,4 +1,6 @@
 # -*- mode: python -*-
+# Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
+# * SPDX-License-Identifier: BSD-3-Clause
 """Local cache of downloaded resources"""
 
 import os

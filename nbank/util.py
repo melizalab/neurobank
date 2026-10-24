@@ -1,9 +1,7 @@
 # -*- mode: python -*-
-"""utility functions
-
-Copyright (C) 2014 Dan Meliza <dan@meliza.org>
-Created Tue Jul  8 14:23:35 2014
-"""
+# Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
+# * SPDX-License-Identifier: BSD-3-Clause
+"""Utility functions"""
 
 import json
 import logging
