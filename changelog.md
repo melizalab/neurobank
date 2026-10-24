@@ -12,6 +12,11 @@ Requires django-neurobank 1.0 (registry API 2.x).
 - `core.get` and `core.find` are removed; use `core.find_resource(s)`, which
   return paths, or `nbank locate` for every location of a resource.
   `archive.iter_resources` is removed; use `check.check_archive_contents`.
+- Resources in neurobank archives are found by their location's key, the name
+  of the file, instead of by looking for any file named with the id. A location
+  without a key, or whose key names no file, isn't found on this host: run
+  `nbank check all --fix` to set keys (#60). nbank versions before 1.0 ignore
+  keys and still find files by looking for them, so they keep working.
 - Directory resources are gone (all have been converted to zip files):
   `transfer.receive_directory` is removed, and `export`, `copy`, `archive
   import-tar` and `check tar` report a directory where a resource should be as

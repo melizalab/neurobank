@@ -31,7 +31,12 @@ def http_location(id):
 
 
 def archive_location(cfg, id):
-    return {"scheme": "neurobank", "root": str(cfg["path"]), "resource_name": id}
+    return {
+        "scheme": "neurobank",
+        "root": str(cfg["path"]),
+        "resource_name": id,
+        "key": f"{id}.txt",
+    }
 
 
 def record(id, *locations, sha1=sha1):
@@ -103,7 +108,12 @@ def test_unregistered(mocked_api, tmp_archive):
 
 
 def test_unreachable(mocked_api, tmp_path):
-    missing = {"scheme": "neurobank", "root": str(tmp_path), "resource_name": "res_1"}
+    missing = {
+        "scheme": "neurobank",
+        "root": str(tmp_path),
+        "resource_name": "res_1",
+        "key": "res_1.txt",
+    }
     tape = {"scheme": "tape", "root": "tape01:3", "resource_name": "res_1"}
     respond_with(mocked_api, record("res_1", missing, tape))
     assert isinstance(find("res_1")["res_1"], FileNotFoundError)

@@ -1236,7 +1236,9 @@ def exportable(respx_mock, tmp_path):
         src.write_text(f"contents of {name}")
         sha1 = util.hash(src)
         archive.store_resource(cfg, src, id=name)
-        records.append(record(name, sha1, location("arch", cfg["path"], name)))
+        records.append(
+            record(name, sha1, location("arch", cfg["path"], name, key=f"{name}.txt"))
+        )
     FakeBulkLocations(respx_mock, records)
     full = [
         {**r, "dtype": "txt", "metadata": {"n": i}, "locations": ["arch"]}
@@ -1391,7 +1393,13 @@ def test_export_manifest_name_taken(respx_mock, tmp_path, caplog):
     archive.store_resource(cfg, src, id="manifest")
     FakeBulkLocations(
         respx_mock,
-        [record("manifest", None, location("arch", cfg["path"], "manifest"))],
+        [
+            record(
+                "manifest",
+                None,
+                location("arch", cfg["path"], "manifest", key="manifest.json"),
+            )
+        ],
     )
     out = tmp_path / "export.tar"
     assert run_main("export", "--manifest", str(out), "manifest") == 1

@@ -35,13 +35,12 @@ from nbank import registry, util
 class Source:
     """A resource to transfer and a readable copy of it on this host.
 
-    sha1 and filename come from the registry record. path and archive locate the copy;
+    sha1 comes from the registry record. path and archive locate the copy;
     if there isn't one, they're None and error says why.
     """
 
     id: str
     sha1: str | None = None
-    filename: str | None = None
     path: Path | None = None
     archive: str | None = None
     error: str | None = None
@@ -56,7 +55,6 @@ def _find_local_copy(record: dict, alt_base: Path | None) -> Source:
     fields = {
         "id": record["name"],
         "sha1": record.get("sha1"),
-        "filename": record.get("filename"),
     }
     error = "no copy on this host"
     for location in record["locations"]:

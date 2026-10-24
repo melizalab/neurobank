@@ -29,12 +29,14 @@ def store(cfg, tmp_path, name, contents="contents"):
     return archive.store_resource(cfg, src, id=name), sha1
 
 
-def location(archive_name, root, name, scheme="neurobank"):
+def location(archive_name, root, name, scheme="neurobank", key=None):
+    """A registry location; key defaults to name, as store() stores it."""
     return {
         "archive_name": archive_name,
         "scheme": scheme,
         "root": str(root),
         "resource_name": name,
+        "key": key or name,
     }
 
 
@@ -82,9 +84,7 @@ def test_find_local_copy(respx_mock, tmp_archive, tmp_path):
         [record("res_1", sha1, location("arch", tmp_archive["path"], "res_1"))],
     )
     [source] = find(["res_1"])
-    assert source == transfer.Source(
-        "res_1", sha1=sha1, filename="res_1", path=path, archive="arch"
-    )
+    assert source == transfer.Source("res_1", sha1=sha1, path=path, archive="arch")
     assert source.ok
 
 

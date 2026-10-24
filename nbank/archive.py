@@ -232,28 +232,45 @@ def resolve_extension(path: Path) -> Path:
 class Resource:
     """A resource stored in a local neurobank archive.
 
-    The location's root is the path of the archive. alt_base replaces the directory that
+    The location's root is the path of the archive, and its key is the name of the
+    file, which is in the subdirectory for the id. alt_base replaces the directory that
     contains the archive, e.g. alt_base='/scratch' maps '/home/data/starlings' to
     '/scratch/starlings', for copies of archives on other hosts.
+
+    Raises FileNotFoundError if the file doesn't exist.
     """
 
     schemes = ("neurobank",)
     local = True
 
-    def __init__(self, root: str, id: str, alt_base: Path | None = None):
+    def __init__(self, root: str, id: str, key: str, alt_base: Path | None = None):
         root = Path(root)
         if alt_base is not None:
             root = Path(alt_base) / root.name
         self.id = id
-        self.path = resource_path(root, id, resolve_ext=True)
+        # a key is a file name, never a path
+        if not key or Path(key).name != key:
+            raise FileNotFoundError(f"'{key}' isn't the name of a file")
+        self.path = root / _resource_subdir / id_stub(id) / key
+        if not self.path.exists():
+            raise FileNotFoundError(f"resource '{self.path}' does not exist")
 
     @classmethod
     def from_location(
         cls, location, *, alt_base=None, http_session=None
     ) -> "Resource | None":
-        """Returns None if the archive or the resource isn't on this host."""
+        """Returns None if the location has no key, or the archive or the resource
+        isn't on this host."""
+        key = location.get("key")
+        if key is None:
+            log.debug(
+                "%s: the location in %s has no key",
+                location["resource_name"],
+                location.get("archive_name"),
+            )
+            return None
         try:
-            return cls(location["root"], location["resource_name"], alt_base)
+            return cls(location["root"], location["resource_name"], key, alt_base)
         except FileNotFoundError:
             return None
 

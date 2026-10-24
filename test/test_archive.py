@@ -69,6 +69,7 @@ def test_parse_neurobank_location(tmp_archive, tmp_path):
         "scheme": "neurobank",
         "root": tmp_archive["path"],
         "resource_name": name,
+        "key": name,
     }
     res = parse_location(location)
     assert isinstance(res, archive.Resource)
@@ -77,13 +78,63 @@ def test_parse_neurobank_location(tmp_archive, tmp_path):
     )
 
 
+@pytest.fixture
+def stored_wav(tmp_archive, tmp_path):
+    """res_1, stored as res_1.wav, and a location for it without a key."""
+    src = tmp_path / "res_1.wav"
+    src.write_text("contents")
+    path = archive.store_resource(tmp_archive, src)
+    location = {
+        "scheme": "neurobank",
+        "root": str(tmp_archive["path"]),
+        "resource_name": "res_1",
+    }
+    return path, location
+
+
+def test_location_key_names_the_file(stored_wav):
+    path, location = stored_wav
+    resource = archive.Resource.from_location({**location, "key": "res_1.wav"})
+    assert resource.path == path
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        None,
+        # no file has that name, and other names aren't tried
+        "res_1",
+        "res_1.json",
+        # a key is a name, not a path
+        "../re/res_1.wav",
+        "re/res_1.wav",
+        "",
+    ],
+)
+def test_location_key_not_found(stored_wav, key):
+    _, location = stored_wav
+    assert archive.Resource.from_location({**location, "key": key}) is None
+
+
+def test_location_key_alt_base(stored_wav, tmp_archive, tmp_path):
+    path, location = stored_wav
+    # the archive is mounted under another directory on this host
+    alt_base = tmp_path / "mnt"
+    alt_base.mkdir()
+    tmp_archive["path"].rename(alt_base / "archive")
+    resource = archive.Resource.from_location(
+        {**location, "key": "res_1.wav"}, alt_base=alt_base
+    )
+    assert resource.path == alt_base / path.relative_to(tmp_path)
+
+
 def test_store_and_fetch_resource(tmp_archive, tmp_path):
     name = "dummy_1"
     src = tmp_path / name
     contents = '{"foo": 10}\n'
     src.write_text(contents)
     archive.store_resource(tmp_archive, src, id=name)
-    resource = archive.Resource(tmp_archive["path"], name)
+    resource = archive.Resource(tmp_archive["path"], name, name)
     fetched = resource.fetch(tmp_path)
     assert fetched.is_file()
     assert fetched.read_text() == contents
@@ -491,7 +542,7 @@ def plant_directory(cfg, name="res_1"):
 
 def test_remove_read_only_directory(tmp_archive):
     path = plant_directory(tmp_archive)
-    resource = archive.Resource(tmp_archive["path"], "res_1")
+    resource = archive.Resource(tmp_archive["path"], "res_1", "res_1")
     assert resource.deletable
     resource.unlink()
     assert not path.exists()

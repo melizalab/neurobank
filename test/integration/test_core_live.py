@@ -408,11 +408,12 @@ def test_find_resources_skips_unreachable_locations(
     # the registry lists local archives first, so the unreachable one is first
     unreachable = make_archive()
     reachable = make_archive(accessibility="remote")
-    name = register(archive=unreachable.name)["name"]
-    url, body = reg.add_location(registry.url, name, reachable.name)
-    client.post(url, json=body).raise_for_status()
-    src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
+    name = unique("res")
+    register(name, archive=unreachable.name, key=f"{name}.txt")
+    src = write_file(tmp_path / f"{name}.txt", "contents")
     stored = nbank_archive.store_resource(reachable.config, src, id=name)
+    url, body = reg.add_location(registry.url, name, reachable.name, stored.name)
+    client.post(url, json=body).raise_for_status()
     assert core.find_resource(registry.url, name) == stored
 
 

@@ -69,6 +69,17 @@ def test_check_fix_sets_missing_key(
     assert cli("check", "archive", str(archive.path)) == 0
 
 
+def test_location_without_key_is_not_found(
+    cli, client, registry, archive, dtype, deposit_file
+):
+    name = deposit_file(archive, dtype)
+    set_key(client, registry, name, archive, None)
+    with pytest.raises(FileNotFoundError):
+        core.find_resource(registry.url, name)
+    assert cli("check", "archive", "--fix", str(archive.path)) == 0
+    assert core.find_resource(registry.url, name) == stored_path(archive, name)
+
+
 def test_check_fix_sets_wrong_key(
     cli, client, registry, archive, dtype, deposit_file, location_key, caplog
 ):

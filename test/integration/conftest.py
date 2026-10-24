@@ -234,10 +234,12 @@ def register(client, registry, unique, dtype):
     Returns the record from the registry.
     """
 
-    def make(name=None, *, dtype=dtype, archive=None, sha1=None, **metadata) -> dict:
+    def make(
+        name=None, *, dtype=dtype, archive=None, sha1=None, key=None, **metadata
+    ) -> dict:
         name = name or unique("res")
         url, body = reg.add_resource(
-            registry.url, name, dtype, archive, sha1, **metadata
+            registry.url, name, dtype, archive, sha1, key, **metadata
         )
         if archive is None:
             body["locations"] = []
@@ -342,7 +344,7 @@ def plant_directory(register):
     stored. Returns the id."""
 
     def plant(archive: Archive, dtype: str, name: str) -> str:
-        name = register(name, dtype=dtype, archive=archive.name)["name"]
+        name = register(name, dtype=dtype, archive=archive.name, key=name)["name"]
         path = nbank_archive.resource_path(archive.config, name)
         (path / "sub").mkdir(parents=True)
         (path / "sub" / "data").write_text("inside")
