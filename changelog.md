@@ -17,6 +17,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
   without a key, or whose key names no file, isn't found on this host: run
   `nbank check all --fix` to set keys (#60). nbank versions before 1.0 ignore
   keys and still find files by looking for them, so they keep working.
+- The `keep_extensions` policy is gone: files always keep their extensions in
+  the archive. Archives' `nbank.json` can keep it; `false` is ignored with a
+  warning.
 - Directory resources are gone (all have been converted to zip files):
   `transfer.receive_directory` is removed, and `export`, `copy`, `archive
   import-tar` and `check tar` report a directory where a resource should be as

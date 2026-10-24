@@ -83,13 +83,6 @@ policies. These are the settings you may want to modify:
    identifiers, and the client can use the hashes to verify data integrity. Keep
    this on unless you have a good reason not to (like multi-terabyte resources)
    and another mechanism to protect against data corruption.
--  ``keep_extensions``: If set to true (the default), files keep their
-   extensions when deposited. Only one file with a given base identifier can be
-   deposited, so if you have a ``st32_1_2_1.wav``, the identifier is
-   ``st32_1_2_1``, and therefore you can't also have an ``st32_1_2_1.json``
-   file. If set to false, the extension is stripped, so ``st32_1_2_1.wav`` would
-   be deposited as ``st32_1_2_1``. Usually you want this to be true, unless your
-   archive only contains one kind of file.
 -  ``access``: Who owns the archive's files and who can read and write them.
    These are usually set by ``nbank init``.
 

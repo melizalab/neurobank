@@ -56,7 +56,8 @@ Identifiers
 
 Unless the archive's policy or ``-A`` says otherwise, a file's identifier is its
 name, without the extension: ``st32_1_2_1.wav`` is deposited as ``st32_1_2_1``.
-Identifiers can't be changed once they're assigned, and the registry refuses a
+The file keeps its extension in the archive, so there can't also be a
+``st32_1_2_1.json``. Identifiers can't be changed once they're assigned, and the registry refuses a
 name that's already taken (or, if hashes are stored, a file that's already
 registered under another name).
 

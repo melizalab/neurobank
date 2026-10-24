@@ -71,6 +71,12 @@ def get_config(path: Path) -> ArchiveConfig:
         umask = ret["policy"]["access"]["umask"]
         if not isinstance(umask, int):
             ret["policy"]["access"]["umask"] = int(ret["policy"]["access"]["umask"], 8)
+        if ret["policy"].get("keep_extensions") is False:
+            log.warning(
+                "%s: the keep_extensions policy is no longer supported; files keep "
+                "their extensions",
+                fname,
+            )
         ret["path"] = path.resolve(strict=True)
         return ret
 
@@ -103,7 +109,7 @@ def create(
     the archive. With shared, no owner is recorded, for archives where users deposit
     under their own accounts; otherwise the current user is the owner. group defaults to
     the current user's primary group. read_only_resources makes deposited resources
-    read-only. policies can set auto_identifiers, keep_extensions, or require_hash.
+    read-only. policies can set auto_identifiers, auto_id_type, or require_hash.
 
     Creates archive_path and its parents as needed. Raises FileExistsError if any file
     it would create already exists, ValueError if group doesn't exist, and OSError for
@@ -142,7 +148,6 @@ def create(
         "policy": {
             "auto_identifiers": False,
             "auto_id_type": None,
-            "keep_extensions": True,
             "require_hash": True,
             "access": {
                 "user": user,
@@ -204,14 +209,9 @@ def resource_path(
 
 
 def new_resource_path(cfg: ArchiveConfig, id: str, source_name: str) -> Path:
-    """Returns the path to store a new resource at.
-
-    The name is the id, plus the extension of source_name if the archive keeps
-    extensions. Doesn't check whether the resource is already stored.
-    """
-    if cfg["policy"]["keep_extensions"]:
-        return resource_path(cfg, Path(id).stem + Path(source_name).suffix)
-    return resource_path(cfg, id)
+    """Returns the path to store a new resource at: the id, plus the extension of
+    source_name. Doesn't check whether the resource is already stored."""
+    return resource_path(cfg, Path(id).stem + Path(source_name).suffix)
 
 
 def resolve_extension(path: Path) -> Path:

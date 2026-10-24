@@ -16,12 +16,6 @@ def tmp_archive(tmp_path):
     return archive.create(root, dummy_registry)
 
 
-@pytest.fixture()
-def tmp_noext_archive(tmp_path):
-    root = tmp_path / "archive"
-    return archive.create(root, dummy_registry, keep_extensions=False)
-
-
 def test_invalid_archive(tmp_path):
     with pytest.raises(FileNotFoundError):
         _ = archive.get_config(tmp_path)
@@ -200,16 +194,6 @@ def test_cannot_store_resource_twice_with_different_extensions(tmp_archive, tmp_
     assert second.exists()
 
 
-def test_cannot_store_resource_twice_without_extensions(tmp_noext_archive, tmp_path):
-    first, second = tmp_path / "a.json", tmp_path / "b.wav"
-    first.write_text("json")
-    second.write_text("wav")
-    stored = archive.store_resource(tmp_noext_archive, first, id="res_1")
-    with pytest.raises(KeyError, match="already stored"):
-        archive.store_resource(tmp_noext_archive, second, id="res_1")
-    assert list(stored.parent.iterdir()) == [stored]
-
-
 def test_cannot_violate_directory_policy(tmp_archive, tmp_path):
     dir = tmp_path / "tempdir"
     dir.mkdir()
@@ -217,15 +201,22 @@ def test_cannot_violate_directory_policy(tmp_archive, tmp_path):
         archive.store_resource(tmp_archive, dir)
 
 
-def test_can_strip_extensions(tmp_noext_archive, tmp_path):
-    name = "dummy_3"
+def test_keep_extensions_false_is_ignored(tmp_path, caplog):
+    # set by archives made before the policy was retired
+    root = tmp_path / "archive"
+    archive.create(root, dummy_registry, keep_extensions=False)
+    cfg = archive.get_config(root)
+    assert "keep_extensions policy is no longer supported" in caplog.text
     src = tmp_path / "temp.wav"
-    contents = "not a wave file"
-    src.write_text(contents)
-    archive.store_resource(tmp_noext_archive, src, id=name)
-    path = archive.resource_path(tmp_noext_archive, name, resolve_ext=True)
-    assert path.exists()
-    assert path.suffix == ""
+    src.write_text("not a wave file")
+    stored = archive.store_resource(cfg, src, id="dummy_3")
+    assert stored.name == "dummy_3.wav"
+
+
+def test_new_archives_have_no_keep_extensions_policy(tmp_archive, caplog):
+    assert "keep_extensions" not in tmp_archive["policy"]
+    archive.get_config(tmp_archive["path"])
+    assert "keep_extensions" not in caplog.text
 
 
 def test_verify_permissions_source_unreadable(tmp_path, tmp_archive):

@@ -237,14 +237,6 @@ def test_receive_file(tmp_archive):
     assert list(check.check_archive_permissions(tmp_archive)) == []
 
 
-def test_receive_file_without_extension(tmp_path):
-    cfg = archive.create(tmp_path / "archive", base_url, keep_extensions=False)
-    received = transfer.receive_file(
-        cfg, "res_1", "original.wav", io.BytesIO(b"x"), None
-    )
-    assert received.path.name == "res_1"
-
-
 def test_receive_file_without_registered_hash(tmp_archive):
     received = transfer.receive_file(tmp_archive, "res_1", "f", io.BytesIO(b"x"), None)
     assert received.path.exists()
