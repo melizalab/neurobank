@@ -19,6 +19,10 @@ RegistryAuth = tuple[str, str] | httpx.Auth | None
 
 log = logging.getLogger("nbank")  # root logger
 
+# how many automatic ids deposit tries for a file before giving up, if the registry
+# already has them
+_auto_id_attempts = 3
+
 
 def make_auth(auth: RegistryAuth) -> httpx.Auth | None:
     """Converts a RegistryAuth to an httpx Auth, using .netrc if auth is None."""
@@ -51,8 +55,10 @@ def deposit(
 
     dtype is the registered datatype of the files. hash registers each file's sha1 even
     if the archive doesn't require it. auto_id (or the archive's auto_identifiers
-    policy) gives each file a new id, a UUID if the policy's auto_id_type is "uuid" and
-    otherwise assigned by the registry, instead of using the file's name. auth is for
+    policy) gives each file a new id instead of using the file's name: 8 random base36
+    characters, or a UUID if the policy's auto_id_type is "uuid". If the registry
+    already has the id, another is tried. Each location is registered with the stored
+    file's name as its key. auth is for
     the registry (default: .netrc). metadata is stored with each resource; its
     experimenter and animal keys are the resource's fields.
 
@@ -66,9 +72,9 @@ def deposit(
     everything but registers and moves nothing, including asking the registry whether
     it would accept each resource (in batches, so records come after their files are
     checked, and files that would share a name or hash are caught); records have
-    "dry_run": True, the "metadata" that would be registered, and "id" None if the
-    registry would assign it. With skip_errors, a file that can't be deposited yields {"source": path,
-    "error": message} instead of raising. That covers missing files, directories,
+    "dry_run": True and the "metadata" that would be registered. With skip_errors, a
+    file that can't be deposited yields {"source": path, "error": message} instead of
+    raising. That covers missing files, directories,
     invalid names, symbolic links, permission problems, files their dtype's reader
     rejects or whose metadata doesn't match what's given, and resources the registry
     rejects (400).
@@ -81,8 +87,9 @@ def deposit(
     skip_errors, missing files and directories are skipped with a log message.
     These errors are raised:
 
-    - ValueError: archive_path isn't an archive, a source is or has a symbolic link,
-      or the dtype's reader rejects a file or its metadata doesn't match
+    - ValueError: archive_path isn't an archive, its auto_id_type isn't known, a
+      source is or has a symbolic link, or the dtype's reader rejects a file or its
+      metadata doesn't match
     - RuntimeError: the archive or dtype isn't registered, the dtype's reader can't be
       loaded, or a file changed while its directory was being zipped
     - PermissionError: a source can't be read or the archive can't be written
@@ -93,11 +100,10 @@ def deposit(
     - KeyError: a file for an id appeared after the check, as the archive and registry
       disagree
     """
-    import uuid
-
     from nbank import canonical_zip, readers, util
     from nbank.archive import (
         get_config,
+        new_resource_path,
         staging_dir,
         store_resource,
         verify_no_symlinks,
@@ -124,7 +130,9 @@ def deposit(
     registry_url = archive_cfg["registry"]
     log.info("   registry: %s", registry_url)
     auto_id = archive_cfg["policy"]["auto_identifiers"] or auto_id
-    auto_id_type = archive_cfg["policy"].get("auto_id_type", None)
+    auto_id_type = archive_cfg["policy"].get("auto_id_type") or "base36"
+    if auto_id and auto_id_type not in util.auto_id_types:
+        raise ValueError(f"the archive's auto_id_type '{auto_id_type}' isn't known")
 
     with util.registry_session(registry_url, auth=make_auth(auth)) as session:
         # check that archive exists for this path
@@ -210,12 +218,11 @@ def deposit(
             try:
                 try:
                     if auto_id:
-                        if auto_id_type == "uuid":
-                            id = str(uuid.uuid4())
-                        else:
-                            id = None
+                        id = util.auto_id_types[auto_id_type]()
                     else:
                         id = util.id_from_fname(src)
+                    stored_name = f"{src.name}.zip" if is_dir else src.name
+                    key = new_resource_path(archive_cfg, id, stored_name).name
                     verify_no_symlinks(src)
                     verify_permissions(archive_cfg, src, id)
                     checkable = not (is_dir and dry_run)
@@ -225,9 +232,7 @@ def deposit(
                             "run 'nbank check archive --fix' to create it"
                         )
                     if is_dir and not dry_run:
-                        staged = canonical_zip.zip_directory(
-                            src, staging / f"{src.name}.zip"
-                        )
+                        staged = canonical_zip.zip_directory(src, staging / stored_name)
                         log.info("   zipped as %s", staged)
                     elif is_dir:
                         log.info("   would be zipped (not built in a dry run)")
@@ -255,7 +260,7 @@ def deposit(
                     continue
                 if dry_run:
                     _, body = add_resource(
-                        registry_url, id, dtype, archive, sha1, **resource_metadata
+                        registry_url, id, dtype, archive, sha1, key, **resource_metadata
                     )
                     record = {
                         "source": src,
@@ -268,11 +273,21 @@ def deposit(
                     if len(pending) == util.check_batch_size:
                         yield from check_pending()
                     continue
-                url, params = add_resource(
-                    registry_url, id, dtype, archive, sha1, **resource_metadata
-                )
-                log.debug("POST %s: %s", url, params)
-                r = session.post(url, json=params)
+                attempts = 1
+                while True:
+                    url, params = add_resource(
+                        registry_url, id, dtype, archive, sha1, key, **resource_metadata
+                    )
+                    log.debug("POST %s: %s", url, params)
+                    r = session.post(url, json=params)
+                    if not (
+                        auto_id and attempts < _auto_id_attempts and _name_taken(r)
+                    ):
+                        break
+                    log.info("   id '%s' is taken; trying another", id)
+                    id = util.auto_id_types[auto_id_type]()
+                    key = new_resource_path(archive_cfg, id, stored_name).name
+                    attempts += 1
                 if skip_errors and r.status_code == httpx.codes.BAD_REQUEST:
                     yield skipped(src, "; ".join(error_messages(r)))
                     continue
@@ -288,6 +303,16 @@ def deposit(
                     staged.unlink(missing_ok=True)
         if pending:
             yield from check_pending()
+
+
+def _name_taken(response: httpx.Response) -> bool:
+    """True if the registry refused a new resource because its name is taken."""
+    if response.status_code != httpx.codes.BAD_REQUEST:
+        return False
+    try:
+        return "name" in response.json()
+    except ValueError:
+        return False
 
 
 def search(

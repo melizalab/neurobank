@@ -285,13 +285,14 @@ def test_check_registered_elsewhere(cli, copied, caplog):
     assert "registered elsewhere: 1" in caplog.text
 
 
-def test_check_fix_adds_location(cli, registry, copied, answers, caplog):
+def test_check_fix_adds_location(cli, registry, copied, answers, location_key, caplog):
     prompts = answers("a")
     assert cli("check", "archive", "--fix", str(copied.archive.path)) == 0
     assert "[d]elete this copy" in prompts[0]
     assert "Files registered elsewhere resolved: 1" in caplog.text
     locations = core.describe(registry.url, copied.name)["locations"]
     assert sorted(locations) == sorted([copied.original.name, copied.archive.name])
+    assert location_key(copied.name, copied.archive.name) == copied.path.name
     assert cli("check", "archive", str(copied.archive.path)) == 0
 
 
@@ -479,7 +480,16 @@ def test_prune_unknown_resource_and_archive(cli, archive, tmp_path, unique, capl
 
 
 def test_register_tar(
-    cli, registry, client, archive, dtype, deposit_file, tmp_path, unique, caplog
+    cli,
+    registry,
+    client,
+    archive,
+    dtype,
+    deposit_file,
+    location_key,
+    tmp_path,
+    unique,
+    caplog,
 ):
     name = deposit_file(archive, dtype)
     other = tmp_path / f"{unique('other')}.txt"
@@ -488,6 +498,8 @@ def test_register_tar(
     tape = unique("tape")
     assert cli("archive", "register-tar", "-n", tape, "tape01", "3", str(tar)) == 0
     assert set(core.describe(registry.url, name)["locations"]) == {archive.name, tape}
+    # the key of a tape location is the tar member
+    assert location_key(name, tape) == stored_path(archive, name).name
     record = client.get(f"{registry.url}archives/{tape}/").json()
     assert record["scheme"] == "tape"
     assert record["root"] == "tape01:3"
@@ -548,7 +560,15 @@ def test_register_tar_dry_run(
 
 
 def test_import_tar(
-    cli, registry, two_archives, dtype, deposit_file, tmp_path, unique, caplog
+    cli,
+    registry,
+    two_archives,
+    dtype,
+    deposit_file,
+    location_key,
+    tmp_path,
+    unique,
+    caplog,
 ):
     a, b = two_archives
     name = deposit_file(a, dtype, contents="the contents")
@@ -559,6 +579,7 @@ def test_import_tar(
     assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
     assert stored_path(b, name).read_text() == "the contents"
     assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
+    assert location_key(name, b.name) == stored_path(b, name).name
     assert "not in the registry" in caplog.text
 
     caplog.clear()
@@ -673,7 +694,9 @@ def test_export_zip_and_directory(
         assert (out / file_stored.name).read_bytes() == file_stored.read_bytes()
 
 
-def test_copy(cli, registry, two_archives, dtype, deposit_file, unique, caplog):
+def test_copy(
+    cli, registry, two_archives, dtype, deposit_file, location_key, unique, caplog
+):
     a, b = two_archives
     file_name, other = (deposit_file(a, dtype) for _ in range(2))
     missing = unique("missing")
@@ -689,6 +712,7 @@ def test_copy(cli, registry, two_archives, dtype, deposit_file, unique, caplog):
     for name in (file_name, other):
         assert stored_path(b, name).read_bytes() == stored_path(a, name).read_bytes()
         assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
+        assert location_key(name, b.name) == stored_path(b, name).name
     assert cli("check", "archive", str(b.path)) == 0
 
     caplog.clear()

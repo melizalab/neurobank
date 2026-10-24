@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import re
 from base64 import b64encode
 from pathlib import Path
 
@@ -48,7 +49,7 @@ def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
     name = "dummy_1"
     dtype = "dummy-dtype"
     metadata = {"experimenter": "dmeliza", "pen": 1}
-    src = tmp_path / name
+    src = tmp_path / f"{name}.json"
     contents = '{"foo": 10}\n'
     src.write_text(contents)
     sha1 = util.hash(src)
@@ -63,7 +64,7 @@ def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
         json={
             "name": name,
             "dtype": dtype,
-            "locations": [archive_name],
+            "locations": [{"archive": archive_name, "key": f"{name}.json"}],
             "sha1": sha1,
             "experimenter": "dmeliza",
             "metadata": {"pen": 1},
@@ -76,6 +77,7 @@ def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
         )
     )
     assert items == [{"source": src, "id": name}]
+    assert archive.resource_path(tmp_archive, f"{name}.json").exists()
 
 
 def test_deposit_dry_run(mocked_api, tmp_archive, tmp_path, registry_checks):
@@ -135,7 +137,7 @@ def test_deposit_dry_run_asks_the_registry(mocked_api, tmp_archive, tmp_path):
         {
             "name": src.name,
             "dtype": "dummy-dtype",
-            "locations": [archive_name],
+            "locations": [{"archive": archive_name, "key": src.name}],
             "sha1": util.hash(src),
             "experimenter": "dmeliza",
             "metadata": {"pen": 1},
@@ -192,12 +194,99 @@ def test_deposit_resource_unknown_dtype(mocked_api, tmp_archive, tmp_path):
         _ = list(core.deposit(root, files=[src], dtype=dtype))
 
 
-@pytest.mark.skip(reason="not implemented")
-def test_deposit_uuid_resource():
-    # TO DO: verify that deposit assigns resources a valid UUID
-    # import uuid
-    # uuid.UUID(id)
-    pass
+@pytest.mark.parametrize("auto_id_type", [None, "base36"])
+def test_deposit_auto_id(mocked_api, tmp_path, auto_id_type):
+    root = tmp_path / "archive"
+    archive.create(
+        root,
+        base_url,
+        require_hash=False,
+        auto_identifiers=True,
+        auto_id_type=auto_id_type,
+    )
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    route = mocked_api.post(resource_url).mock(
+        side_effect=lambda request: httpx.Response(
+            201, json={"name": json.loads(request.content)["name"]}
+        )
+    )
+    src = tmp_path / "dummy_1.wav"
+    src.write_text("contents")
+    [item] = core.deposit(root, files=[src], auth=auth)
+    id = item["id"]
+    assert re.fullmatch(r"[0-9a-z]{8}", id)
+    body = json.loads(route.calls.last.request.content)
+    assert body["name"] == id
+    # the id is known before registering, so the key can go with it
+    assert body["locations"] == [{"archive": archive_name, "key": f"{id}.wav"}]
+    assert archive.resource_path(root, f"{id}.wav").exists()
+
+
+@pytest.fixture
+def auto_id_archive(mocked_api, tmp_path):
+    root = tmp_path / "archive"
+    archive.create(root, base_url, require_hash=False, auto_identifiers=True)
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    return root
+
+
+name_taken = {"name": ["resource with this name already exists."]}
+
+
+def test_deposit_auto_id_taken_tries_another(mocked_api, auto_id_archive, tmp_path):
+    responses = iter([httpx.Response(400, json=name_taken)])
+
+    def respond(request):
+        name = json.loads(request.content)["name"]
+        return next(responses, httpx.Response(201, json={"name": name}))
+
+    route = mocked_api.post(resource_url).mock(side_effect=respond)
+    src = tmp_path / "dummy_1.wav"
+    src.write_text("contents")
+    [item] = core.deposit(auto_id_archive, files=[src], auth=auth)
+    first, second = (json.loads(call.request.content) for call in route.calls)
+    assert first["name"] != second["name"] == item["id"]
+    assert second["locations"] == [
+        {"archive": archive_name, "key": f"{item['id']}.wav"}
+    ]
+    assert archive.resource_path(auto_id_archive, f"{item['id']}.wav").exists()
+
+
+def test_deposit_auto_id_taken_gives_up(mocked_api, auto_id_archive, tmp_path):
+    route = mocked_api.post(resource_url).respond(400, json=name_taken)
+    src = tmp_path / "dummy_1.wav"
+    src.write_text("contents")
+    [item] = core.deposit(auto_id_archive, files=[src], auth=auth, skip_errors=True)
+    assert len(route.calls) == 3
+    assert item == {"source": src, "error": f"name: {name_taken['name'][0]}"}
+    assert src.exists()
+
+
+def test_deposit_name_taken_is_not_retried(mocked_api, tmp_archive, tmp_path):
+    root = tmp_archive["path"]
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    route = mocked_api.post(resource_url).respond(400, json=name_taken)
+    src = tmp_path / "dummy_1.wav"
+    src.write_text("contents")
+    [item] = core.deposit(root, files=[src], auth=auth, skip_errors=True)
+    assert len(route.calls) == 1
+    assert "error" in item
+
+
+def test_deposit_unknown_auto_id_type(tmp_path):
+    root = tmp_path / "archive"
+    archive.create(root, base_url, auto_identifiers=True, auto_id_type="base64")
+    src = tmp_path / "dummy_1.wav"
+    src.write_text("contents")
+    with pytest.raises(ValueError, match="auto_id_type 'base64' isn't known"):
+        list(core.deposit(root, files=[src], auth=auth))
+    assert src.exists()
 
 
 @pytest.mark.parametrize("skip_errors", [False, True])
@@ -260,7 +349,7 @@ def test_deposit_zips_directories(mocked_api, zip_archive, recording):
         resource_url,
         json={
             "name": "rec_1",
-            "locations": [archive_name],
+            "locations": [{"archive": archive_name, "key": "rec_1.zip"}],
             "sha1": util.hash(expected),
             "metadata": {},
         },
@@ -642,7 +731,7 @@ def test_deposit_resource_registry_duplicate(mocked_api, tmp_archive, tmp_path):
         json={
             "name": name,
             "dtype": dtype,
-            "locations": [archive_name],
+            "locations": [{"archive": archive_name, "key": name}],
             "metadata": {},
         },
     ).respond(

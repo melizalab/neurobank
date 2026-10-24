@@ -242,7 +242,7 @@ def make_parser() -> argparse.ArgumentParser:
         "-A",
         "--auto-id",
         action="store_true",
-        help="ask the registry to generate an id for each resource",
+        help="give each resource a random id instead of its file name",
     )
     pp.add_argument(
         "-y",
@@ -1241,7 +1241,9 @@ def _resolve_elsewhere(session, registry_url, archive_name, finding) -> bool:
         log.info("   - deleted %s", path)
         return True
     if answer == "a":
-        url, body = registry.add_location(registry_url, finding.resource, archive_name)
+        url, body = registry.add_location(
+            registry_url, finding.resource, archive_name, path.name
+        )
         r = session.post(url, json=body)
         if r.status_code != httpx.codes.CREATED:
             log.error("   unable to add location: %s", r.text)
@@ -1456,7 +1458,7 @@ def register_tar(args):
                 )
             else:
                 url, params = registry.add_location(
-                    args.registry_url, result["name"], archive_name
+                    args.registry_url, result["name"], archive_name, tarinfo.name
                 )
                 try:
                     r = session.post(url, json=params)

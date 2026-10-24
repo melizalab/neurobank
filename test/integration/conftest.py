@@ -323,6 +323,19 @@ def deposit_file(registry, tmp_path, unique):
 
 
 @pytest.fixture
+def location_key(client, registry):
+    """Returns a function that gives the key of a resource's location in an archive."""
+
+    def key(name: str, archive_name: str) -> str | None:
+        url, _ = reg.get_location(registry.url, name, archive_name)
+        r = client.get(url)
+        r.raise_for_status()
+        return r.json()["key"]
+
+    return key
+
+
+@pytest.fixture
 def plant_directory(register):
     """Returns a function that registers a resource in an archive and puts a
     directory where its file would be, as a directory resource would have been

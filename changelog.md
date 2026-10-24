@@ -34,9 +34,19 @@ Requires django-neurobank 1.0 (registry API 2.x).
   superseded.
 - `nbank deposit --dry-run` needs permission to deposit, as it asks the
   registry to check each resource (see below).
+- Automatic ids (`deposit -A`, or the `auto_identifiers` policy) are made by
+  nbank rather than the registry: eight random base-36 characters, the form the
+  registry used, named `"base36"` in the policy's `auto_id_type` (also what
+  `null` means), or `"uuid"`. If the registry already has an id, deposit tries
+  another (up to three). Any other `auto_id_type` is an error, and dry runs give
+  the id that would be used.
 
 ### New
 
+- New locations in neurobank archives record the stored file's name as their
+  key: deposit, `copy`, `archive import-tar`, and adding a location with `check
+  archive --fix`. `archive register-tar` records each resource's tar member as
+  the key of its tape location (#60).
 - Documentation on Read the Docs (https://neurobank.readthedocs.io): guides to
   archives, depositing, searching, accessing and managing resources, and
   references for the CLI and the Python API. The README is now a short tour.

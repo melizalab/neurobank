@@ -163,6 +163,28 @@ def id_from_fname(fname: Path | str) -> str:
     return id
 
 
+_id_alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+
+def base36_id(length: int = 8) -> str:
+    """Returns a random id of lowercase base36 characters, the form the registry gives
+    a resource registered without a name."""
+    import secrets
+
+    return "".join(secrets.choice(_id_alphabet) for _ in range(length))
+
+
+def uuid_id() -> str:
+    """Returns a random UUID (version 4) as an id."""
+    import uuid
+
+    return str(uuid.uuid4())
+
+
+# the archive policy's auto_id_type names one of these; null means base36
+auto_id_types: dict[str, Callable[[], str]] = {"base36": base36_id, "uuid": uuid_id}
+
+
 _hash_block_size = 1 << 20
 
 

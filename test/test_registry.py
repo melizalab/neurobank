@@ -189,6 +189,17 @@ def test_add_resource():
     }
 
 
+def test_add_resource_with_key():
+    _, params = registry.add_resource(base_url, "res", "dtype", "arch", None, "res.wav")
+    assert params["locations"] == [{"archive": "arch", "key": "res.wav"}]
+
+
+def test_add_resource_metadata_can_be_named_key():
+    _, params = registry.add_resource(base_url, "res", "dtype", "arch", key="x")
+    assert params["locations"] == ["arch"]
+    assert params["metadata"] == {"key": "x"}
+
+
 def test_add_resource_sends_core_fields_as_fields():
     _, params = registry.add_resource(
         base_url, "res", "dtype", "arch", animal="P50", protocol="chorus", pen=1

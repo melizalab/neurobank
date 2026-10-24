@@ -387,3 +387,11 @@ def test_fetch_resource_verifies_hash(mocked_api, tmp_path):
     assert isinstance(result, util.NotFetchableError)
     assert "registered hash" in str(result)
     assert not target.exists()
+
+
+def test_base36_id():
+    ids = {util.base36_id() for _ in range(100)}
+    assert len(ids) == 100
+    for id in ids:
+        assert len(id) == 8
+        assert set(id) <= set("0123456789abcdefghijklmnopqrstuvwxyz")

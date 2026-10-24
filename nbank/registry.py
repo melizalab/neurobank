@@ -171,21 +171,24 @@ def add_resource(
     dtype: str | None,
     archive: str | None,
     sha1: str | None = None,
+    key: str | None = None,
     /,
     **metadata: Any,
 ) -> tuple[str, dict]:
     """Constructs URL to add a resource to the registry.
 
-    The core fields (experimenter, animal) in metadata are sent as
-    fields of the resource.
+    key records where the resource is within the archive (see add_location). The
+    core fields (experimenter, animal) in metadata are sent as fields of the
+    resource.
     """
     url = url_join(base_url, "resources/")
     fields, metadata = _split_core_fields(metadata)
+    location = archive if key is None else {"archive": archive, "key": key}
     data = {
         "name": id,
         "dtype": dtype,
         "sha1": sha1,
-        "locations": [archive],
+        "locations": [location],
         **fields,
         "metadata": metadata,
     }

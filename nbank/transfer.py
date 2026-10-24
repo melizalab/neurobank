@@ -747,12 +747,13 @@ def write_manifest(writer: ExportWriter, manifest: dict) -> None:
 def add_location(
     session: Client, registry_url: str, id: str, archive_name: str, path: Path
 ) -> None:
-    """Records a copy stored at path as a location in archive_name.
+    """Records a copy stored at path as a location in archive_name, with the stored
+    file's name as its key.
 
     If the registry refuses, the copy is removed; if it can't be reached, the copy is
     kept for `nbank check archive` to sort out. Raises TransferError in both cases.
     """
-    url, body = registry.add_location(registry_url, id, archive_name)
+    url, body = registry.add_location(registry_url, id, archive_name, path.name)
     try:
         r = session.post(url, json=body)
     except httpx.RequestError as err:

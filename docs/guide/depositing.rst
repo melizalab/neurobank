@@ -37,8 +37,8 @@ Options
 -  ``-H, --hash``: calculate a SHA1 hash of each file and store it in the
    registry, even if the archive's policy doesn't require it. Use this if you
    expect the contents of the file to be unique.
--  ``-A, --auto-id``: ask the registry to assign each file an automatically
-   generated identifier, overriding the ``auto_identifiers`` policy if it is set
+-  ``-A, --auto-id``: give each file a random identifier instead of its name,
+   overriding the ``auto_identifiers`` policy if it is set
    to false (see :doc:`archives`).
 -  ``-y, --dry-run``: check everything without registering or moving anything
    (see `Dry runs`_).
@@ -61,8 +61,8 @@ name that's already taken (or, if hashes are stored, a file that's already
 registered under another name).
 
 Automatic identifiers are useful for blinding a study or to avoid collisions with
-similarly-named stimuli. They're assigned by the registry, or are UUIDs if the
-archive's ``auto_id_type`` is ``"uuid"``.
+similarly-named stimuli. They're eight random base-36 characters, or UUIDs if
+the archive's ``auto_id_type`` is ``"uuid"``.
 
 Datatypes
 ---------

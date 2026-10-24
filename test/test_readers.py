@@ -249,7 +249,7 @@ def test_deposit_registers_file_metadata(
         json={
             "name": "res_1",
             "dtype": DTYPE,
-            "locations": [archive_name],
+            "locations": [{"archive": archive_name, "key": "res_1"}],
             # the file's animal is a field, like a given one
             "animal": "P50",
             "metadata": {"pen": 1, "site": 2},

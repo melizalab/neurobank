@@ -30,7 +30,7 @@ def deposit_one(registry, archive, dtype, src, **kwargs):
     return item["id"]
 
 
-def test_deposit(registry, archive, dtype, tmp_path, unique):
+def test_deposit(registry, archive, dtype, tmp_path, unique, location_key):
     name = unique("res")
     src = write_file(tmp_path / f"{name}.txt", name)
     sha1 = util.hash(src)
@@ -55,6 +55,7 @@ def test_deposit(registry, archive, dtype, tmp_path, unique):
     assert record["metadata"] == {"pen": 1}
     assert record["locations"] == [archive.name]
     assert record["created_by"] == registry.auth[0]
+    assert location_key(name, archive.name) == stored.name == f"{name}.txt"
 
 
 def test_deposit_core_fields(core_fields, registry, archive, dtype, tmp_path, unique):
@@ -199,15 +200,15 @@ def test_deposit_refuses_directories(registry, make_archive, dtype, tmp_path, un
     assert (src / "a.txt").exists()
 
 
-def test_deposit_auto_id(registry, make_archive, dtype, tmp_path, unique):
+def test_deposit_auto_id(registry, make_archive, dtype, tmp_path, unique, location_key):
     archive = make_archive(require_hash=False, auto_identifiers=True)
     stem = unique("res")
     src = write_file(tmp_path / f"{stem}.txt", "contents")
     name = deposit_one(registry, archive, dtype, src)
-    assert name != stem
-    assert re.fullmatch(r"[-_0-9a-zA-Z]+", name)
+    assert re.fullmatch(r"[0-9a-z]{8}", name)
     assert core.describe(registry.url, name) is not None
-    assert nbank_archive.resource_path(archive.config, name, resolve_ext=True).exists()
+    assert nbank_archive.resource_path(archive.config, f"{name}.txt").exists()
+    assert location_key(name, archive.name) == f"{name}.txt"
 
 
 def test_deposit_auto_id_uuid(registry, make_archive, dtype, tmp_path, unique):

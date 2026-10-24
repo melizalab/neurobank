@@ -382,7 +382,7 @@ add_location_url = f"{base_url}resources/res_1/locations/"
 
 
 def stored_file(cfg):
-    return transfer.receive_file(cfg, "res_1", "f", io.BytesIO(b"x"), None).path
+    return transfer.receive_file(cfg, "res_1", "f.wav", io.BytesIO(b"x"), None).path
 
 
 @respx.mock(assert_all_mocked=True)
@@ -391,7 +391,10 @@ def test_add_location(respx_mock, tmp_archive):
     route = respx_mock.post(add_location_url).respond(201, json={})
     with httpx.Client() as session:
         transfer.add_location(session, base_url, "res_1", "arch", path)
-    assert json.loads(route.calls.last.request.content) == {"archive_name": "arch"}
+    assert json.loads(route.calls.last.request.content) == {
+        "archive_name": "arch",
+        "key": "res_1.wav",
+    }
     assert path.exists()
 
 
