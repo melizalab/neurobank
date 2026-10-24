@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path, PurePath
 from typing import Any, BinaryIO
 
-from httpx import USE_CLIENT_DEFAULT, Client
+from httpx import USE_CLIENT_DEFAULT, Client, Response, codes
 
 # imported so that their resource classes register their location schemes
 from nbank import archive, registry, tape_archive  # noqa: F401
@@ -31,6 +31,8 @@ check_batch_size = 1000
 
 # the registry API version this client asks for in every request
 API_VERSION = "2.0"
+# the media type of line-delimited JSON, for streamed searches
+NDJSON = "application/x-ndjson"
 # registries whose API version has been checked in this process
 _checked_registries: set[str] = set()
 
@@ -245,17 +247,42 @@ def query_registry_paginated(
     session: Client, url: str, params: Mapping[str, Any] | None = None
 ) -> Iterator[dict]:
     """Perform GET request(s) to yield records from a paginated endpoint"""
-    r = session.get(url, params=params)
-    r.raise_for_status()
-    for d in r.json():
-        yield d
-    while "next" in r.links:
-        url = r.links["next"]["url"]
-        # parameters are already part of the URL
-        r = session.get(url)
+    yield from _follow_pages(session, session.get(url, params=params))
+
+
+def _follow_pages(session: Client, r: Response) -> Iterator[dict]:
+    """Yields the records in r, a page of results, and in the pages after it."""
+    while True:
         r.raise_for_status()
-        for d in r.json():
-            yield d
+        yield from r.json()
+        if "next" not in r.links:
+            return
+        # parameters are already part of the URL
+        r = session.get(r.links["next"]["url"])
+
+
+def query_registry_stream(
+    session: Client, url: str, params: Mapping[str, Any] | None = None
+) -> Iterator[dict]:
+    """Yields every record from a search of the registry, streamed as line-delimited
+    JSON in one response. A registry that can't stream them (406) is paged through
+    instead. For results that are read to the end: the registry produces all of
+    them, however few are read."""
+    headers = {"Accept": f"{NDJSON}; version={API_VERSION}"}
+    with session.stream("GET", url, params=params, headers=headers) as r:
+        if r.headers.get("content-type", "").startswith(NDJSON):
+            if r.is_error:
+                r.read()  # the body can't be read once the stream is closed
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if line:
+                    yield json.loads(line)
+            return
+        if r.status_code != codes.NOT_ACCEPTABLE:
+            r.read()
+            yield from _follow_pages(session, r)
+            return
+    yield from query_registry_paginated(session, url, params)
 
 
 def query_registry_first(

@@ -92,6 +92,13 @@ Requires django-neurobank 1.0 (registry API 2.x).
   read; with `--debug`, it shows which reader handles the dtype and what it
   read from each file.
 
+### Changed
+
+- Searches (`nbank search`, `core.search`) and `nbank check` get every result in
+  one streamed response (`util.query_registry_stream`), instead of a page at a
+  time, which is much faster for large archives. Registries that can't stream
+  are paged through as before.
+
 ### Fixed
 
 - `nbank.admin` exits with status 1 when a resource can't be deleted, updated or

@@ -307,6 +307,19 @@ def test_search_by_sha1(registry, register, unique):
     assert list(core.search(registry.url, sha1=other)) == []
 
 
+def test_search_streams_more_than_a_page(registry, client, register, unique):
+    # the test registry's pages hold 5
+    tag = unique("tag")
+    names = [register(f"{tag}-{i}")["name"] for i in range(12)]
+    assert [r["name"] for r in core.search(registry.url, name=tag)] == sorted(names)
+    # as one stream, not pages
+    url, _ = reg.find_resource(registry.url)
+    accept = f"{util.NDJSON}; version={util.API_VERSION}"
+    r = client.get(url, params={"name": tag}, headers={"Accept": accept})
+    assert r.headers["content-type"] == util.NDJSON
+    assert len(r.text.splitlines()) == 12
+
+
 def test_search_by_name_and_dtype(registry, register, dtype, unique):
     tag = unique("tag")
     names = {register(f"{tag}-{i}")["name"] for i in range(3)}

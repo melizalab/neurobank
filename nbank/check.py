@@ -80,7 +80,7 @@ class Finding:
 def _resources_without_locations(session: Client, registry_url: str) -> Iterator[str]:
     """Yields the names of resources in the registry that have no locations."""
     url, params = registry.find_resource(registry_url, has_location="false")
-    for item in util.query_registry_paginated(session, url, params):
+    for item in util.query_registry_stream(session, url, params):
         yield item["name"]
 
 
@@ -114,9 +114,7 @@ def registry_resources_in_archive(
     url, _ = registry.find_resource(registry_url)
     return {
         item["name"]: item["sha1"]
-        for item in util.query_registry_paginated(
-            session, url, {"archive": archive_name}
-        )
+        for item in util.query_registry_stream(session, url, {"archive": archive_name})
     }
 
 

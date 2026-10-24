@@ -242,6 +242,73 @@ def test_query_paginated(mocked_api):
         assert result == data[i]
 
 
+search_url = "https://meliza.org/neurobank/resources/"
+ndjson = {"Content-Type": util.NDJSON}
+
+
+def ndjson_lines(*records):
+    return "".join(json.dumps(r) + "\n" for r in records)
+
+
+def test_query_stream(mocked_api):
+    data = [{"name": "res_1"}, {"name": "res_2"}]
+    route = mocked_api.get(search_url, params={"archive": "a"}).respond(
+        200, headers=ndjson, text=ndjson_lines(*data)
+    )
+    with util.registry_session() as session:
+        result = list(util.query_registry_stream(session, search_url, {"archive": "a"}))
+    assert result == data
+    assert route.call_count == 1
+    assert route.calls.last.request.headers["Accept"] == (
+        f"{util.NDJSON}; version={util.API_VERSION}"
+    )
+
+
+def paged(mocked_api, first_response=None):
+    """Mocks a search in two pages; first_response replaces the first request's."""
+    page_2 = f"{search_url}?page=2"
+    mocked_api.get(page_2).respond(200, json=[{"name": "res_2"}])
+    first = httpx.Response(
+        200, json=[{"name": "res_1"}], headers={"Link": f'<{page_2}>; rel="next"'}
+    )
+    responses = iter([first_response, first] if first_response else [first])
+    return mocked_api.get(search_url, params={}).mock(
+        side_effect=lambda request: next(responses)
+    )
+
+
+def test_query_stream_falls_back_to_pages(mocked_api):
+    # a registry that can't stream refuses the request
+    route = paged(mocked_api, httpx.Response(406, json={"detail": "not acceptable"}))
+    with util.registry_session() as session:
+        result = list(util.query_registry_stream(session, search_url))
+    assert result == [{"name": "res_1"}, {"name": "res_2"}]
+    accepts = [call.request.headers["Accept"] for call in route.calls]
+    assert accepts == [
+        f"{util.NDJSON}; version={util.API_VERSION}",
+        f"application/json; version={util.API_VERSION}",
+    ]
+
+
+def test_query_stream_uses_json_pages_given_instead(mocked_api):
+    route = paged(mocked_api)
+    with util.registry_session() as session:
+        result = list(util.query_registry_stream(session, search_url))
+    assert result == [{"name": "res_1"}, {"name": "res_2"}]
+    assert route.call_count == 1
+
+
+def test_query_stream_error_is_readable(mocked_api):
+    errors = {"metadata__animal": ["search it with ?animal="]}
+    mocked_api.get(search_url).respond(400, headers=ndjson, text=ndjson_lines(errors))
+    with (
+        util.registry_session() as session,
+        pytest.raises(httpx.HTTPStatusError) as exc_info,
+    ):
+        list(util.query_registry_stream(session, search_url))
+    assert exc_info.value.response.json() == errors
+
+
 def test_query_first(mocked_api):
     url = "https://meliza.org/neurobank/resources/"
     data = [{"item": "one"}]

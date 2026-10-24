@@ -324,13 +324,13 @@ def search(
     gives both.
     """
     from nbank.registry import find_resource
-    from nbank.util import query_registry_paginated, registry_session
+    from nbank.util import query_registry_stream, registry_session
 
     if superseded is not None:
         params["superseded"] = superseded
     url, _ = find_resource(registry_url)
     with registry_session(registry_url) as session:
-        yield from query_registry_paginated(session, url, params)
+        yield from query_registry_stream(session, url, params)
 
 
 def describe(registry_url: str, id: str) -> dict | None:
