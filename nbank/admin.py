@@ -1,6 +1,6 @@
 # -*- mode: python -*-
 # Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
-# * SPDX-License-Identifier: BSD-3-Clause
+# * SPDX-License-Identifier: GPL-2.0-only
 """Administrative tasks on archives and the registry.
 
 For unusual situations that can't easily be fixed by hand, such as a lot of

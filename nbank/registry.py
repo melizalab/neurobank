@@ -1,6 +1,6 @@
 # -*- mode: python -*-
 # Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
-# * SPDX-License-Identifier: BSD-3-Clause
+# * SPDX-License-Identifier: GPL-2.0-only
 """Construct HTTP URLs and queries to the neurobank registry.
 
 None of the functions in this module actually interact with the registry. They return

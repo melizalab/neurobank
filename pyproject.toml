@@ -7,7 +7,7 @@ name = "neurobank"
 version = "1.0.0.dev0"
 description = "Simple data management system for neuroscience"
 readme = "README.rst"
-license = {text = "BSD 3-Clause License"}
+license = {text = "GNU General Public License v2"}
 authors = [
     {name = "Dan Meliza", email = "dan@meliza.org"},
 ]
@@ -17,7 +17,7 @@ maintainers = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: BSD License",
+    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

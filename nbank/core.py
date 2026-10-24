@@ -1,6 +1,6 @@
 # -*- mode: python -*-
 # Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
-# * SPDX-License-Identifier: BSD-3-Clause
+# * SPDX-License-Identifier: GPL-2.0-only
 """Core functions for managing data registry and archives: depositing resources,
 searching the registry, locating and/or retrieving resources, verifying their integrity,
 and updating metadata.

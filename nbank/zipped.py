@@ -1,6 +1,6 @@
 # -*- mode: python -*-
 # Copyright (C) 2013-2026 Dan Meliza <dan@meliza.org>
-# * SPDX-License-Identifier: BSD-3-Clause
+# * SPDX-License-Identifier: GPL-2.0-only
 """Functions for interacting with zipped resources without unpacking them.
 
 Members stored without compression (as nbank.canonical_zip writes them) can be read

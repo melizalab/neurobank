@@ -12,11 +12,11 @@ neurobank
 .. |BuildStatus| image:: https://github.com/melizalab/neurobank/actions/workflows/python_tests.yml/badge.svg
 .. _BuildStatus: https://github.com/melizalab/neurobank/actions/workflows/python_tests.yml
 
-.. |Docs| image:: https://readthedocs.org/projects/neurobank/badge/?version=latest
+.. |Docs| image:: https://readthedocs.org/projects/neurobank/badge/?version=stable
 .. _Docs: https://neurobank.readthedocs.io/
 
 .. |License| image:: https://img.shields.io/pypi/l/neurobank.svg
-.. _License: https://opensource.org/license/bsd-3-clause/
+.. _License: https://opensource.org/license/gpl-2-0
 
 .. |PythonVersions| image:: https://img.shields.io/pypi/pyversions/neurobank.svg
 .. _PythonVersions: https://pypi.python.org/pypi/neurobank/
@@ -77,7 +77,7 @@ who you're authenticating as with
    nbank registry-info
 
 Create an archive, which registers it and sets up its directory (see `Setting up
-archives <https://neurobank.readthedocs.io/en/latest/guide/archives.html>`__):
+archives <https://neurobank.readthedocs.io/en/stable/guide/archives.html>`__):
 
 .. code:: bash
 
@@ -89,7 +89,7 @@ the datatype (use ``nbank dtype list`` to query the available options on your
 registry), ``--experimenter`` to specify who generated the resource, and
 ``--animal`` to specify the experimental subject. Use ``-k`` to add additional
 free-form, key-value metadata (see `Depositing resources
-<https://neurobank.readthedocs.io/en/latest/guide/depositing.html>`__):
+<https://neurobank.readthedocs.io/en/stable/guide/depositing.html>`__):
 
 .. code:: bash
 
@@ -97,7 +97,7 @@ free-form, key-value metadata (see `Depositing resources
 
 Find resources, look at their records, and change their metadata (see
 `Searching the registry
-<https://neurobank.readthedocs.io/en/latest/guide/searching.html>`__):
+<https://neurobank.readthedocs.io/en/stable/guide/searching.html>`__):
 
 .. code:: bash
 
@@ -107,7 +107,7 @@ Find resources, look at their records, and change their metadata (see
 
 Get the paths of the files, link them into a working directory, or copy them to
 a machine that can't read the archive (see `Accessing resources
-<https://neurobank.readthedocs.io/en/latest/guide/accessing.html>`__):
+<https://neurobank.readthedocs.io/en/stable/guide/accessing.html>`__):
 
 .. code:: bash
 
@@ -117,18 +117,19 @@ a machine that can't read the archive (see `Accessing resources
 
 Check archives against the registry, and copy resources between archives or to
 tape (see `Managing archives
-<https://neurobank.readthedocs.io/en/latest/guide/managing.html>`__):
+<https://neurobank.readthedocs.io/en/stable/guide/managing.html>`__):
 
 .. code:: bash
 
    nbank check archive /home/data/my-project
 
-In Python, `nbank.core <https://neurobank.readthedocs.io/en/latest/api/core.html>`__ has the same operations: ``deposit``, ``search``,
+In Python, `nbank.core <https://neurobank.readthedocs.io/en/stable/api/core.html>`__ has the same operations: ``deposit``, ``search``,
 ``describe``, ``update``, and ``find_resources``, which gives the path of a file
 for each resource, from an archive on this host or a cached download.
 
 License
 -------
 
-**neurobank** is licensed under the BSD 3-Clause License. You still own your data
-files and any associated metadata. See COPYING for more details.
+**neurobank** is licensed under the GNU General Public License, version 2. You
+still own your data files and any associated metadata. See COPYING for more
+details.
