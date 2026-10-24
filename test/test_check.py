@@ -110,6 +110,47 @@ def test_check_contents_misplaced(tmp_archive, tmp_path):
     assert findings == [check.Finding(Status.MISPLACED, "res_1", moved)]
 
 
+@pytest.mark.parametrize(
+    "key, expected",
+    [
+        ("res_1.txt", []),
+        (None, [Status.NO_KEY]),
+        ("res_1.wav", [Status.WRONG_KEY]),
+    ],
+)
+def test_check_contents_keys(tmp_archive, tmp_path, key, expected):
+    path, sha1 = store(tmp_archive, tmp_path, "res_1")
+    findings = list(
+        check.check_archive_contents(
+            tmp_archive["path"], {"res_1": sha1}, keys={"res_1": key}
+        )
+    )
+    assert findings[0] == check.Finding(Status.OK, "res_1", path)
+    assert [f.status for f in findings[1:]] == expected
+    for finding in findings[1:]:
+        assert finding.path == path
+        assert not finding.ok
+    if key == "res_1.wav":
+        assert findings[1].detail == "the key is 'res_1.wav'"
+
+
+def test_check_contents_keys_not_given(tmp_archive, tmp_path):
+    _, sha1 = store(tmp_archive, tmp_path, "res_1")
+    findings = check.check_archive_contents(tmp_archive["path"], {"res_1": sha1})
+    assert [f.status for f in findings] == [Status.OK]
+
+
+def test_check_contents_no_key_for_misplaced_file(tmp_archive, tmp_path):
+    path, sha1 = store(tmp_archive, tmp_path, "res_1")
+    wrong_dir = tmp_archive["path"] / "resources" / "zz"
+    wrong_dir.mkdir()
+    path.rename(wrong_dir / path.name)
+    findings = check.check_archive_contents(
+        tmp_archive["path"], {"res_1": sha1}, keys={"res_1": None}
+    )
+    assert [f.status for f in findings] == [Status.MISPLACED]
+
+
 def test_check_contents_duplicate(tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
     other = path.with_suffix(".json")
@@ -414,6 +455,42 @@ def test_check_missing_resources_directory(tmp_archive):
 
 def bulk_response(*records):
     return (json.dumps(record).encode() + b"\n" for record in records)
+
+
+def test_registry_keys_in_archive(mocked_api, monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(util, "bulk_batch_size", 2)
+    location = {"archive_name": "arch", "scheme": "neurobank", "root": "/a"}
+    route = mocked_api.post(bulk_url + "locations/").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                stream=bulk_response(
+                    {
+                        "name": "res_1",
+                        "filename": "res_1.wav",
+                        "locations": [{**location, "key": "res_1.wav"}],
+                    },
+                    {
+                        "name": "res_2",
+                        "filename": "res_2.wav",
+                        "locations": [{**location, "key": None}],
+                    },
+                ),
+            ),
+            httpx.Response(200, stream=bulk_response()),
+        ]
+    )
+    with httpx.Client() as session:
+        keys = check.registry_keys_in_archive(
+            session, base_url, "arch", ["res_3", "res_2", "res_1"]
+        )
+    assert [json.loads(call.request.content) for call in route.calls] == [
+        {"names": ["res_1", "res_2"], "archive": "arch"},
+        {"names": ["res_3"], "archive": "arch"},
+    ]
+    assert keys == {"res_1": ("res_1.wav", "res_1.wav"), "res_2": (None, "res_2.wav")}
 
 
 def test_recheck_unregistered(mocked_api, tmp_archive, tmp_path):

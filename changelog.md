@@ -47,6 +47,10 @@ Requires django-neurobank 1.0 (registry API 2.x).
   key: deposit, `copy`, `archive import-tar`, and adding a location with `check
   archive --fix`. `archive register-tar` records each resource's tar member as
   the key of its tape location (#60).
+- `nbank check archive` (and `check all`) reports a resource whose location has
+  no key, or a key that isn't the name of its file, as an error, and `--fix`
+  sets it. It also counts the files named otherwise than the registry's
+  `filename`. `check.check_archive_contents` takes the keys as `keys=`.
 - Documentation on Read the Docs (https://neurobank.readthedocs.io): guides to
   archives, depositing, searching, accessing and managing resources, and
   references for the CLI and the Python API. The README is now a short tour.

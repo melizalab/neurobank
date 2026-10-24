@@ -856,6 +856,7 @@ def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
     mocked_api.get(resource_url, params={"archive": "tape"}).respond(
         json=[{"name": "res_2", "sha1": None, "locations": ["tape"]}]
     )
+    mock_location_keys(mocked_api, root, {"res_1": "res_1"})
     log = logging.getLogger("nbank")
     handlers, level = list(log.handlers), log.level
     try:
@@ -863,6 +864,75 @@ def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
     finally:
         log.handlers[:] = handlers
         log.setLevel(level)
+
+
+def mock_location_keys(mocked_api, root, keys):
+    """Mocks bulk/locations/ for the resources in keys, {name: key}, in the archive
+    at root."""
+    records = [
+        {
+            "name": name,
+            "filename": f"{name}.txt",
+            "locations": [
+                {
+                    "archive_name": archive_name,
+                    "scheme": "neurobank",
+                    "root": str(root),
+                    "resource_name": name,
+                    "key": key,
+                }
+            ],
+        }
+        for name, key in keys.items()
+    ]
+    return mocked_api.post(f"{bulk_url}locations/").respond(
+        stream=(json.dumps(record).encode() + b"\n" for record in records)
+    )
+
+
+@pytest.fixture
+def keyless_archive(mocked_api, tmp_archive, tmp_path):
+    """An archive with one file, res_1.txt, whose location has no key."""
+    root = tmp_archive["path"]
+    src = tmp_path / "res_1.txt"
+    src.write_text("contents")
+    sha1 = util.hash(src)
+    archive.store_resource(tmp_archive, src)
+    mocked_api.get(
+        archives_url, params={"scheme": "neurobank", "root": str(root)}
+    ).respond(json=[{"name": archive_name, "root": str(root)}])
+    mocked_api.get(resource_url, params={"archive": archive_name}).respond(
+        json=[{"name": "res_1", "sha1": sha1, "locations": [archive_name]}]
+    )
+    mock_location_keys(mocked_api, root, {"res_1": None})
+    return root
+
+
+def test_check_archive_reports_missing_keys(keyless_archive, caplog):
+    assert run_main("check", "archive", str(keyless_archive)) == 1
+    assert "location has NO key: 1 resources (use -v to list)" in caplog.text
+    assert "location key errors: 1" in caplog.text
+
+
+def test_check_archive_fix_sets_keys(mocked_api, keyless_archive, caplog):
+    route = mocked_api.patch(f"{resource_url}res_1/locations/{archive_name}/").respond(
+        json={"key": "res_1.txt"}
+    )
+    assert run_main("check", "archive", "--fix", str(keyless_archive)) == 0
+    assert json.loads(route.calls.last.request.content) == {"key": "res_1.txt"}
+    assert "Location keys set: 1" in caplog.text
+    assert "location key errors: 0" in caplog.text
+
+
+def test_check_archive_fix_key_refused(mocked_api, keyless_archive, caplog):
+    mocked_api.patch(f"{resource_url}res_1/locations/{archive_name}/").respond(
+        400, json={"key": ["another resource in this archive already has this key"]}
+    )
+    assert run_main("check", "archive", "--fix", str(keyless_archive)) == 1
+    assert (
+        "res_1 : unable to set the key to 'res_1.txt': key: another resource"
+    ) in caplog.text
+    assert "Location keys set: 0" in caplog.text
 
 
 def run_main(*argv):

@@ -41,6 +41,8 @@ class Status(enum.Enum):
     WRONG_OWNER = "WRONG owner"
     WRONG_GROUP = "WRONG group"
     WRONG_MODE = "WRONG permissions"
+    NO_KEY = "location has NO key"
+    WRONG_KEY = "location key DOESN'T MATCH the file name"
     NO_STAGING = "MISSING the staging directory"
     NO_LOCATION = "has NO locations"
     EMPTY_ARCHIVE = "has no resources"
@@ -118,6 +120,24 @@ def registry_resources_in_archive(
     }
 
 
+def registry_keys_in_archive(
+    session: Client, registry_url: str, archive_name: str, names: Iterable[str]
+) -> dict[str, tuple[str | None, str]]:
+    """Returns {name: (key, filename)} for the resources in names located in
+    archive_name: the key of that location, and the registry's file name for the
+    resource."""
+    names = sorted(names)
+    keys = {}
+    for i in range(0, len(names), util.bulk_batch_size):
+        url, query = registry.get_locations_bulk(
+            registry_url, names[i : i + util.bulk_batch_size], archive=archive_name
+        )
+        for record in util.query_registry_bulk(session, url, query):
+            [location] = record["locations"]
+            keys[record["name"]] = (location["key"], record["filename"])
+    return keys
+
+
 def _scan_archive(archive_path: Path) -> tuple[dict[str, list[Path]], list[Finding]]:
     """Returns ({resource name: [files]}, [layout problems]) for an archive."""
     files = defaultdict(list)
@@ -181,13 +201,19 @@ def _age(path: Path) -> str:
 
 
 def check_archive_contents(
-    archive_path: Path, expected: Mapping[str, str | None], *, check_hash: bool = True
+    archive_path: Path,
+    expected: Mapping[str, str | None],
+    *,
+    check_hash: bool = True,
+    keys: Mapping[str, str | None] | None = None,
 ) -> Iterator[Finding]:
     """Compares the files in a local archive with expected, {name: sha1 or None}.
 
     Yields Findings (see Status) for the expected resources and for the files in the
     archive; a resource can have more than one. check_hash=False skips reading files.
-    Doesn't contact the registry.
+    keys, {name: key or None}, gives the key of each resource's location in the
+    archive, which should be the name of its file (NO_KEY, WRONG_KEY); without it,
+    keys aren't checked. Doesn't contact the registry.
     """
     remaining = dict(expected)
     files, problems = _scan_archive(archive_path)
@@ -220,6 +246,18 @@ def check_archive_contents(
         else:
             status = Status.OK
         yield Finding(status, name, path)
+        # a misplaced file, a link or a directory isn't where a key could point
+        if keys is None or status in (
+            Status.SYMLINK,
+            Status.DIRECTORY,
+            Status.MISPLACED,
+        ):
+            continue
+        key = keys.get(name)
+        if key is None:
+            yield Finding(Status.NO_KEY, name, path)
+        elif key != path.name:
+            yield Finding(Status.WRONG_KEY, name, path, f"the key is '{key}'")
     for name in remaining:
         yield Finding(Status.MISSING_FROM_ARCHIVE, name)
 

@@ -359,8 +359,8 @@ def replicate(registry, client, tmp_path):
         stored = nbank_archive.resource_path(src.config, name, resolve_ext=True)
         tmp = tmp_path / f"copy-{stored.name}"
         shutil.copy(stored, tmp)
-        nbank_archive.store_resource(dst.config, tmp, id=name)
-        url, body = reg.add_location(registry.url, name, dst.name)
+        path = nbank_archive.store_resource(dst.config, tmp, id=name)
+        url, body = reg.add_location(registry.url, name, dst.name, path.name)
         client.post(url, json=body).raise_for_status()
 
     return copy

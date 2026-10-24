@@ -39,6 +39,66 @@ def test_check_consistent(cli, archive, dtype, deposit_file, caplog):
         assert f" - {name} : {stored_path(archive, name)} - OK" in caplog.text
     check_summary(caplog, 2, 0, 0, 0)
     assert "permission errors: 0" in caplog.text
+    assert "location key errors: 0" in caplog.text
+    # the test dtype has no extension, so the registry's filename is the bare id
+    assert "files named other than the registry's filename: 2" in caplog.text
+    for name in names:
+        assert f" - {stored_path(archive, name)} (filename: {name})" in caplog.text
+
+
+def set_key(client, registry, name, archive, key):
+    url, body = nbank_registry.update_location(registry.url, name, archive.name, key)
+    client.patch(url, json=body).raise_for_status()
+
+
+def test_check_fix_sets_missing_key(
+    cli, client, registry, archive, dtype, deposit_file, location_key, caplog
+):
+    name = deposit_file(archive, dtype)
+    path = stored_path(archive, name)
+    set_key(client, registry, name, archive, None)
+    assert cli("check", "archive", str(archive.path)) == 1
+    assert "location has NO key: 1 resources (use -v to list)" in caplog.text
+    assert "location key errors: 1" in caplog.text
+    assert location_key(name, archive.name) is None
+
+    caplog.clear()
+    assert cli("check", "archive", "--fix", str(archive.path)) == 0
+    assert "Location keys set: 1" in caplog.text
+    assert location_key(name, archive.name) == path.name
+    assert cli("check", "archive", str(archive.path)) == 0
+
+
+def test_check_fix_sets_wrong_key(
+    cli, client, registry, archive, dtype, deposit_file, location_key, caplog
+):
+    name = deposit_file(archive, dtype)
+    path = stored_path(archive, name)
+    set_key(client, registry, name, archive, "other.wav")
+    assert cli("check", "archive", "-v", str(archive.path)) == 1
+    assert (
+        f" - {name} : {path} - location key DOESN'T MATCH the file name "
+        "(the key is 'other.wav')"
+    ) in caplog.text
+
+    assert cli("check", "archive", "--fix", str(archive.path)) == 0
+    assert location_key(name, archive.name) == path.name
+
+
+def test_check_fix_swapped_keys(
+    cli, client, registry, archive, dtype, deposit_file, location_key, caplog
+):
+    first, second = (deposit_file(archive, dtype) for _ in range(2))
+    first_name, second_name = (stored_path(archive, n).name for n in (first, second))
+    # each location holds the key the other needs, so one of them is refused at first
+    set_key(client, registry, first, archive, None)
+    set_key(client, registry, second, archive, "placeholder")
+    set_key(client, registry, first, archive, second_name)
+    set_key(client, registry, second, archive, first_name)
+    assert cli("check", "archive", "--fix", str(archive.path)) == 0
+    assert "Location keys set: 2" in caplog.text
+    assert location_key(first, archive.name) == first_name
+    assert location_key(second, archive.name) == second_name
 
 
 def test_check_missing_from_archive(cli, register, archive, caplog):

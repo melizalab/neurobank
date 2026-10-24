@@ -13,6 +13,7 @@ import sys
 import tarfile
 import time
 from collections import Counter, deque
+from collections.abc import Iterator
 from netrc import NetrcParseError
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlunparse
@@ -1031,9 +1032,10 @@ def check_archive(args):
     """Check an archive against the registry and its policy.
 
     Files must be readable and match their registry records and hashes, every resource
-    registered to the archive must have a file, and ownership and permissions must
-    follow the policy (fixed with --fix). Returns 1 if there are errors that weren't
-    fixed or the check couldn't be run.
+    registered to the archive must have a file, the key of each resource's location
+    must be the name of its file, and ownership and permissions must follow the policy
+    (keys and permissions are fixed with --fix). Returns 1 if there are errors that
+    weren't fixed or the check couldn't be run.
     """
     # TODO support non-neurobank archives
     try:
@@ -1067,6 +1069,10 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     )
     expected = check.registry_resources_in_archive(session, registry_url, archive_name)
     log.info(" - resources in the registry: %d", len(expected))
+    registered = check.registry_keys_in_archive(
+        session, registry_url, archive_name, expected
+    )
+    keys = {name: key for name, (key, _) in registered.items()}
     log.info("checking ownership and permissions:")
     perm_counts = Counter()
     unable_to_check = False
@@ -1099,9 +1105,18 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     n_errors = 0
     unregistered = []  # looked up in the registry after the main pass
     incomplete = []  # left over from transfers; may be deleted after the main pass
+    wrong_keys = []  # set after the main pass with --fix
+    other_names = []  # files whose names differ from the registry's filename
     for finding in check.check_archive_contents(
-        archive_path, expected, check_hash=not args.no_hash
+        archive_path, expected, check_hash=not args.no_hash, keys=keys
     ):
+        if finding.status in (check.Status.NO_KEY, check.Status.WRONG_KEY):
+            wrong_keys.append(finding)
+            continue
+        if finding.resource in registered and finding.path is not None:
+            filename = registered[finding.resource][1]
+            if finding.path.name != filename:
+                other_names.append((finding.path, filename))
         if finding.status == check.Status.MISSING_FROM_REGISTRY:
             unregistered.append(finding)
             continue
@@ -1124,6 +1139,44 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
             log.info(
                 " - %s : %s - %s", finding.resource, finding.path, finding.status.value
             )
+    n_keys_set = 0
+    key_counts = Counter()
+    if wrong_keys:
+        log.info("checking location keys:")
+    if args.fix:
+        refused = dict(_set_keys(session, registry_url, archive_name, wrong_keys))
+    for finding in wrong_keys:
+        msg = f" - {finding.resource} : {finding.path} - {finding.status.value}"
+        if finding.detail:
+            msg += f" ({finding.detail})"
+        if args.fix:
+            error = refused.get(finding.resource)
+            if error is None:
+                n_keys_set += 1
+                if args.verbose:
+                    log.info("%s - fixed", msg)
+                continue
+            log.error(
+                " - %s : unable to set the key to '%s': %s",
+                finding.resource,
+                finding.path.name,
+                error,
+            )
+        elif args.verbose:
+            log.error("%s", msg)
+        key_counts[finding.status] += 1
+        n_errors += 1
+    if not args.verbose:
+        for status, count in key_counts.items():
+            log.error(" - %s: %d resources (use -v to list)", status.value, count)
+    log.info(
+        "files named other than the registry's filename: %d%s",
+        len(other_names),
+        "" if args.verbose or not other_names else " (use -v to list)",
+    )
+    if args.verbose:
+        for path, filename in other_names:
+            log.info(" - %s (filename: %s)", path, filename)
     prompting = args.fix and _interactive()
     if args.fix and (unregistered or incomplete) and not prompting:
         log.info("not an interactive terminal, so not asking how to resolve problems")
@@ -1163,7 +1216,7 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
         counts[finding.status] += 1
         n_errors += 1
     log.info(
-        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d; permission errors: %d; registered elsewhere: %d",
+        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d; permission errors: %d; registered elsewhere: %d; location key errors: %d",
         len(expected),
         counts[check.Status.MISSING_FROM_ARCHIVE],
         counts[check.Status.MISSING_FROM_REGISTRY],
@@ -1178,13 +1231,49 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
         counts[check.Status.REGISTERED_ELSEWHERE]
         + counts[check.Status.UNVERIFIED_ELSEWHERE]
         + counts[check.Status.CHANGED_ELSEWHERE],
+        key_counts.total(),
     )
     if args.fix:
         log.info("Permission errors fixed: %d", n_fixed)
+        log.info("Location keys set: %d", n_keys_set)
         log.info("Files registered elsewhere resolved: %d", n_resolved)
         log.info("Incomplete transfers and deposits deleted: %d", n_deleted)
     n_errors += perm_counts.total() - n_fixed
     return n_errors == 0 and not unable_to_check
+
+
+def _set_keys(
+    session, registry_url, archive_name, findings
+) -> Iterator[tuple[str, str]]:
+    """Sets the key of each finding's location to the name of its file. Yields
+    (resource, the registry's error) for each key the registry refuses."""
+    refused = [
+        f
+        for f in findings
+        if _set_key(session, registry_url, archive_name, f.resource, f.path.name)
+    ]
+    # a refused key may be held by another location being fixed (two keys swapped,
+    # say), so the refused locations' keys, which are wrong anyway, are cleared before
+    # they're set again
+    for f in refused:
+        _set_key(session, registry_url, archive_name, f.resource, None)
+    for f in refused:
+        error = _set_key(session, registry_url, archive_name, f.resource, f.path.name)
+        if error is not None:
+            yield f.resource, error
+
+
+def _set_key(session, registry_url, archive_name, resource, key) -> str | None:
+    """Sets the key of a resource's location. Returns the registry's error if it
+    refuses, or None."""
+    url, body = registry.update_location(registry_url, resource, archive_name, key)
+    r = session.patch(url, json=body)
+    if r.status_code == httpx.codes.OK:
+        return None
+    try:
+        return "; ".join(registry.error_messages(r))
+    except ValueError:
+        return r.text
 
 
 def _interactive() -> bool:

@@ -8,13 +8,18 @@ You can check whether an archive contains all the files it's supposed to by
 running ``nbank check archive <path_to_archive>``. This command compares each
 resource in the archive to its record in the registry and gives a summary of any
 resources missing from the archive and files that don't have matches in the
-registry (which might indicate corrupted data). It also checks ownership and
-permissions against the archive's policy (see :doc:`archives`).
+registry (which might indicate corrupted data). It also checks that the
+registry's location for each resource has the name of its file as its key, which
+is how nbank finds the file, and checks ownership and permissions against the
+archive's policy (see :doc:`archives`). It reports how many files are named
+differently from the registry's ``filename`` (the name given to copies), which
+is informational, not an error.
 
--  ``--fix`` repairs ownership and permissions (changing ownership requires
-   root), creates a missing ``staging`` directory, and in an interactive
-   terminal, offers to delete leftovers from interrupted transfers and deposits,
-   and to resolve files that are registered to other archives.
+-  ``--fix`` sets location keys to the names of the files, repairs ownership and
+   permissions (changing ownership requires root), creates a missing
+   ``staging`` directory, and in an interactive terminal, offers to delete
+   leftovers from interrupted transfers and deposits, and to resolve files that
+   are registered to other archives.
 -  ``--no-hash`` doesn't verify file hashes, which is much faster for large
    archives.
 -  ``-v`` shows the results for all resources, not just errors.
