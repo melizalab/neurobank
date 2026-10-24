@@ -21,7 +21,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
   only hashes files. The `allow_directories` policy is gone (archives' `nbank.json`
   can keep it; it's ignored), and `archive.store_resource` refuses directories.
   `nbank check archive` reports a directory where a resource should be (status
-  `DIRECTORY`) without reading it; `--fix` can still delete one.
+  `DIRECTORY`) without reading it, and `--fix` leaves it alone; `archive register-tar`
+  refuses a directory with a registered id, and skips its contents; `nbank
+  verify` refuses a directory.
 - `nbank.util.registry_session()` yields an HTTP client for the registry that
   asks for API 2.0 and checks the registry's version. Code that changes the
   registry with its own client gets a 400 from it; the `query_registry`

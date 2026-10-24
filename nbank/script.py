@@ -381,9 +381,7 @@ def main(argv=None):
         help="also read each file with its dtype's metadata reader and check what "
         "it reads against the registry (--debug shows it)",
     )
-    pp.add_argument(
-        "files", nargs="+", type=Path, help="the files or directories to verify"
-    )
+    pp.add_argument("files", nargs="+", type=Path, help="the files to verify")
 
     pp = sub.add_parser(
         "modify", help="update values in resource metadata of resource(s)"
@@ -1165,6 +1163,7 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
         + counts[check.Status.DUPLICATE]
         + counts[check.Status.UNEXPECTED]
         + counts[check.Status.SYMLINK]
+        + counts[check.Status.DIRECTORY]
         + counts[check.Status.INCOMPLETE],
         perm_counts.total() - n_fixed,
         counts[check.Status.REGISTERED_ELSEWHERE]
@@ -1407,15 +1406,16 @@ def register_tar(args):
                 registry.log_error(e)
                 return 1
         log.info("- scanning contents of %s", args.tar)
-        last_path = None
+        n_failed = 0
+        refused = None
         for tarinfo in tarf:
             path = Path(tarinfo.name)
             if PurePosixPath(tarinfo.name) == PurePosixPath(transfer.manifest_name):
                 log.info("  - %s -> manifest, skipping", tarinfo.name)
                 continue
-            # don't check contents in directories that are resources
-            if last_path and path.is_relative_to(last_path):
-                log.debug("  - %s -> in a directory resource, skipping", tarinfo.name)
+            # the contents of a directory with a registered id aren't resources
+            if refused and path.is_relative_to(refused):
+                log.debug("  - %s -> in %s, skipping", tarinfo.name, refused)
                 continue
             # look up the resource
             url, params = registry.get_resource(
@@ -1425,6 +1425,13 @@ def register_tar(args):
             if result is None:
                 if tarinfo.isreg():
                     log.info("  - %s -> no match in registry, skipping", tarinfo.name)
+                continue
+            if tarinfo.isdir():
+                log.error(
+                    "  ✗ %s -> is a directory, which isn't a resource", tarinfo.name
+                )
+                n_failed += 1
+                refused = path
                 continue
             if archive_name in result["locations"]:
                 log.info(
@@ -1453,7 +1460,7 @@ def register_tar(args):
                 except httpx.HTTPStatusError as e:
                     registry.log_error(e)
                     return 1
-            last_path = path
+    return 1 if n_failed else None
 
 
 def prune_archive(args):
@@ -2112,6 +2119,10 @@ def verify_file_hash(args):
     for path in args.files:
         if not path.exists():
             print(f"{path}: no such file or directory")
+            n_failed += 1
+            continue
+        if path.is_dir():
+            print(f"{path}: is a directory, which isn't a resource")
             n_failed += 1
             continue
         # if the name isn't a registered id, look for the file's hash instead

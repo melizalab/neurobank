@@ -1481,3 +1481,11 @@ def test_check_superseded_all_current(mocked_api, monkeypatch):
 def test_check_superseded_needs_ids(mocked_api, caplog):
     assert run_main("check", "superseded") == 1
     assert "no identifiers given" in caplog.text
+
+
+def test_verify_refuses_a_directory(mocked_api, tmp_path, capsys):
+    assert run_main("verify", str(tmp_path)) == 1
+    assert (
+        capsys.readouterr().out
+        == f"{tmp_path}: is a directory, which isn't a resource\n"
+    )

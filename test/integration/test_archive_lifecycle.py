@@ -495,6 +495,46 @@ def test_register_tar(
     assert f"{other.name} -> no match in registry" in caplog.text
 
 
+def test_register_tar_refuses_a_directory(
+    plant_directory,
+    cli,
+    registry,
+    register,
+    archive,
+    dtype,
+    deposit_file,
+    tmp_path,
+    unique,
+    caplog,
+):
+    name = deposit_file(archive, dtype)
+    planted = plant_directory(archive, dtype, unique("res"))
+    # a registered id inside the directory isn't registered to the tape
+    inside = register()["name"]
+    inner = nbank_archive.resource_path(archive.config, planted) / "sub" / inside
+    inner.write_text("not the resource")
+    tar = tmp_path / "archive.tar"
+    with tarfile.open(tar, "w") as t:
+        t.add(nbank_archive.resource_path(archive.config, planted), arcname=planted)
+        t.add(stored_path(archive, name), arcname=stored_path(archive, name).name)
+    tape = unique("tape")
+    assert cli("archive", "register-tar", "-n", tape, tape, "1", str(tar)) == 1
+    assert f"{planted} -> is a directory, which isn't a resource" in caplog.text
+    assert core.describe(registry.url, planted)["locations"] == [archive.name]
+    assert set(core.describe(registry.url, name)["locations"]) == {archive.name, tape}
+    assert core.describe(registry.url, inside)["locations"] == []
+
+
+def test_check_archive_reports_a_directory(
+    plant_directory, cli, archive, dtype, unique, caplog
+):
+    planted = plant_directory(archive, dtype, unique("res"))
+    assert cli("check", "archive", str(archive.path)) == 1
+    assert f"{planted} : " in caplog.text
+    assert "a DIRECTORY, which isn't a resource" in caplog.text
+    assert "other layout errors: 1" in caplog.text
+
+
 def test_register_tar_dry_run(
     cli, registry, client, archive, dtype, deposit_file, tmp_path, unique
 ):

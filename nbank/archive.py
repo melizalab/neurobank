@@ -427,8 +427,7 @@ def mode_policy(cfg: ArchiveConfig, path: Path) -> tuple[int, int]:
     Nothing may have bits the umask forbids. The resources directory and its
     subdirectories need every bit the umask allows, plus setgid on Linux. Other
     directories must be readable and searchable, and files readable, by everyone the
-    umask allows. With read_only_resources, resources and everything in them must not be
-    writable.
+    umask allows. With read_only_resources, resources must not be writable.
     """
     access = cfg["policy"]["access"]
     umask = access["umask"]
