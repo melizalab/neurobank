@@ -32,9 +32,14 @@ Requires django-neurobank 1.0 (registry API 2.x).
   `--superseded` (`superseded=True`) finds only them, and `--all`
   (`superseded=None`) both. `core.verify` still finds a file's resource if it's
   superseded.
+- `nbank deposit --dry-run` needs permission to deposit, as it asks the
+  registry to check each resource (see below).
 
 ### New
 
+- Documentation on Read the Docs (https://neurobank.readthedocs.io): guides to
+  archives, depositing, searching, accessing and managing resources, and
+  references for the CLI and the Python API. The README is now a short tour.
 - `nbank.admin supersede` marks resources as superseded, or not to be used.
 - `nbank registry-info` shows who the registry sees you as, and what you can
   change: a username and permissions, a superuser, or anonymous (#61).
@@ -47,8 +52,8 @@ Requires django-neurobank 1.0 (registry API 2.x).
 - `nbank deposit --dry-run` (`core.deposit(dry_run=True)`) asks the registry
   whether it would accept each resource (`check/resources/`, in batches of
   1000): a taken name or hash, one shared with another file in the deposit, or an
-  invalid dtype, experimenter, animal or metadata is an error for that file.
-  Dry runs now need permission to deposit (#11).
+  invalid dtype, experimenter, animal or metadata is an error for that file
+  (#11).
 - `nbank modify --dtype` (`core.update(dtype=)`) changes resources' datatype
   (#62). `metadata` is optional in `core.update`.
 - `nbank fetch --verify` checks each file against its registered hash, trying the
@@ -56,6 +61,14 @@ Requires django-neurobank 1.0 (registry API 2.x).
   and warns about resources with no hash; `-@` reads ids from stdin (#8).
 - `nbank check superseded` reports superseded and unregistered resources among
   the given ids (or ids on stdin, with `-@`), and exits 1 if there are any.
+- `nbank verify --metadata` reads each file with its dtype's metadata reader and
+  checks what it reads against the registry; a disagreement, or a file the
+  reader can't read, exits 1.
+- `nbank dtype list` shows the package and version providing each installed
+  metadata reader.
+- `nbank deposit` warns when no dtype is given, as the files' metadata isn't
+  read; with `--debug`, it shows which reader handles the dtype and what it
+  read from each file.
 
 ### Fixed
 

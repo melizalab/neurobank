@@ -31,11 +31,13 @@ Documentation
 -------------
 
 The documentation is built with Sphinx from ``docs/``, and published on Read
-the Docs (configured in ``.readthedocs.yaml``). To build it locally:
+the Docs (configured in ``.readthedocs.yaml``) for tagged releases only. The
+test workflow builds it on every push and pull request, failing on warnings as
+Read the Docs does. To build it locally:
 
 .. code:: bash
 
-   uv run --group docs sphinx-build docs docs/_build/html
+   uv run --group docs sphinx-build -W docs docs/_build/html
 
 The command-line reference is generated from ``nbank``'s argument parser, and
 the Python API reference from the docstrings of the names each module lists in
