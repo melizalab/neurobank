@@ -144,7 +144,7 @@ class HttpResource(FetchableResource):
         return self.url
 
     def __repr__(self):
-        return f"<remote resource: {self.id} @ {self.path}>"
+        return f"<remote resource: {self.id} @ {self.url}>"
 
     def fetch(self, target: Path) -> Path:
         if self.session is None:

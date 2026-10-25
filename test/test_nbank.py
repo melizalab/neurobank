@@ -1594,6 +1594,12 @@ def test_registry_info_shows_a_registry_it_cant_use(mocked_api, monkeypatch, cap
     assert "api_version: 1.3" in caplog.text
 
 
+def test_registry_info_not_a_registry(mocked_api, caplog):
+    mocked_api.get(f"{base_url}info/").respond(404)
+    assert run_main("registry", "info") == 1
+    assert f"{base_url} is not a neurobank registry (no info/)" in caplog.text
+
+
 def test_registry_info_without_user(mocked_api, caplog):
     caplog.set_level(logging.INFO, logger="nbank")
     mocked_api.get(f"{base_url}info/").respond(json={"api_version": "1.2"})

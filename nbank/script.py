@@ -797,6 +797,9 @@ def registry_info(args):
         args.registry_url, auth=args.auth, check_version=False
     ) as session:
         info = util.query_registry(session, url, params)
+    if info is None:
+        log.error("error: %s is not a neurobank registry (no info/)", args.registry_url)
+        return 1
     # registries before API 1.3 don't say who the request is from
     has_user = "user" in info
     user = info.pop("user", None)

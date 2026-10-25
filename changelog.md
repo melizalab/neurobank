@@ -142,6 +142,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Fixed
 
+- `nbank registry info` reports an address that isn't a registry (no `info/`)
+  as an error instead of crashing.
+- The `repr` of an http(s) resource no longer raises `AttributeError`.
 - A command whose output goes to a reader that stops early (`nbank search ... |
   head`) exits quietly with status 141, as if killed by SIGPIPE, instead of
   printing a BrokenPipeError.

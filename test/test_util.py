@@ -86,6 +86,9 @@ def test_parse_http_location():
     res = util.parse_location(location)
     assert isinstance(res, util.HttpResource)
     assert res.url == "https://localhost:8000/bucket/dummy/"
+    assert (
+        repr(res) == "<remote resource: dummy @ https://localhost:8000/bucket/dummy/>"
+    )
 
 
 def test_parse_http_location_strip_slash():
