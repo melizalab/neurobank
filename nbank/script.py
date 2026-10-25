@@ -747,7 +747,14 @@ def main(argv=None):
     # some of the error handling is common; sub-funcs should only catch specific
     # errors. Commands return 1 (or None for success) and exit status follows.
     try:
-        return args.func(args)
+        status = args.func(args)
+        # buffered output reaches a closed pipe here
+        sys.stdout.flush()
+        return status
+    except BrokenPipeError:
+        # the reader stopped early (e.g. `| head`): exit as if killed by SIGPIPE
+        _discard_stdout()
+        return 141
     except httpx.RequestError:
         log.error("registry error: unable to contact server")
     except util.RegistryVersionError as err:
@@ -765,6 +772,18 @@ def main(argv=None):
     except KeyboardInterrupt:
         return 130
     return 1
+
+
+def _discard_stdout() -> None:
+    """Points standard output at the null device, so that flushing it at exit doesn't
+    fail again."""
+    try:
+        fd = sys.stdout.fileno()
+    except (AttributeError, OSError, ValueError):
+        return
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull, fd)
+    os.close(devnull)
 
 
 def registry_info(args):

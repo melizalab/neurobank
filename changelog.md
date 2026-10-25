@@ -131,6 +131,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Fixed
 
+- A command whose output goes to a reader that stops early (`nbank search ... |
+  head`) exits quietly with status 141, as if killed by SIGPIPE, instead of
+  printing a BrokenPipeError.
 - `nbank.admin` exits with status 1 when a resource can't be deleted, updated or
   marked (including one that isn't in the registry, or for `update-hash` has no
   copy on this host), and reports registry errors instead of a traceback.

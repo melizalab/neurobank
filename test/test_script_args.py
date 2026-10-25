@@ -1,6 +1,8 @@
 # -*- mode: python -*-
 import argparse
 import logging
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -176,3 +178,38 @@ def test_alt_base_default_is_read_when_run(monkeypatch, command):
         log.handlers[:] = handlers
         log.setLevel(level)
     assert [args.alt_base for args in seen] == [Path("/mnt/data"), Path("/other")]
+
+
+_flood = """
+import sys
+from nbank import script
+
+def flood(args):
+    for i in range(int(sys.argv[1])):
+        print(i)
+
+script.search_resources = flood
+sys.exit(script.main(["-r", "https://localhost/", "search", "x"]))
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="SIGPIPE is POSIX")
+@pytest.mark.parametrize(
+    "lines, read",
+    [(1_000_000, 1), (10, 0)],
+    # a long output fails while printing, a short one when it's flushed
+    ids=["while printing", "when flushed"],
+)
+def test_closed_pipe_exits_quietly(lines, read):
+    # as `nbank search ... | head` does
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _flood, str(lines)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    for i in range(read):
+        assert proc.stdout.readline() == f"{i}\n".encode()
+    proc.stdout.close()
+    stderr = proc.stderr.read().decode()
+    assert proc.wait(timeout=30) == 141
+    assert stderr == ""
