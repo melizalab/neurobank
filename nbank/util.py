@@ -8,7 +8,7 @@ import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path, PurePath, PurePosixPath
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, ClassVar
 
 from httpx import URL, USE_CLIENT_DEFAULT, Auth, BasicAuth, Client, Response, codes
 
@@ -107,7 +107,7 @@ def check_registry_version(session: Client, registry_url: str) -> None:
 class HttpResource(FetchableResource):
     """A resource that can be fetched from an HTTP(S) endpoint"""
 
-    schemes = ("http", "https")
+    schemes: ClassVar[tuple[str, ...]] = ("http", "https")
 
     @classmethod
     def from_location(cls, location, context):

@@ -5,6 +5,7 @@
 
 import logging
 from pathlib import Path
+from typing import ClassVar
 
 from nbank.types import NonFetchableResource, location_scheme
 
@@ -23,7 +24,7 @@ class Resource(NonFetchableResource):
 
     """
 
-    schemes = ("tape",)
+    schemes: ClassVar[tuple[str, ...]] = ("tape",)
     local = False
 
     def __init__(

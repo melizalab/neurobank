@@ -4,9 +4,10 @@
 """Types used by other modules"""
 
 from abc import abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, TypeVar, runtime_checkable
 
 if TYPE_CHECKING:
     from httpx import Client
@@ -66,16 +67,28 @@ class LocationContext:
     http_session: "Client | None" = None
 
 
-_location_schemes: dict[str, type] = {}
+class LocationScheme(Protocol):
+    """A class that builds resources for the locations of its schemes."""
+
+    schemes: ClassVar[tuple[str, ...]]
+
+    @classmethod
+    def from_location(
+        cls, location: Mapping[str, Any], context: LocationContext
+    ) -> Resource | None:
+        """Returns a resource for a registry location dict, or None if it can't be
+        reached from this host."""
+        ...
 
 
-def location_scheme(cls: type) -> type:
-    """Class decorator that registers cls to build resources for its location schemes.
+_S = TypeVar("_S", bound=type[LocationScheme])
 
-    cls needs a `schemes` tuple and a classmethod `from_location(location, context)` that
-    returns a resource, or None if it can't be reached from this host; context is a
-    LocationContext. Raises ValueError if a scheme already has a class.
-    """
+_location_schemes: dict[str, type[LocationScheme]] = {}
+
+
+def location_scheme(cls: _S) -> _S:
+    """Class decorator that registers cls (a LocationScheme) to build resources for its
+    location schemes. Raises ValueError if a scheme already has a class."""
     for scheme in cls.schemes:
         existing = _location_schemes.get(scheme)
         if existing is not None and existing is not cls:
@@ -86,6 +99,6 @@ def location_scheme(cls: type) -> type:
     return cls
 
 
-def location_class(scheme: str) -> type | None:
+def location_class(scheme: str) -> type[LocationScheme] | None:
     """Returns the class registered for a location scheme, or None."""
     return _location_schemes.get(scheme)

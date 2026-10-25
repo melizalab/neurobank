@@ -15,7 +15,7 @@ import stat
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from nbank.types import LocationContext, location_scheme
 
@@ -346,7 +346,7 @@ class Resource:
     Raises FileNotFoundError if the file doesn't exist.
     """
 
-    schemes = ("neurobank",)
+    schemes: ClassVar[tuple[str, ...]] = ("neurobank",)
     local = True
 
     def __init__(self, root: str, id: str, key: str, alt_base: Path | None = None):
