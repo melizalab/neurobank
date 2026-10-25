@@ -84,7 +84,7 @@ def test_find_local_copy(respx_mock, tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
     FakeBulkLocations(
         respx_mock,
-        [record("res_1", sha1, location("arch", tmp_archive["path"], "res_1"))],
+        [record("res_1", sha1, location("arch", tmp_archive.path, "res_1"))],
     )
     [source] = find(["res_1"])
     assert source == transfer.Source("res_1", sha1=sha1, path=path, archive="arch")
@@ -102,7 +102,7 @@ def test_find_skips_locations_not_on_this_host(respx_mock, tmp_archive, tmp_path
                 sha1,
                 location("tape", "tape01:1", "res_1", scheme="tape"),
                 location("elsewhere", tmp_path / "not-mounted", "res_1"),
-                location("arch", tmp_archive["path"], "res_1"),
+                location("arch", tmp_archive.path, "res_1"),
             )
         ],
     )
@@ -122,7 +122,7 @@ def test_find_skips_download_location(respx_mock, tmp_archive, tmp_path):
                 location(
                     "registry", "localhost:8000/neurobank/download", "res_1", "https"
                 ),
-                location("arch", tmp_archive["path"], "res_1"),
+                location("arch", tmp_archive.path, "res_1"),
             )
         ],
     )
@@ -176,10 +176,8 @@ def test_find_in_archive(respx_mock, tmp_archive, tmp_path):
     fake = FakeBulkLocations(
         respx_mock,
         [
-            record("res_1", sha1, location("arch", tmp_archive["path"], "res_1")),
-            record(
-                "res_2", other_sha1, location("other", tmp_archive["path"], "res_2")
-            ),
+            record("res_1", sha1, location("arch", tmp_archive.path, "res_1")),
+            record("res_2", other_sha1, location("other", tmp_archive.path, "res_2")),
         ],
     )
     sources = find(["res_1", "res_2"], archive="arch")
@@ -194,7 +192,7 @@ def test_find_unreadable(respx_mock, tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
     FakeBulkLocations(
         respx_mock,
-        [record("res_1", sha1, location("arch", tmp_archive["path"], "res_1"))],
+        [record("res_1", sha1, location("arch", tmp_archive.path, "res_1"))],
     )
     path.chmod(0o000)
     try:
@@ -211,7 +209,7 @@ def test_find_refuses_a_directory(respx_mock, tmp_archive):
     path.mkdir(parents=True)
     FakeBulkLocations(
         respx_mock,
-        [record("res_1", None, location("arch", tmp_archive["path"], "res_1"))],
+        [record("res_1", None, location("arch", tmp_archive.path, "res_1"))],
     )
     [source] = find(["res_1"])
     assert source.path is None
@@ -226,7 +224,7 @@ def test_find_keeps_order_and_drops_duplicates(
     records = []
     for name in ("res_a", "res_b", "res_c"):
         _, sha1 = store(tmp_archive, tmp_path, name, contents=name)
-        records.append(record(name, sha1, location("arch", tmp_archive["path"], name)))
+        records.append(record(name, sha1, location("arch", tmp_archive.path, name)))
     fake = FakeBulkLocations(respx_mock, records)
     sources = find(["res_c", "res_a", "res_c", "missing", "res_b"])
     assert [s.id for s in sources] == ["res_c", "res_a", "missing", "res_b"]
@@ -243,7 +241,7 @@ def sha1_of(data: bytes) -> str:
 
 def leftovers(cfg):
     """Temporary files or directories left in the archive."""
-    return [p for p in (cfg["path"] / "resources").rglob(".*.partial")]
+    return [p for p in (cfg.path / "resources").rglob(".*.partial")]
 
 
 def test_receive_file(tmp_archive):
@@ -251,7 +249,7 @@ def test_receive_file(tmp_archive):
     received = transfer.receive_file(
         tmp_archive, "res_1", "original.wav", io.BytesIO(data), sha1_of(data)
     )
-    target = tmp_archive["path"] / "resources" / "re" / "res_1.wav"
+    target = tmp_archive.path / "resources" / "re" / "res_1.wav"
     assert received == transfer.Received(target, sha1_of(data), True)
     assert target.read_bytes() == data
     assert stat.S_IMODE(target.stat().st_mode) & 0o222 == 0
@@ -291,7 +289,7 @@ def test_receive_file_already_in_archive(tmp_archive, tmp_path):
 
 
 def test_receive_file_keeps_leftover_partial(tmp_archive):
-    stub = tmp_archive["path"] / "resources" / "re"
+    stub = tmp_archive.path / "resources" / "re"
     stub.mkdir()
     leftover = stub / transfer._partial_name("res_1.wav")
     leftover.write_text("from a crash")
@@ -339,7 +337,7 @@ def test_receive_file_without_hard_links(tmp_archive, monkeypatch):
 @pytest.mark.parametrize("hard_links", [True, False])
 def test_receive_file_never_replaces(tmp_archive, monkeypatch, hard_links):
     # another process stores the resource while this one is writing it
-    target = tmp_archive["path"] / "resources" / "re" / "res_1.wav"
+    target = tmp_archive.path / "resources" / "re" / "res_1.wav"
 
     class Racing(io.RawIOBase):
         done = False
@@ -387,7 +385,7 @@ def test_receive_file_dry_run(tmp_archive):
         None, "res_1", "f.wav", io.BytesIO(data), sha1_of(data)
     )
     assert received == transfer.Received(None, sha1_of(data), True)
-    assert not (tmp_archive["path"] / "resources" / "re").exists()
+    assert not (tmp_archive.path / "resources" / "re").exists()
     with pytest.raises(transfer.TransferError, match="don't match"):
         transfer.receive_file(None, "res_1", "f.wav", io.BytesIO(data), sha1_of(b"x"))
 

@@ -151,7 +151,7 @@ def test_check_not_an_archive(cli, tmp_path, caplog):
 
 def test_check_unregistered_archive(cli, registry, tmp_path, caplog):
     config = nbank_archive.create(tmp_path / "unregistered", registry.url)
-    assert cli("check", "archive", str(config["path"])) == 1
+    assert cli("check", "archive", str(config.path)) == 1
     assert "No archive associated with" in caplog.text
 
 
@@ -285,11 +285,11 @@ def test_check_all(
     add_archive(tape, "tape", f"{tape}:1")
     linked = unique("arch")
     real = nbank_archive.create(tmp_path / f"{linked}-real", registry.url)
-    (tmp_path / linked).symlink_to(real["path"])
+    (tmp_path / linked).symlink_to(real.path)
     add_archive(linked, "neurobank", tmp_path / linked)
     elsewhere = unique("arch")
     config = nbank_archive.create(tmp_path / elsewhere, "https://elsewhere/")
-    add_archive(elsewhere, "neurobank", config["path"])
+    add_archive(elsewhere, "neurobank", config.path)
 
     assert cli("check", "all") == 1
     failed = failed_checks(caplog)

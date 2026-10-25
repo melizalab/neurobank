@@ -46,7 +46,7 @@ def netrc_auth(tmp_path):
 
 
 def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     name = "dummy_1"
     dtype = "dummy-dtype"
     metadata = {"experimenter": "dmeliza", "pen": 1}
@@ -83,7 +83,7 @@ def test_deposit_resource(mocked_api, tmp_archive, tmp_path):
 
 def test_deposit_dry_run(mocked_api, tmp_archive, tmp_path, registry_checks):
     registry_checks()
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     name = "dummy_1"
     dtype = "dummy-dtype"
     src = tmp_path / name
@@ -103,7 +103,7 @@ def test_deposit_dry_run(mocked_api, tmp_archive, tmp_path, registry_checks):
 
 def dry_run_setup(mocked_api, tmp_archive, tmp_path, names):
     """Mocks the archive and dtype lookups; returns the files to deposit."""
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(json=[{"name": archive_name, "root": str(root)}])
@@ -125,7 +125,7 @@ def test_deposit_dry_run_asks_the_registry(mocked_api, tmp_archive, tmp_path):
     )
     items = list(
         core.deposit(
-            tmp_archive["path"],
+            tmp_archive.path,
             files=files,
             dtype="dummy-dtype",
             hash=True,
@@ -160,7 +160,7 @@ def test_deposit_dry_run_refusal_raises(mocked_api, tmp_archive, tmp_path):
     with pytest.raises(ValueError, match="registry would refuse it: experimenter"):
         list(
             core.deposit(
-                tmp_archive["path"], files=files, dtype="dummy-dtype", dry_run=True
+                tmp_archive.path, files=files, dtype="dummy-dtype", dry_run=True
             )
         )
 
@@ -172,16 +172,14 @@ def test_deposit_dry_run_checks_in_batches(
     route = registry_checks()
     files = dry_run_setup(mocked_api, tmp_archive, tmp_path, ["a", "b", "c"])
     items = list(
-        core.deposit(
-            tmp_archive["path"], files=files, dtype="dummy-dtype", dry_run=True
-        )
+        core.deposit(tmp_archive.path, files=files, dtype="dummy-dtype", dry_run=True)
     )
     assert [item["id"] for item in items] == ["a", "b", "c"]
     assert [len(json.loads(c.request.content)) for c in route.calls] == [2, 1]
 
 
 def test_deposit_resource_unknown_dtype(mocked_api, tmp_archive, tmp_path):
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     dtype = "no-such-dtype"
     src = tmp_path / "dummy"
     src.write_text("blah")
@@ -270,7 +268,7 @@ def test_deposit_auto_id_taken_gives_up(mocked_api, auto_id_archive, tmp_path):
 
 
 def test_deposit_name_taken_is_not_retried(mocked_api, tmp_archive, tmp_path):
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(json=[{"name": archive_name, "root": str(root)}])
@@ -342,7 +340,7 @@ def zip_archive(mocked_api, tmp_path):
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(json=[{"name": archive_name, "root": str(root)}])
-    return archive.get_config(root)
+    return archive.ArchiveConfig.load(root)
 
 
 def staged_files(cfg):
@@ -360,9 +358,7 @@ def test_deposit_zips_directories(mocked_api, zip_archive, recording):
             "metadata": {},
         },
     ).respond(json={"name": "rec_1"})
-    items = list(
-        core.deposit(zip_archive["path"], [src], zip_directories=True, auth=auth)
-    )
+    items = list(core.deposit(zip_archive.path, [src], zip_directories=True, auth=auth))
     assert items == [{"source": src, "id": "rec_1", "zipped": True}]
     stored = archive.resource_path(zip_archive, "rec_1", resolve_ext=True)
     assert stored.name == "rec_1.zip"
@@ -384,12 +380,12 @@ def test_deposit_zip_dry_run_builds_nothing(
     monkeypatch.setattr(canonical_zip, "zip_directory", fail)
     # no resource POST is mocked: nothing may be registered
     items = list(
-        core.deposit(zip_archive["path"], [src], zip_directories=True, dry_run=True)
+        core.deposit(zip_archive.path, [src], zip_directories=True, dry_run=True)
     )
     assert items == [
         {"source": src, "id": "rec_1", "dry_run": True, "metadata": {}, "zipped": True}
     ]
-    assert list((zip_archive["path"] / "resources").iterdir()) == []
+    assert list((zip_archive.path / "resources").iterdir()) == []
     assert staged_files(zip_archive) == []
 
 
@@ -399,10 +395,10 @@ def test_deposit_zip_rejected_by_registry_is_removed(
     src, _ = recording
     mocked_api.post(resource_url).respond(400, json={"name": ["already exists"]})
     [item] = core.deposit(
-        zip_archive["path"], [src], zip_directories=True, skip_errors=True, auth=auth
+        zip_archive.path, [src], zip_directories=True, skip_errors=True, auth=auth
     )
     assert "already exists" in item["error"]
-    assert list((zip_archive["path"] / "resources").iterdir()) == []
+    assert list((zip_archive.path / "resources").iterdir()) == []
     assert staged_files(zip_archive) == []
 
 
@@ -411,10 +407,10 @@ def test_deposit_zip_failure_leaves_nothing(zip_archive, recording):
     (src / "link").symlink_to(src / "notes.txt")
     # no resource POST is mocked: nothing may be registered
     [item] = core.deposit(
-        zip_archive["path"], [src], zip_directories=True, skip_errors=True
+        zip_archive.path, [src], zip_directories=True, skip_errors=True
     )
     assert "symbolic link" in item["error"]
-    assert list((zip_archive["path"] / "resources").iterdir()) == []
+    assert list((zip_archive.path / "resources").iterdir()) == []
     assert staged_files(zip_archive) == []
 
 
@@ -423,7 +419,7 @@ def test_deposit_zip_needs_staging_directory(zip_archive, recording, dry_run):
     src, _ = recording
     archive.staging_dir(zip_archive).rmdir()
     [item] = core.deposit(
-        zip_archive["path"],
+        zip_archive.path,
         [src],
         zip_directories=True,
         skip_errors=True,
@@ -434,7 +430,7 @@ def test_deposit_zip_needs_staging_directory(zip_archive, recording, dry_run):
 
 
 def test_deposit_resource_archive_errors(mocked_api, tmp_archive, tmp_path):
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     dtype = "dummy-dtype"
     src = tmp_path / "dummy"
     mocked_api.get(
@@ -450,7 +446,7 @@ def test_deposit_resource_archive_errors(mocked_api, tmp_archive, tmp_path):
 
 
 def test_deposit_resource_source_errors(mocked_api, tmp_archive, tmp_path):
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     name = "dummy_1"
     dtype = "dummy-dtype"
     src = tmp_path / name
@@ -511,7 +507,7 @@ def test_deposit_skip_errors(
 ):
     if dry_run:
         registry_checks()
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(json=[{"name": archive_name, "root": str(root)}])
@@ -540,7 +536,7 @@ def test_deposit_skip_errors(
 
 
 def test_deposit_skip_errors_rejected_by_registry(mocked_api, tmp_archive, tmp_path):
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(json=[{"name": archive_name, "root": str(root)}])
@@ -566,7 +562,7 @@ def test_deposit_skip_errors_rejected_by_registry(mocked_api, tmp_archive, tmp_p
 def test_deposit_skip_errors_still_raises_auth_errors(
     mocked_api, tmp_archive, tmp_path
 ):
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(json=[{"name": archive_name, "root": str(root)}])
@@ -719,7 +715,7 @@ def test_deposit_metadata_keys_can_share_option_names(monkeypatch):
 
 
 def test_deposit_resource_registry_duplicate(mocked_api, tmp_archive, tmp_path):
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     name = "dummy_1"
     dtype = "dummy-dtype"
     src = tmp_path / name
@@ -882,7 +878,7 @@ def test_make_auth_without_netrc(home):
 
 
 def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     src = tmp_path / "res_1"
     src.write_text("contents")
     sha1 = util.hash(src)
@@ -937,7 +933,7 @@ def mock_location_keys(mocked_api, root, keys):
 @pytest.fixture
 def keyless_archive(mocked_api, tmp_archive, tmp_path):
     """An archive with one file, res_1.txt, whose location has no key."""
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     src = tmp_path / "res_1.txt"
     src.write_text("contents")
     sha1 = util.hash(src)
@@ -997,9 +993,9 @@ def test_init_shared_archive(mocked_api, tmp_path):
     root = tmp_path / "archive"
     mocked_api.post(archives_url).respond(201, json={})
     run_main("archive", "init", "--shared", "-g", group, str(root))
-    access = archive.get_config(root)["policy"]["access"]
-    assert access["user"] is None
-    assert access["group"] == group
+    access = archive.ArchiveConfig.load(root).policy.access
+    assert access.user is None
+    assert access.group == group
 
 
 @pytest.mark.posix
@@ -1160,9 +1156,9 @@ def test_verify_name_that_isnt_an_id(mocked_api, tmp_path, capsys):
 
 def test_init_existing_archive(mocked_api, tmp_archive, caplog):
     # no registry route is mocked: the archive must not be registered
-    config = tmp_archive["path"] / "nbank.json"
+    config = tmp_archive.path / "nbank.json"
     before = config.read_text()
-    run_main("archive", "init", str(tmp_archive["path"]))
+    run_main("archive", "init", str(tmp_archive.path))
     assert f"'{config}' already exists" in caplog.text
     assert config.read_text() == before
 
@@ -1292,7 +1288,7 @@ def exportable(respx_mock, tmp_path):
         sha1 = util.hash(src)
         archive.store_resource(cfg, src, id=name)
         records.append(
-            record(name, sha1, location("arch", cfg["path"], name, key=f"{name}.txt"))
+            record(name, sha1, location("arch", cfg.path, name, key=f"{name}.txt"))
         )
     FakeBulkLocations(respx_mock, records)
     full = [
@@ -1453,7 +1449,7 @@ def test_export_manifest_name_taken(respx_mock, tmp_path, caplog):
             record(
                 "manifest",
                 None,
-                location("arch", cfg["path"], "manifest", key="manifest.json"),
+                location("arch", cfg.path, "manifest", key="manifest.json"),
             )
         ],
     )

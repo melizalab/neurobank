@@ -398,17 +398,17 @@ def check_archive_permissions(
     import grp
     import pwd
 
-    access = cfg["policy"]["access"]
-    user = access.get("user")
+    access = cfg.policy.access
+    user = access.user
     try:
         uid = None if user is None else pwd.getpwnam(user).pw_uid
     except KeyError as err:
         raise ValueError(f"archive user '{user}' does not exist") from err
     try:
-        gid = grp.getgrnam(access["group"]).gr_gid
+        gid = grp.getgrnam(access.group).gr_gid
     except KeyError as err:
-        raise ValueError(f"archive group '{access['group']}' does not exist") from err
-    base = cfg["path"] / archive._resource_subdir
+        raise ValueError(f"archive group '{access.group}' does not exist") from err
+    base = cfg.path / archive._resource_subdir
     if not base.exists():
         return  # reported by check_archive_contents
     pfix = archive.permission_fixer(cfg, quiet=True) if fix else None

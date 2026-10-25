@@ -213,10 +213,10 @@ def make_archive(client, registry, unique, tmp_path):
         config = nbank_archive.create(tmp_path / name, registry.url, **policies)
         extra = {"accessibility": accessibility} if accessibility else {}
         url, body = reg.add_archive(
-            registry.url, name, "neurobank", config["path"], **extra
+            registry.url, name, "neurobank", config.path, **extra
         )
         client.post(url, json=body).raise_for_status()
-        return Archive(name, config["path"], config)
+        return Archive(name, config.path, config)
 
     return make
 

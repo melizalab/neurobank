@@ -91,9 +91,14 @@ policies. These are the settings you may want to modify:
    -  ``user``: The account that should own the files, or ``null`` for a shared
       archive (``--shared``).
    -  ``group``: The group that should own the files (``-g``).
-   -  ``umask``: Permissions to withhold from files and directories (``-u``).
-   -  ``read_only_resources``: If true (the default), deposited resources can't
-      be modified.
+   -  ``umask``: Permissions to withhold from files and directories (``-u``),
+      as a number or an octal string such as ``"027"``.
+   -  ``read_only_resources``: If true (the default, also used if it's missing),
+      deposited resources can't be modified.
+
+``group`` and ``umask`` are required. nbank checks the file when it reads it
+and reports a missing or wrongly typed setting by name. Other keys, such as
+``project`` and ``owner``, are for people and are ignored.
 
 Shared archives
 ---------------
@@ -133,5 +138,5 @@ In Python
 ---------
 
 :func:`nbank.archive.create` makes an archive's directories and ``nbank.json``
-and :func:`nbank.archive.get_config` reads an archive's configuration and
-policies. Use :func:`nbank.registry.add_archive` to register it.
+and :meth:`nbank.archive.ArchiveConfig.load` reads an archive's configuration
+and policies. Use :func:`nbank.registry.add_archive` to register it.

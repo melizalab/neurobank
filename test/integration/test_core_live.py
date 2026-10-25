@@ -285,7 +285,7 @@ def test_deposit_unknown_dtype(registry, archive, tmp_path, unique):
 def test_deposit_unregistered_archive(registry, dtype, tmp_path):
     config = nbank_archive.create(tmp_path / "unregistered", registry.url)
     with pytest.raises(RuntimeError):
-        list(core.deposit(config["path"], [], dtype=dtype, auth=registry.auth))
+        list(core.deposit(config.path, [], dtype=dtype, auth=registry.auth))
 
 
 def test_describe_missing(registry, unique):

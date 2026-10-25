@@ -13,14 +13,59 @@ import os
 import shutil
 import stat
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NewType
+from typing import Any
 
 from nbank.types import LocationContext, location_scheme
 
 log = logging.getLogger("nbank")  # root logger
 
-ArchiveConfig = NewType("ArchiveConfig", dict)
+
+@dataclass(frozen=True)
+class Access:
+    """Who owns an archive's files, and who can read and write them."""
+
+    group: str
+    umask: int
+    # None for a shared archive, where users deposit under their own accounts
+    user: str | None = None
+    read_only_resources: bool = True
+
+
+@dataclass(frozen=True)
+class Policy:
+    """How an archive's resources are named, hashed and protected."""
+
+    access: Access
+    auto_identifiers: bool = False
+    auto_id_type: str = "base36"
+    require_hash: bool = True
+
+
+@dataclass(frozen=True)
+class ArchiveConfig:
+    """An archive's configuration, read from its nbank.json. path is the archive's
+    resolved directory, which the file doesn't record."""
+
+    path: Path
+    registry: str
+    policy: Policy
+
+    @classmethod
+    def load(cls, path: Path) -> "ArchiveConfig":
+        """Returns the configuration of the archive at path, from its nbank.json.
+
+        Raises FileNotFoundError if there's no nbank.json, and ValueError if it isn't
+        valid. Keys that nothing reads (project, owner, retired policies) are ignored.
+        """
+        fname = path / _config_fname
+        with open(fname) as fp:
+            try:
+                doc = json.load(fp)
+                return _parse_config(doc, path.resolve(strict=True))
+            except ValueError as err:
+                raise ValueError(f"{fname}: {err}") from None
 
 
 class ArchiveHostError(RuntimeError):
@@ -81,23 +126,67 @@ To find and fix files with the wrong ownership or permissions, run
 """
 
 
-def get_config(path: Path) -> ArchiveConfig:
-    """Returns the configuration for the archive specified by path."""
-    fname = path / _config_fname
+def _section(doc: dict, key: str, where: str) -> dict:
+    value = doc.get(key)
+    if not isinstance(value, dict):
+        raise ValueError(f"{where}{key} must be an object")
+    return value
 
-    with open(fname) as fp:
-        ret = json.load(fp)
-        umask = ret["policy"]["access"]["umask"]
-        if not isinstance(umask, int):
-            ret["policy"]["access"]["umask"] = int(ret["policy"]["access"]["umask"], 8)
-        if ret["policy"].get("keep_extensions") is False:
-            log.warning(
-                "%s: the keep_extensions policy is no longer supported; files keep "
-                "their extensions",
-                fname,
-            )
-        ret["path"] = path.resolve(strict=True)
-        return ret
+
+def _value(doc: dict, key: str, kind: type, where: str, cls: type) -> Any:
+    """Returns doc[key] for the field key of the dataclass cls. A missing or null value
+    takes the field's default; ValueError if it has none, or if the value isn't a kind
+    (a bool isn't an int)."""
+    value = doc.get(key)
+    if value is None:
+        # a field with a default is a class attribute
+        if not hasattr(cls, key):
+            raise ValueError(f"{where}{key} is missing")
+        return getattr(cls, key)
+    if not isinstance(value, kind) or (kind is not bool and isinstance(value, bool)):
+        raise ValueError(f"{where}{key} must be a {kind.__name__}")
+    return value
+
+
+def _parse_config(doc: Any, path: Path) -> ArchiveConfig:
+    """Returns the ArchiveConfig for an archive at path from its parsed nbank.json."""
+    if not isinstance(doc, dict):
+        raise ValueError("must be a JSON object")
+    policy = _section(doc, "policy", "")
+    access = _section(policy, "access", "policy.")
+    umask = access.get("umask")
+    # written by hand as an octal string
+    if isinstance(umask, str):
+        try:
+            umask = int(umask, 8)
+        except ValueError:
+            raise ValueError("policy.access.umask must be an octal number") from None
+    if not isinstance(umask, int) or isinstance(umask, bool):
+        raise ValueError("policy.access.umask must be an octal number")
+    if policy.get("keep_extensions") is False:
+        log.warning(
+            "%s: the keep_extensions policy is no longer supported; files keep "
+            "their extensions",
+            path / _config_fname,
+        )
+    pw, aw = "policy.", "policy.access."
+    return ArchiveConfig(
+        path=path,
+        registry=_value(doc, "registry", str, "", ArchiveConfig),
+        policy=Policy(
+            access=Access(
+                group=_value(access, "group", str, aw, Access),
+                umask=umask,
+                user=_value(access, "user", str, aw, Access),
+                read_only_resources=_value(
+                    access, "read_only_resources", bool, aw, Access
+                ),
+            ),
+            auto_identifiers=_value(policy, "auto_identifiers", bool, pw, Policy),
+            auto_id_type=_value(policy, "auto_id_type", str, pw, Policy),
+            require_hash=_value(policy, "require_hash", bool, pw, Policy),
+        ),
+    )
 
 
 _created_files = (_config_fname, _README_fname, ".gitignore")
@@ -187,7 +276,7 @@ def create(
     fname.write_text("resources/\nstaging/\n")
     fname.chmod(0o666 & ~umask)
 
-    cfg = get_config(archive_path)
+    cfg = ArchiveConfig.load(archive_path)
     permission_fixer(cfg)(resdir)
     permission_fixer(cfg)(staging)
     for name in _created_files:
@@ -200,7 +289,7 @@ def create(
 
 def staging_dir(cfg: ArchiveConfig) -> Path:
     """Returns the directory where files are built before they're stored."""
-    return cfg["path"] / _staging_subdir
+    return cfg.path / _staging_subdir
 
 
 def id_stub(id: str) -> str:
@@ -217,10 +306,7 @@ def resource_path(
     extension, or raises FileNotFoundError if there isn't one. To name a new file, use
     new_resource_path.
     """
-    try:
-        root = cfg["path"]
-    except TypeError:
-        root = Path(cfg)
+    root = cfg.path if isinstance(cfg, ArchiveConfig) else Path(cfg)
     partial = root / _resource_subdir / id_stub(name) / name
     if not resolve_ext:
         return partial
@@ -373,7 +459,7 @@ def verify_permissions(cfg: ArchiveConfig, src: Path, id: str | None = None) -> 
     reqd_perms = os.R_OK | os.W_OK | os.X_OK
     if id is None:
         id = src.name
-    tgt_base: Path = cfg["path"] / _resource_subdir
+    tgt_base: Path = cfg.path / _resource_subdir
     tgt_dir = tgt_base / id_stub(id)
     if not os.access(tgt_base, os.F_OK):
         raise PermissionError(f"archive resource directory '{tgt_base}' does not exist")
@@ -472,15 +558,15 @@ def mode_policy(cfg: ArchiveConfig, path: Path) -> tuple[int, int]:
     directories must be readable and searchable, and files readable, by everyone the
     umask allows. With read_only_resources, resources must not be writable.
     """
-    access = cfg["policy"]["access"]
-    umask = access["umask"]
-    base = cfg["path"] / _resource_subdir
+    access = cfg.policy.access
+    umask = access.umask
+    base = cfg.path / _resource_subdir
     try:
         in_resource = len(path.relative_to(base).parts) >= 2
     except ValueError:
         in_resource = False
     forbidden = umask
-    if in_resource and access.get("read_only_resources", False):
+    if in_resource and access.read_only_resources:
         forbidden |= 0o222
     if path.is_dir():
         if not in_resource:
@@ -500,12 +586,12 @@ def permission_fixer(cfg: ArchiveConfig, quiet: bool = False):
     import pwd
     from os import chown, getuid
 
-    user = cfg["policy"]["access"].get("user")
+    user = cfg.policy.access.user
     if user is not None and getuid() == 0:
         uid = pwd.getpwnam(user).pw_uid
     else:
         uid = -1
-    gid = grp.getgrnam(cfg["policy"]["access"]["group"]).gr_gid
+    gid = grp.getgrnam(cfg.policy.access.group).gr_gid
 
     def fix(p: Path) -> None:
         if p.is_symlink():
@@ -526,9 +612,11 @@ def permission_fixer(cfg: ArchiveConfig, quiet: bool = False):
 
 
 __all__ = [
+    "Access",
+    "ArchiveConfig",
     "ArchiveHostError",
+    "Policy",
     "create",
-    "get_config",
     "id_stub",
     "resolve_extension",
     "store_resource",

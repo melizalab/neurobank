@@ -33,7 +33,7 @@ def http_location(id):
 def archive_location(cfg, id):
     return {
         "scheme": "neurobank",
-        "root": str(cfg["path"]),
+        "root": str(cfg.path),
         "resource_name": id,
         "key": f"{id}.txt",
     }

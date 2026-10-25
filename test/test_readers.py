@@ -223,7 +223,7 @@ def route_archive(mocked_api, root):
 
 @pytest.fixture
 def archive_routes(mocked_api, tmp_archive):
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     route_archive(mocked_api, root)
     mocked_api.get(datatypes_url).respond(
         json=[{"name": DTYPE, "content_type": "application/json"}]
@@ -307,7 +307,7 @@ def test_deposit_dry_run_shows_merged_metadata(
     [item] = deposit(archive_routes, src, metadata={"site": 2}, dry_run=True)
     assert item["metadata"] == {"pen": 1, "site": 2}
     assert not archive.resource_path(
-        archive.get_config(archive_routes), "res_1"
+        archive.ArchiveConfig.load(archive_routes), "res_1"
     ).exists()
 
 
@@ -352,7 +352,7 @@ def test_deposit_without_a_dtype_warns(
 ):
     registry_checks()
     install(FakeEntryPoint(DTYPE, fake_reader))
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     route_archive(mocked_api, root)
     src = make_file("res_1", {"pen": 1})
     [item] = deposit(root, src, dtype=None, dry_run=True)

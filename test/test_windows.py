@@ -74,7 +74,7 @@ def test_receive_refused(archive_layout, windows):
 
 def test_checks_refused(archive_layout, windows):
     with pytest.raises(archive.ArchiveHostError, match="check an archive"):
-        list(check.check_archive_contents(archive_layout["path"], {}))
+        list(check.check_archive_contents(archive_layout.path, {}))
     with pytest.raises(archive.ArchiveHostError, match="check an archive"):
         list(check.check_archive_permissions(archive_layout))
 
@@ -86,7 +86,7 @@ def test_deposit_refused_before_the_registry(
     src.write_text("contents")
     # no requests are mocked: deposit mustn't make any
     with pytest.raises(archive.ArchiveHostError, match="unable to deposit"):
-        list(core.deposit(archive_layout["path"], [src]))
+        list(core.deposit(archive_layout.path, [src]))
     assert src.exists()
 
 
@@ -160,7 +160,7 @@ def located(mocked_api, archive_layout, tmp_path):
     path = place_resource(archive_layout, "res_1", "res_1.wav")
     url, _ = registry.get_locations(base_url, "res_1")
     mocked_api.get(url).respond(
-        json=[location("archive", archive_layout["path"], "res_1", key="res_1.wav")]
+        json=[location("archive", archive_layout.path, "res_1", key="res_1.wav")]
     )
     links = tmp_path / "links"
     links.mkdir()

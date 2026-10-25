@@ -15,6 +15,14 @@ def skip_unless_posix():
         pytest.skip("archives are created on a POSIX host")
 
 
+def with_access(cfg, **changes):
+    """Returns an archive configuration with its access policy changed."""
+    from dataclasses import replace
+
+    access = replace(cfg.policy.access, **changes)
+    return replace(cfg, policy=replace(cfg.policy, access=access))
+
+
 def place_resource(cfg, id, key, contents="contents"):
     """Writes a file straight into an archive, where store_resource would put it,
     and returns its path."""

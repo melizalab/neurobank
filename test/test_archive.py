@@ -1,13 +1,16 @@
 # -*- mode: python -*-
+import dataclasses
+import json
 import logging
 import os
+import re
 import stat
 
 import pytest
 
 from nbank import archive, check, util
 from nbank.types import LocationContext
-from test import place_resource, running_as_root, skip_unless_posix
+from test import place_resource, running_as_root, skip_unless_posix, with_access
 
 dummy_registry = "https://localhost:8000/neurobank"
 
@@ -21,18 +24,146 @@ def tmp_archive(tmp_path):
 
 def test_invalid_archive(tmp_path):
     with pytest.raises(FileNotFoundError):
-        _ = archive.get_config(tmp_path)
+        _ = archive.ArchiveConfig.load(tmp_path)
 
 
 def test_can_read_config(tmp_archive):
-    cfg = archive.get_config(tmp_archive["path"])
+    cfg = archive.ArchiveConfig.load(tmp_archive.path)
     assert tmp_archive == cfg
 
 
+def write_config(root, doc):
+    root.mkdir(exist_ok=True)
+    (root / "nbank.json").write_text(json.dumps(doc))
+    return root
+
+
+minimal_config = {
+    "registry": dummy_registry,
+    "policy": {"access": {"group": "users", "umask": 18}},
+}
+
+
+def test_config_defaults_and_ignored_keys(tmp_path):
+    doc = {
+        **minimal_config,
+        "$schema": archive._config_schema,
+        "project": {"name": "songs"},
+        "owner": {"name": None},
+    }
+    cfg = archive.ArchiveConfig.load(write_config(tmp_path / "archive", doc))
+    assert cfg == archive.ArchiveConfig(
+        path=(tmp_path / "archive").resolve(),
+        registry=dummy_registry,
+        policy=archive.Policy(
+            access=archive.Access(
+                group="users", umask=0o022, user=None, read_only_resources=True
+            ),
+            auto_identifiers=False,
+            auto_id_type="base36",
+            require_hash=True,
+        ),
+    )
+
+
+def test_config_null_auto_id_type_is_the_default(tmp_path):
+    doc = {**minimal_config, "policy": {**minimal_config["policy"]}}
+    doc["policy"]["auto_id_type"] = None
+    cfg = archive.ArchiveConfig.load(write_config(tmp_path / "archive", doc))
+    assert cfg.policy.auto_id_type == "base36"
+
+
+def test_config_octal_umask_string(tmp_path):
+    doc = {
+        "registry": dummy_registry,
+        "policy": {"access": {"group": "users", "umask": "027"}},
+    }
+    cfg = archive.ArchiveConfig.load(write_config(tmp_path / "archive", doc))
+    assert cfg.policy.access.umask == 0o027
+
+
+@pytest.mark.parametrize(
+    "doc, message",
+    [
+        ([], "must be a JSON object"),
+        ({"policy": minimal_config["policy"]}, "registry is missing"),
+        ({"registry": dummy_registry}, "policy must be an object"),
+        ({"registry": dummy_registry, "policy": {}}, "policy.access must be an object"),
+        (
+            {"registry": dummy_registry, "policy": {"access": {"umask": 18}}},
+            "policy.access.group is missing",
+        ),
+        (
+            {"registry": dummy_registry, "policy": {"access": {"group": "users"}}},
+            "policy.access.umask must be an octal number",
+        ),
+        (
+            {
+                "registry": dummy_registry,
+                "policy": {"access": {"group": "users", "umask": "rwx"}},
+            },
+            "policy.access.umask must be an octal number",
+        ),
+        (
+            {
+                "registry": dummy_registry,
+                "policy": {"access": {"group": "users", "umask": True}},
+            },
+            "policy.access.umask must be an octal number",
+        ),
+        (
+            {**minimal_config, "registry": 5},
+            "registry must be a str",
+        ),
+        (
+            {
+                "registry": dummy_registry,
+                "policy": {
+                    "require_hash": "yes",
+                    "access": {"group": "users", "umask": 18},
+                },
+            },
+            "policy.require_hash must be a bool",
+        ),
+        (
+            {
+                "registry": dummy_registry,
+                "policy": {"access": {"group": "users", "umask": 18, "user": 0}},
+            },
+            "policy.access.user must be a str",
+        ),
+    ],
+)
+def test_config_invalid(tmp_path, doc, message):
+    root = write_config(tmp_path / "archive", doc)
+    with pytest.raises(ValueError, match=re.escape(f"nbank.json: {message}")):
+        archive.ArchiveConfig.load(root)
+
+
+def test_config_not_json(tmp_path):
+    root = tmp_path / "archive"
+    root.mkdir()
+    (root / "nbank.json").write_text("{not json")
+    with pytest.raises(
+        ValueError, match=re.escape("nbank.json: Expecting property name")
+    ):
+        archive.ArchiveConfig.load(root)
+
+
+def test_config_missing(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        archive.ArchiveConfig.load(tmp_path)
+
+
+def test_config_is_read_only(archive_layout):
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        archive_layout.policy.access.umask = 0
+
+
 def test_archive_umask(tmp_archive):
-    root = tmp_archive["path"]
+    root = tmp_archive.path
     mode = (root / archive._resource_subdir).stat().st_mode
-    assert tmp_archive["policy"]["access"]["umask"] == archive._default_umask
+    assert tmp_archive.policy.access.umask == archive._default_umask
     # setgid only on Linux; BSD and macOS always inherit the directory's group
     assert mode & 0o7000 == archive._setgid
     assert mode & archive._default_umask == 0
@@ -49,7 +180,7 @@ def test_store_and_find_resource(tmp_archive, tmp_path):
     path = archive.resource_path(tmp_archive, name, resolve_ext=True)
     assert path.is_file()
     mode = path.stat().st_mode
-    assert mode & tmp_archive["policy"]["access"]["umask"] == 0
+    assert mode & tmp_archive.policy.access.umask == 0
     assert path.read_text() == contents
 
 
@@ -60,7 +191,7 @@ def test_parse_neurobank_location(archive_layout):
     path = place_resource(archive_layout, name, name)
     location = {
         "scheme": "neurobank",
-        "root": archive_layout["path"],
+        "root": archive_layout.path,
         "resource_name": name,
         "key": name,
     }
@@ -75,7 +206,7 @@ def stored_wav(archive_layout):
     path = place_resource(archive_layout, "res_1", "res_1.wav")
     location = {
         "scheme": "neurobank",
-        "root": str(archive_layout["path"]),
+        "root": str(archive_layout.path),
         "resource_name": "res_1",
     }
     return path, location
@@ -115,7 +246,7 @@ def test_location_key_alt_base(stored_wav, archive_layout, tmp_path):
     # the archive is mounted under another directory on this host
     alt_base = tmp_path / "mnt"
     alt_base.mkdir()
-    archive_layout["path"].rename(alt_base / "archive")
+    archive_layout.path.rename(alt_base / "archive")
     resource = util.parse_location({**location, "key": "res_1.wav"}, alt_base=alt_base)
     assert resource.path == alt_base / path.relative_to(tmp_path)
 
@@ -126,7 +257,7 @@ def test_store_and_fetch_resource(tmp_archive, tmp_path):
     contents = '{"foo": 10}\n'
     src.write_text(contents)
     archive.store_resource(tmp_archive, src, id=name)
-    resource = archive.Resource(tmp_archive["path"], name, name)
+    resource = archive.Resource(tmp_archive.path, name, name)
     fetched = resource.fetch(tmp_path)
     assert fetched.is_file()
     assert fetched.read_text() == contents
@@ -204,7 +335,7 @@ def test_keep_extensions_false_is_ignored(tmp_path, caplog):
     # set by archives made before the policy was retired
     root = tmp_path / "archive"
     archive.create(root, dummy_registry, keep_extensions=False)
-    cfg = archive.get_config(root)
+    cfg = archive.ArchiveConfig.load(root)
     assert "keep_extensions policy is no longer supported" in caplog.text
     src = tmp_path / "temp.wav"
     src.write_text("not a wave file")
@@ -213,8 +344,9 @@ def test_keep_extensions_false_is_ignored(tmp_path, caplog):
 
 
 def test_new_archives_have_no_keep_extensions_policy(tmp_archive, caplog):
-    assert "keep_extensions" not in tmp_archive["policy"]
-    archive.get_config(tmp_archive["path"])
+    config = json.loads((tmp_archive.path / "nbank.json").read_text())
+    assert "keep_extensions" not in config["policy"]
+    archive.ArchiveConfig.load(tmp_archive.path)
     assert "keep_extensions" not in caplog.text
 
 
@@ -229,7 +361,7 @@ def test_verify_permissions_source_unreadable(tmp_path, tmp_archive):
 def test_verify_permissions_resource_dir_missing(tmp_archive, tmp_path):
     dummy = tmp_path / "dummy"
     dummy.write_text("blah")
-    tgt_base = tmp_archive["path"] / archive._resource_subdir
+    tgt_base = tmp_archive.path / archive._resource_subdir
     tgt_base.rmdir()
     with pytest.raises(PermissionError, match=str(tgt_base)):
         archive.verify_permissions(tmp_archive, dummy)
@@ -238,7 +370,7 @@ def test_verify_permissions_resource_dir_missing(tmp_archive, tmp_path):
 def test_verify_permissions_resource_dir_denied(tmp_archive, tmp_path):
     dummy = tmp_path / "dummy"
     dummy.write_text("blah")
-    tgt_base = tmp_archive["path"] / archive._resource_subdir
+    tgt_base = tmp_archive.path / archive._resource_subdir
     mode = tgt_base.stat().st_mode
     tgt_base.chmod(0o500)  # readable and searchable, but not writable
     try:
@@ -268,7 +400,7 @@ def test_verify_permissions_subdirectory_denied(tmp_archive, tmp_path):
     name = "dummy_100"
     dummy = tmp_path / "dummy"
     dummy.write_text("blah")
-    tgt_sub = tmp_archive["path"] / archive._resource_subdir / archive.id_stub(name)
+    tgt_sub = tmp_archive.path / archive._resource_subdir / archive.id_stub(name)
     tgt_sub.mkdir()
     mode = tgt_sub.stat().st_mode
     tgt_sub.chmod(0o500)  # readable and searchable, but not writable
@@ -286,7 +418,7 @@ def test_verify_permissions_ok(tmp_archive, tmp_path):
     # id has no subdirectory yet: only the resources dir itself is checked
     assert archive.verify_permissions(tmp_archive, dummy, name) is None
     # id's subdirectory exists and has correct permissions
-    tgt_sub = tmp_archive["path"] / archive._resource_subdir / archive.id_stub(name)
+    tgt_sub = tmp_archive.path / archive._resource_subdir / archive.id_stub(name)
     tgt_sub.mkdir()
     assert archive.verify_permissions(tmp_archive, dummy, name) is None
 
@@ -380,7 +512,7 @@ def test_permission_fixer_changes_mode_when_chown_fails(tmp_archive, tmp_path, c
     src.write_text("contents")
     path = archive.store_resource(tmp_archive, src)
     path.chmod(0o600)
-    tmp_archive["policy"]["access"]["group"] = grp.getgrgid(0).gr_name
+    tmp_archive = with_access(tmp_archive, group=grp.getgrgid(0).gr_name)
     with caplog.at_level(logging.WARNING, logger="nbank"):
         archive.permission_fixer(tmp_archive)(path)
     assert stat.S_IMODE(path.stat().st_mode) == 0o444
@@ -394,7 +526,7 @@ def test_permission_fixer_changes_mode_when_chown_fails(tmp_archive, tmp_path, c
 @pytest.mark.posix
 def test_create_resources_directory_mode(tmp_path, restrictive_umask):
     cfg = archive.create(tmp_path / "archive", dummy_registry, umask=0o002)
-    resdir = cfg["path"] / "resources"
+    resdir = cfg.path / "resources"
     required, _ = archive.mode_policy(cfg, resdir)
     assert stat.S_IMODE(resdir.stat().st_mode) == required
     assert list(check.check_archive_permissions(cfg)) == []
@@ -404,18 +536,18 @@ def test_create_resources_directory_mode(tmp_path, restrictive_umask):
 def test_create_staging_directory(tmp_path, restrictive_umask):
     cfg = archive.create(tmp_path / "archive", dummy_registry, umask=0o002)
     staging = archive.staging_dir(cfg)
-    resdir = cfg["path"] / "resources"
+    resdir = cfg.path / "resources"
     assert staging.is_dir()
     # the same group and mode as the resources directory
     assert stat.S_IMODE(staging.stat().st_mode) == stat.S_IMODE(resdir.stat().st_mode)
     assert staging.stat().st_gid == resdir.stat().st_gid
-    assert "staging/" in (cfg["path"] / ".gitignore").read_text().split()
+    assert "staging/" in (cfg.path / ".gitignore").read_text().split()
 
 
 @pytest.mark.posix
 def test_create_shared_archive(tmp_path):
     cfg = archive.create(tmp_path / "archive", dummy_registry, shared=True)
-    assert cfg["policy"]["access"]["user"] is None
+    assert cfg.policy.access.user is None
     src = tmp_path / "res_1"
     src.write_text("contents")
     archive.store_resource(cfg, src)
@@ -428,10 +560,10 @@ def test_owner_is_checked_unless_shared(tmp_path):
     import pwd
 
     cfg = archive.create(tmp_path / "archive", dummy_registry)
-    cfg["policy"]["access"]["user"] = pwd.getpwuid(0).pw_name
+    cfg = with_access(cfg, user=pwd.getpwuid(0).pw_name)
     statuses = {f.status for f in check.check_archive_permissions(cfg)}
     assert check.Status.WRONG_OWNER in statuses
-    cfg["policy"]["access"]["user"] = None
+    cfg = with_access(cfg, user=None)
     assert list(check.check_archive_permissions(cfg)) == []
 
 
@@ -441,11 +573,11 @@ def test_create_with_group(tmp_path):
 
     group = grp.getgrgid(os.getgid()).gr_name
     cfg = archive.create(tmp_path / "archive", dummy_registry, group=group)
-    assert cfg["policy"]["access"]["group"] == group
+    assert cfg.policy.access.group == group
     for path in (
-        cfg["path"] / "resources",
-        cfg["path"] / "nbank.json",
-        cfg["path"] / "README.md",
+        cfg.path / "resources",
+        cfg.path / "nbank.json",
+        cfg.path / "README.md",
     ):
         assert path.stat().st_gid == os.getgid()
 
@@ -468,7 +600,7 @@ def test_create_with_group_not_a_member(tmp_path, caplog):
     group = grp.getgrgid(0).gr_name
     with caplog.at_level(logging.WARNING, logger="nbank"):
         cfg = archive.create(tmp_path / "archive", dummy_registry, group=group)
-    assert cfg["policy"]["access"]["group"] == group
+    assert cfg.policy.access.group == group
     assert "unable to change the group of" in caplog.text
     assert "unable to change uid/gid of" in caplog.text
 
@@ -478,13 +610,13 @@ def test_permission_fixer_as_root(tmp_archive, monkeypatch, user):
     import grp
     import pwd
 
-    tmp_archive["policy"]["access"]["user"] = user
+    tmp_archive = with_access(tmp_archive, user=user)
     calls = []
     monkeypatch.setattr(os, "getuid", lambda: 0)
     monkeypatch.setattr(os, "chown", lambda path, uid, gid: calls.append((uid, gid)))
-    path = tmp_archive["path"] / "resources"
+    path = tmp_archive.path / "resources"
     archive.permission_fixer(tmp_archive)(path)
-    gid = grp.getgrnam(tmp_archive["policy"]["access"]["group"]).gr_gid
+    gid = grp.getgrnam(tmp_archive.policy.access.group).gr_gid
     expected_uid = -1 if user is None else pwd.getpwnam(user).pw_uid
     assert calls == [(expected_uid, gid)]
 
@@ -506,16 +638,16 @@ def test_create_in_empty_directory(tmp_path):
     root = tmp_path / "archive"
     root.mkdir()
     cfg = archive.create(root, dummy_registry)
-    assert cfg["path"] == root
+    assert cfg.path == root
 
 
 def test_create_defaults_to_read_only_resources(tmp_archive):
-    assert tmp_archive["policy"]["access"]["read_only_resources"] is True
+    assert tmp_archive.policy.access.read_only_resources is True
 
 
 def test_mode_policy_read_only_resources(tmp_archive):
-    umask = tmp_archive["policy"]["access"]["umask"]
-    stub = tmp_archive["path"] / "resources" / "re"
+    umask = tmp_archive.policy.access.umask
+    stub = tmp_archive.path / "resources" / "re"
     stub.mkdir()
     resource = stub / "res_1"
     resource.write_text("contents")
@@ -525,8 +657,8 @@ def test_mode_policy_read_only_resources(tmp_archive):
         0o444 & ~umask,
         umask | 0o222,
     )
-    # archives without the setting keep writable resources
-    del tmp_archive["policy"]["access"]["read_only_resources"]
+    # an archive can keep resources writable
+    tmp_archive = with_access(tmp_archive, read_only_resources=False)
     assert archive.mode_policy(tmp_archive, resource) == (0o444 & ~umask, umask)
 
 
@@ -543,7 +675,7 @@ def plant_directory(cfg, name="res_1"):
 
 def test_remove_read_only_directory(tmp_archive):
     path = plant_directory(tmp_archive)
-    resource = archive.Resource(tmp_archive["path"], "res_1", "res_1")
+    resource = archive.Resource(tmp_archive.path, "res_1", "res_1")
     assert resource.deletable
     resource.unlink()
     assert not path.exists()
@@ -571,7 +703,7 @@ def test_fix_makes_existing_resources_read_only(tmp_path):
     src.chmod(0o644)
     path = archive.store_resource(cfg, src)
     assert stat.S_IMODE(path.stat().st_mode) == 0o644
-    cfg["policy"]["access"]["read_only_resources"] = True
+    cfg = with_access(cfg, read_only_resources=True)
     findings = list(check.check_archive_permissions(cfg, fix=True))
     assert [(f.status, f.path, f.fixed) for f in findings] == [
         (check.Status.WRONG_MODE, path, True)

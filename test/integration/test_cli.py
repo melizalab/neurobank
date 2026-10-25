@@ -40,7 +40,7 @@ def test_init(cli, registry, client, tmp_path, unique):
     record = client.get(url).json()
     assert record["scheme"] == "neurobank"
     assert record["root"] == str(path.resolve())
-    assert nbank_archive.get_config(path)["registry"] == registry.url
+    assert nbank_archive.ArchiveConfig.load(path).registry == registry.url
 
 
 def test_init_with_name(cli, registry, client, tmp_path, unique):

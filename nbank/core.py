@@ -112,7 +112,7 @@ def deposit(
     """
     from nbank import canonical_zip, readers, util
     from nbank.archive import (
-        get_config,
+        ArchiveConfig,
         new_resource_path,
         require_posix,
         staging_dir,
@@ -132,17 +132,17 @@ def deposit(
 
     require_posix("deposit")
     try:
-        archive_cfg = get_config(archive_path)
+        archive_cfg = ArchiveConfig.load(archive_path)
     except FileNotFoundError as err:
         raise ValueError(f"{archive_path} is not a valid archive") from err
-    archive_path = archive_cfg["path"]  # this will resolve the path
+    archive_path = archive_cfg.path
     if dry_run:
         log.info("DRY RUN: no changes will be made")
     log.info("archive: %s", archive_path)
-    registry_url = archive_cfg["registry"]
+    registry_url = archive_cfg.registry
     log.info("   registry: %s", registry_url)
-    auto_id = archive_cfg["policy"]["auto_identifiers"] or auto_id
-    auto_id_type = archive_cfg["policy"].get("auto_id_type") or "base36"
+    auto_id = archive_cfg.policy.auto_identifiers or auto_id
+    auto_id_type = archive_cfg.policy.auto_id_type
     if auto_id and auto_id_type not in util.auto_id_types:
         raise ValueError(f"the archive's auto_id_type '{auto_id_type}' isn't known")
 
@@ -260,7 +260,7 @@ def deposit(
                         log.info("   metadata: %s", resource_metadata)
                     else:
                         resource_metadata = given
-                    if (hash or archive_cfg["policy"]["require_hash"]) and checkable:
+                    if (hash or archive_cfg.policy.require_hash) and checkable:
                         sha1 = util.hash(source)
                         log.info("   sha1: %s", sha1)
                     else:

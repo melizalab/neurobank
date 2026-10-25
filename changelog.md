@@ -4,6 +4,15 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Breaking
 
+- `archive.get_config` is `archive.ArchiveConfig.load`. It and `archive.create`
+  return an `archive.ArchiveConfig`, a frozen dataclass (`path`, `registry`, and
+  `policy`, an `archive.Policy` with an `archive.Access`), instead of the dict
+  read from `nbank.json`: `cfg["path"]` is `cfg.path`, and
+  `cfg["policy"]["access"]["umask"]` is `cfg.policy.access.umask`. `nbank.json` is checked when it's read, and a
+  missing or wrongly typed setting raises `ValueError` naming it; keys nothing
+  reads (`project`, `owner`) are ignored. An archive whose `nbank.json` has no
+  `read_only_resources` is read-only, as new archives are: `check archive`
+  reports its writable resources, and `--fix` makes them read-only.
 - `nbank search -n/--archive` matches the archive's name exactly (the registry's
   `archive` filter) instead of any archive whose name contains it.
 - CLI commands are reorganized, with no aliases for the old names: `nbank init`

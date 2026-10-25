@@ -1136,11 +1136,11 @@ def check_archive(args):
     archive_cfg = _archive_config(path)
     if archive_cfg is None:
         return 1
-    log.info("archive: %s", archive_cfg["path"])
-    registry_url = archive_cfg["registry"]
+    log.info("archive: %s", archive_cfg.path)
+    registry_url = archive_cfg.registry
     log.info("registry: %s", registry_url)
     with util.registry_session(registry_url, auth=args.auth) as session:
-        name = _registered_name(session, registry_url, archive_cfg["path"])
+        name = _registered_name(session, registry_url, archive_cfg.path)
         if name is None:
             return 1
         ok = _check_archive(session, registry_url, name, archive_cfg, args)
@@ -1151,7 +1151,7 @@ def _archive_config(path: Path) -> archive.ArchiveConfig | None:
     """Returns the configuration of the neurobank archive at path, or None (logging an
     error) if there isn't one."""
     try:
-        return archive.get_config(path)
+        return archive.ArchiveConfig.load(path)
     except FileNotFoundError:
         log.error("error: %s is not a valid neurobank archive", path)
         return None
@@ -1208,7 +1208,7 @@ def _check_registered_archive(session, registry_url, info, args) -> bool:
     root = Path(info["root"])
     log.info("\narchive %s: %s", name, root)
     try:
-        archive_cfg = archive.get_config(root)
+        archive_cfg = archive.ArchiveConfig.load(root)
     except FileNotFoundError:
         log.error(" - %s is not a valid neurobank archive", root)
         return False
@@ -1216,16 +1216,16 @@ def _check_registered_archive(session, registry_url, info, args) -> bool:
         log.error(" - unable to read nbank.json: %s", err)
         return False
     ok = True
-    if archive_cfg["path"] != root:
+    if archive_cfg.path != root:
         log.error(
             " - registered root resolves to %s; deposits won't find the archive",
-            archive_cfg["path"],
+            archive_cfg.path,
         )
         ok = False
-    if archive_cfg["registry"].rstrip("/") != registry_url.rstrip("/"):
+    if archive_cfg.registry.rstrip("/") != registry_url.rstrip("/"):
         log.error(
             " - nbank.json points to a different registry (%s)",
-            archive_cfg["registry"],
+            archive_cfg.registry,
         )
         ok = False
     try:
@@ -1239,7 +1239,7 @@ def _check_registered_archive(session, registry_url, info, args) -> bool:
 
 def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bool:
     """Runs and logs the archive checks. Returns True if there are no errors."""
-    archive_path = archive_cfg["path"]
+    archive_path = archive_cfg.path
     log.info(
         "retrieving resources that should be in %s from the registry...",
         archive_name,
@@ -2026,8 +2026,8 @@ def import_tar(args):
     archive_cfg = _archive_config(args.dest)
     if archive_cfg is None:
         return 1
-    registry_url = args.registry_url or archive_cfg["registry"]
-    archive_path = archive_cfg["path"]  # this will resolve the path
+    registry_url = args.registry_url or archive_cfg.registry
+    archive_path = archive_cfg.path  # this will resolve the path
     log.info("registry: %s", registry_url)
     n_imported = n_already = total = 0
     with util.registry_session(registry_url, auth=args.auth) as session:
@@ -2289,8 +2289,8 @@ def copy_resources(args):
     archive_cfg = _archive_config(args.dest)
     if archive_cfg is None:
         return 1
-    registry_url = args.registry_url or archive_cfg["registry"]
-    archive_path = archive_cfg["path"]
+    registry_url = args.registry_url or archive_cfg.registry
+    archive_path = archive_cfg.path
     log.info("registry: %s", registry_url)
     n_failed = n_copied = total = 0
     with util.registry_session(registry_url, auth=args.auth) as session:

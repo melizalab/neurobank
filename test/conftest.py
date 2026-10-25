@@ -64,14 +64,15 @@ def archive_layout(tmp_path):
             "require_hash": False,
             "access": {
                 "user": None,
-                "group": None,
+                # never looked up by the tests that only read an archive
+                "group": "users",
                 "umask": 0o027,
                 "read_only_resources": True,
             },
         },
     }
     (root / archive._config_fname).write_text(json.dumps(config))
-    return archive.get_config(root)
+    return archive.ArchiveConfig.load(root)
 
 
 @pytest.fixture

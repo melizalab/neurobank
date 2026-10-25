@@ -8,7 +8,7 @@ import respx
 
 from nbank import archive, check, util
 from nbank.check import Status
-from test import running_as_root, skip_unless_posix
+from test import running_as_root, skip_unless_posix, with_access
 from test.test_registry import (
     archives_url,
     base_url,
@@ -36,14 +36,14 @@ def statuses(findings):
 
 def test_check_contents_ok(tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
-    findings = list(check.check_archive_contents(tmp_archive["path"], {"res_1": sha1}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {"res_1": sha1}))
     assert findings == [check.Finding(Status.OK, "res_1", path)]
     assert findings[0].ok
 
 
 def test_check_contents_not_hashed(tmp_archive, tmp_path):
     store(tmp_archive, tmp_path, "res_1")
-    findings = check.check_archive_contents(tmp_archive["path"], {"res_1": None})
+    findings = check.check_archive_contents(tmp_archive.path, {"res_1": None})
     assert statuses(findings) == {"res_1": Status.NOT_HASHED}
 
 
@@ -51,7 +51,7 @@ def test_check_contents_hash_mismatch(tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
     path.chmod(0o640)
     path.write_text("changed")
-    findings = list(check.check_archive_contents(tmp_archive["path"], {"res_1": sha1}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {"res_1": sha1}))
     assert statuses(findings) == {"res_1": Status.HASH_MISMATCH}
     assert not findings[0].ok
 
@@ -67,7 +67,7 @@ def test_check_contents_skip_hash(tmp_archive, tmp_path, monkeypatch):
     monkeypatch.setattr(util, "hash", no_hashing)
     findings = list(
         check.check_archive_contents(
-            tmp_archive["path"], {"res_1": sha1}, check_hash=False
+            tmp_archive.path, {"res_1": sha1}, check_hash=False
         )
     )
     assert findings == [check.Finding(Status.HASH_SKIPPED, "res_1", path)]
@@ -78,7 +78,7 @@ def test_check_contents_unreadable(tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
     path.chmod(0o000)
     try:
-        findings = check.check_archive_contents(tmp_archive["path"], {"res_1": sha1})
+        findings = check.check_archive_contents(tmp_archive.path, {"res_1": sha1})
         assert statuses(findings) == {"res_1": Status.UNREADABLE}
     finally:
         path.chmod(0o600)
@@ -86,7 +86,7 @@ def test_check_contents_unreadable(tmp_archive, tmp_path):
 
 def test_check_contents_missing(tmp_archive, tmp_path):
     path, _ = store(tmp_archive, tmp_path, "extra")
-    findings = list(check.check_archive_contents(tmp_archive["path"], {"absent": None}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {"absent": None}))
     assert statuses(findings) == {
         "extra": Status.MISSING_FROM_REGISTRY,
         "absent": Status.MISSING_FROM_ARCHIVE,
@@ -95,18 +95,18 @@ def test_check_contents_missing(tmp_archive, tmp_path):
 
 
 def test_check_contents_unexpected_file(tmp_archive, tmp_path):
-    stray = tmp_archive["path"] / "resources" / ".DS_Store"
+    stray = tmp_archive.path / "resources" / ".DS_Store"
     stray.write_text("junk")
-    findings = list(check.check_archive_contents(tmp_archive["path"], {}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {}))
     assert findings == [check.Finding(Status.UNEXPECTED, ".DS_Store", stray)]
 
 
 def test_check_contents_misplaced(tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
-    wrong_dir = tmp_archive["path"] / "resources" / "zz"
+    wrong_dir = tmp_archive.path / "resources" / "zz"
     wrong_dir.mkdir()
     moved = path.rename(wrong_dir / path.name)
-    findings = list(check.check_archive_contents(tmp_archive["path"], {"res_1": sha1}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {"res_1": sha1}))
     assert findings == [check.Finding(Status.MISPLACED, "res_1", moved)]
 
 
@@ -122,7 +122,7 @@ def test_check_contents_keys(tmp_archive, tmp_path, key, expected):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
     findings = list(
         check.check_archive_contents(
-            tmp_archive["path"], {"res_1": sha1}, keys={"res_1": key}
+            tmp_archive.path, {"res_1": sha1}, keys={"res_1": key}
         )
     )
     assert findings[0] == check.Finding(Status.OK, "res_1", path)
@@ -136,17 +136,17 @@ def test_check_contents_keys(tmp_archive, tmp_path, key, expected):
 
 def test_check_contents_keys_not_given(tmp_archive, tmp_path):
     _, sha1 = store(tmp_archive, tmp_path, "res_1")
-    findings = check.check_archive_contents(tmp_archive["path"], {"res_1": sha1})
+    findings = check.check_archive_contents(tmp_archive.path, {"res_1": sha1})
     assert [f.status for f in findings] == [Status.OK]
 
 
 def test_check_contents_no_key_for_misplaced_file(tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
-    wrong_dir = tmp_archive["path"] / "resources" / "zz"
+    wrong_dir = tmp_archive.path / "resources" / "zz"
     wrong_dir.mkdir()
     path.rename(wrong_dir / path.name)
     findings = check.check_archive_contents(
-        tmp_archive["path"], {"res_1": sha1}, keys={"res_1": None}
+        tmp_archive.path, {"res_1": sha1}, keys={"res_1": None}
     )
     assert [f.status for f in findings] == [Status.MISPLACED]
 
@@ -155,7 +155,7 @@ def test_check_contents_duplicate(tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
     other = path.with_suffix(".json")
     other.write_text("{}")
-    findings = list(check.check_archive_contents(tmp_archive["path"], {"res_1": sha1}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {"res_1": sha1}))
     assert sorted(f.path for f in findings) == sorted([path, other])
     assert all(f.status == Status.DUPLICATE for f in findings)
 
@@ -176,9 +176,7 @@ def test_check_contents_unlistable_subdirectory(tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
     path.parent.chmod(0o000)
     try:
-        findings = list(
-            check.check_archive_contents(tmp_archive["path"], {"res_1": sha1})
-        )
+        findings = list(check.check_archive_contents(tmp_archive.path, {"res_1": sha1}))
     finally:
         path.parent.chmod(0o750)
     assert statuses(findings) == {
@@ -217,7 +215,7 @@ def test_staging_directory_permissions_are_checked(tmp_archive):
 def test_leftovers_in_staging_are_incomplete(tmp_archive):
     leftover = archive.staging_dir(tmp_archive) / "rec_1.zip"
     leftover.write_bytes(b"partial zip")
-    [finding] = check.check_archive_contents(tmp_archive["path"], {})
+    [finding] = check.check_archive_contents(tmp_archive.path, {})
     assert (finding.status, finding.resource, finding.path) == (
         Status.INCOMPLETE,
         None,
@@ -260,9 +258,10 @@ def test_check_permissions_owner_and_group(tmp_archive, tmp_path):
     import pwd
 
     path, _ = store(tmp_archive, tmp_path, "res_1")
-    root = tmp_archive["path"] / "resources"
-    tmp_archive["policy"]["access"]["user"] = pwd.getpwuid(0).pw_name
-    tmp_archive["policy"]["access"]["group"] = grp.getgrgid(0).gr_name
+    root = tmp_archive.path / "resources"
+    tmp_archive = with_access(
+        tmp_archive, user=pwd.getpwuid(0).pw_name, group=grp.getgrgid(0).gr_name
+    )
     findings = permission_findings(tmp_archive)
     for p in (root, path.parent, path):
         assert (Status.WRONG_OWNER, p) in findings
@@ -271,7 +270,7 @@ def test_check_permissions_owner_and_group(tmp_archive, tmp_path):
 
 
 def test_check_permissions_unknown_user(tmp_archive):
-    tmp_archive["policy"]["access"]["user"] = "no-such-user-xyzzy"
+    tmp_archive = with_access(tmp_archive, user="no-such-user-xyzzy")
     with pytest.raises(ValueError, match="no-such-user-xyzzy"):
         list(check.check_archive_permissions(tmp_archive))
 
@@ -281,7 +280,7 @@ def test_check_contents_symlinked_resource(tmp_archive, tmp_path):
     real = tmp_path / "elsewhere.txt"
     path.rename(real)
     path.symlink_to(real)
-    findings = list(check.check_archive_contents(tmp_archive["path"], {"res_1": sha1}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {"res_1": sha1}))
     assert findings == [check.Finding(Status.SYMLINK, "res_1", path)]
     assert permission_findings(tmp_archive) == []
 
@@ -291,7 +290,7 @@ def test_check_contents_symlinked_subdirectory(tmp_archive, tmp_path):
     real = tmp_path / "elsewhere"
     path.parent.rename(real)
     path.parent.symlink_to(real)
-    findings = list(check.check_archive_contents(tmp_archive["path"], {"res_1": sha1}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {"res_1": sha1}))
     assert findings == [
         check.Finding(Status.SYMLINK, None, path.parent),
         check.Finding(Status.OK, "res_1", path),
@@ -310,7 +309,7 @@ def plant_directory(cfg, name):
 
 def test_check_contents_directory(tmp_archive):
     path = plant_directory(tmp_archive, "res_1")
-    findings = list(check.check_archive_contents(tmp_archive["path"], {"res_1": "0"}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {"res_1": "0"}))
     assert findings == [check.Finding(Status.DIRECTORY, "res_1", path)]
     assert not findings[0].ok
     # nothing inside the directory has its permissions checked
@@ -356,8 +355,9 @@ def test_fix_permissions_without_root(tmp_archive, tmp_path):
 
     path, _ = store(tmp_archive, tmp_path, "res_1")
     path.chmod(0o604)
-    tmp_archive["policy"]["access"]["user"] = pwd.getpwuid(0).pw_name
-    tmp_archive["policy"]["access"]["group"] = grp.getgrgid(0).gr_name
+    tmp_archive = with_access(
+        tmp_archive, user=pwd.getpwuid(0).pw_name, group=grp.getgrgid(0).gr_name
+    )
     findings = [
         (f.status, f.fixed)
         for f in check.check_archive_permissions(tmp_archive, fix=True)
@@ -435,12 +435,10 @@ def test_check_registry(mocked_api):
 
 def test_check_contents_unlistable_resources_directory(tmp_archive, tmp_path):
     _, sha1 = store(tmp_archive, tmp_path, "res_1")
-    base = tmp_archive["path"] / "resources"
+    base = tmp_archive.path / "resources"
     base.chmod(0o000)
     try:
-        findings = list(
-            check.check_archive_contents(tmp_archive["path"], {"res_1": sha1})
-        )
+        findings = list(check.check_archive_contents(tmp_archive.path, {"res_1": sha1}))
     finally:
         base.chmod(0o750)
     assert statuses(findings) == {
@@ -451,9 +449,9 @@ def test_check_contents_unlistable_resources_directory(tmp_archive, tmp_path):
 
 
 def test_check_missing_resources_directory(tmp_archive):
-    base = tmp_archive["path"] / "resources"
+    base = tmp_archive.path / "resources"
     base.rmdir()
-    findings = list(check.check_archive_contents(tmp_archive["path"], {}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {}))
     assert [(f.status, f.path) for f in findings] == [(Status.UNREADABLE, base)]
     assert "No such file" in findings[0].detail
     assert permission_findings(tmp_archive) == []
@@ -506,7 +504,7 @@ def test_recheck_unregistered(mocked_api, tmp_archive, tmp_path):
     store(tmp_archive, tmp_path, "changed")
     store(tmp_archive, tmp_path, "unhashed")
     unknown, _ = store(tmp_archive, tmp_path, "unknown")
-    findings = list(check.check_archive_contents(tmp_archive["path"], {}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {}))
     route = mocked_api.post(bulk_url + "resources/").respond(
         stream=bulk_response(
             resource_record("copy", ["other"], sha1),
@@ -542,7 +540,7 @@ def test_recheck_unregistered_directory(mocked_api, tmp_archive):
     import httpx
 
     path = plant_directory(tmp_archive, "res_1")
-    findings = list(check.check_archive_contents(tmp_archive["path"], {}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {}))
     assert findings == [check.Finding(Status.MISSING_FROM_REGISTRY, "res_1", path)]
     mocked_api.post(bulk_url + "resources/").respond(
         stream=bulk_response(resource_record("res_1", ["other"], "0" * 40))
@@ -569,7 +567,7 @@ def test_check_contents_incomplete_transfers(tmp_archive, tmp_path):
     (leftover_dir / "sub").mkdir(parents=True)
     three_days_ago = time.time() - 3 * 86400 - 60
     os.utime(leftover_file, (three_days_ago, three_days_ago))
-    findings = list(check.check_archive_contents(tmp_archive["path"], {"res_1": sha1}))
+    findings = list(check.check_archive_contents(tmp_archive.path, {"res_1": sha1}))
     incomplete = {f.path: f for f in findings if f.status == Status.INCOMPLETE}
     assert set(incomplete) == {leftover_file, leftover_dir}
     assert incomplete[leftover_file].resource == "res_2"
