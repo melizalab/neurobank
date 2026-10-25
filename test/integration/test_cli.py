@@ -206,6 +206,8 @@ def test_search_by_hash_archive_and_name(cli, register, archive, unique, capsys)
     assert search("-H", sha1) == {a}
     assert search("-H", sha1[10:30].upper()) == {a}
     assert search("-n", archive.name) == {a}
+    # the archive name must match exactly
+    assert search("-n", archive.name[:-1]) == set()
     assert search(tag) == {a, b}
 
 

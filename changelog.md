@@ -4,6 +4,8 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Breaking
 
+- `nbank search -n/--archive` matches the archive's name exactly (the registry's
+  `archive` filter) instead of any archive whose name contains it.
 - CLI commands are reorganized, with no aliases for the old names: `nbank init`
   is `nbank archive init`, and `nbank archive register-tar` is `nbank archive
   register tape`, the first of a command per archive scheme. `nbank archive

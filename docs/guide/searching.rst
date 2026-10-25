@@ -13,7 +13,7 @@ search by:
 -  ``-d, --dtype``: datatype.
 -  ``-H, --hash``: hash, full or any part of one. A full hash is an exact match,
    which is much faster.
--  ``-n, --archive``: the archive a resource is in.
+-  ``-n, --archive``: the archive a resource is in, by its exact name.
 -  ``-s, --scheme``: the kind of location a resource has (e.g., ``neurobank``,
    ``tape``, ``https``).
 -  ``--experimenter``: the experimenter's username.

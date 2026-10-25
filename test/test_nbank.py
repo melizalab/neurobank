@@ -1072,6 +1072,14 @@ def test_search_by_scheme(mocked_api, capsys):
     assert capsys.readouterr().out == "res_1\nres_2\n"
 
 
+def test_search_by_archive_is_exact(mocked_api, capsys):
+    mocked_api.get(resource_url, params={"archive": "starlings"}).respond(
+        json=[{"name": "res_1"}]
+    )
+    assert run_main("search", "-n", "starlings") is None
+    assert capsys.readouterr().out == "res_1\n"
+
+
 def test_search_by_core_fields(mocked_api, capsys):
     mocked_api.get(
         resource_url,

@@ -320,7 +320,9 @@ def make_parser() -> argparse.ArgumentParser:
     pp.add_argument(
         "-H", "--hash", help="filter results by hash (full, or any part of one)"
     )
-    pp.add_argument("-n", "--archive", help="filter results by archive name")
+    pp.add_argument(
+        "-n", "--archive", help="filter results by the exact name of an archive"
+    )
     pp.add_argument(
         "-s",
         "--scheme",
@@ -968,7 +970,7 @@ def search_resources(args):
     argmap = [
         ("name", "name"),
         ("dtype", "dtype"),
-        ("location", "archive"),
+        ("archive", "archive"),
         ("scheme", "scheme"),
     ]
     params = {
