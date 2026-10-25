@@ -35,23 +35,27 @@ def forbidden(registry, name, auth):
     return err.value
 
 
+@pytest.mark.writes
 def test_username_password(registry, register):
     name = register()["name"]
     assert update(registry, name, registry.auth)[0]["metadata"] == {"k": "v"}
 
 
+@pytest.mark.writes
 def test_auth_object(registry, register):
     name = register()["name"]
     auth = httpx.BasicAuth(*registry.auth)
     assert update(registry, name, auth)[0]["metadata"] == {"k": "v"}
 
 
+@pytest.mark.writes
 def test_netrc_file(registry, register, make_netrc, tmp_path):
     name = register()["name"]
     auth = httpx.NetRCAuth(make_netrc(tmp_path / "netrc"))
     assert update(registry, name, auth)[0]["metadata"] == {"k": "v"}
 
 
+@pytest.mark.writes
 def test_default_netrc(registry, register, netrc_home):
     name = register()["name"]
     assert update(registry, name, None)[0]["metadata"] == {"k": "v"}
@@ -152,6 +156,7 @@ def test_cli_malformed_auth(cli, capsys):
     assert "not of the form username:password" in capsys.readouterr().err
 
 
+@pytest.mark.writes
 def test_cli_credentials_option(cli, registry, client, unique):
     name = unique("dtype")
     user, password = registry.auth
@@ -160,6 +165,7 @@ def test_cli_credentials_option(cli, registry, client, unique):
     assert client.get(url).status_code == 200
 
 
+@pytest.mark.writes
 def test_cli_default_netrc(cli, registry, client, unique):
     name = unique("dtype")
     cli("dtype", "add", name, "text/plain")
@@ -176,6 +182,7 @@ def test_cli_credentials_override_netrc(cli, registry, client, unique, caplog):
     assert client.get(url).status_code == 404
 
 
+@pytest.mark.writes
 def test_cli_credentials_without_netrc(cli, registry, client, unique, empty_home):
     name = unique("dtype")
     user, password = registry.auth

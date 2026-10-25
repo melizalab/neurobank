@@ -31,6 +31,7 @@ def test_registry_info(cli, registry, caplog):
     assert "name: django-neurobank" in caplog.text
 
 
+@pytest.mark.writes
 def test_init(cli, registry, client, tmp_path, unique):
     path = tmp_path / unique("arch")
     assert cli("init", str(path)) == 0
@@ -41,6 +42,7 @@ def test_init(cli, registry, client, tmp_path, unique):
     assert nbank_archive.get_config(path)["registry"] == registry.url
 
 
+@pytest.mark.writes
 def test_init_with_name(cli, registry, client, tmp_path, unique):
     name = unique("arch")
     cli("init", "-n", name, str(tmp_path / "archive"))
@@ -48,6 +50,7 @@ def test_init_with_name(cli, registry, client, tmp_path, unique):
     assert client.get(url).status_code == 200
 
 
+@pytest.mark.writes
 def test_init_duplicate_name(cli, archive, tmp_path, caplog):
     path = tmp_path / "second"
     assert cli("init", "-n", archive.name, str(path)) == 1
@@ -55,6 +58,7 @@ def test_init_duplicate_name(cli, archive, tmp_path, caplog):
     assert not path.exists()
 
 
+@pytest.mark.writes
 def test_deposit(cli, registry, archive, dtype, tmp_path, unique, capsys):
     names = [unique("res"), unique("res")]
     files = []
@@ -78,6 +82,7 @@ def test_deposit(cli, registry, archive, dtype, tmp_path, unique, capsys):
         assert record["metadata"] == {"n": 3}
 
 
+@pytest.mark.writes
 def test_deposit_zip_directories(cli, registry, archive, dtype, tmp_path, unique):
     name = unique("res")
     src = tmp_path / name
@@ -94,6 +99,7 @@ def test_deposit_zip_directories(cli, registry, archive, dtype, tmp_path, unique
     assert cli("check", "archive", str(archive.path)) == 0
 
 
+@pytest.mark.writes
 def test_deposit_names_from_stdin(
     cli, registry, archive, dtype, tmp_path, unique, monkeypatch
 ):
@@ -107,6 +113,7 @@ def test_deposit_names_from_stdin(
     assert {r["name"] for r in found} == set(names)
 
 
+@pytest.mark.writes
 def test_deposit_stdin_blank_lines_and_hashes(
     cli, registry, archive, dtype, tmp_path, unique, monkeypatch, caplog
 ):
@@ -129,6 +136,7 @@ def test_deposit_invalid_name(cli, registry, archive, dtype, tmp_path, caplog):
     assert src.exists()
 
 
+@pytest.mark.writes
 def test_deposit_name_rejected_by_registry(
     cli, registry, archive, dtype, tmp_path, unique, caplog
 ):
@@ -142,6 +150,7 @@ def test_deposit_name_rejected_by_registry(
     assert core.describe(registry.url, name) is None
 
 
+@pytest.mark.writes
 def test_deposit_continues_past_errors(
     cli, registry, archive, dtype, tmp_path, unique, capsys, caplog
 ):
@@ -249,6 +258,7 @@ def test_locate_link(cli, archive, dtype, deposit_file, tmp_path):
     assert (links / path.name).resolve() == path
 
 
+@pytest.mark.writes
 def test_modify(cli, registry, register, capsys):
     name = register(a=1, b=2)["name"]
     assert cli("modify", "-k", "b=3", "-k", "c=new", "-K", "a", name) == 0
@@ -257,6 +267,7 @@ def test_modify(cli, registry, register, capsys):
     assert core.describe(registry.url, name)["metadata"] == result["metadata"]
 
 
+@pytest.mark.writes
 def test_deposit_and_modify_core_fields(
     core_fields, cli, registry, archive, dtype, tmp_path, unique, capsys
 ):
@@ -301,6 +312,7 @@ def test_search_by_core_fields(core_fields, cli, registry, register, dtype, caps
     assert search("-k", "protocol=chorus") == {a}
 
 
+@pytest.mark.writes
 def test_modify_missing(cli, register, unique, capsys):
     missing, name = unique("missing"), register()["name"]
     assert cli("modify", "-k", "k=v", missing, name) == 1
@@ -349,6 +361,7 @@ def test_verify_missing_file(cli, tmp_path, capsys):
     assert capsys.readouterr().out == f"{src}: no such file or directory\n"
 
 
+@pytest.mark.writes
 def test_dtype_add_and_list(cli, unique, capsys, caplog):
     name = unique("dtype")
     assert cli("dtype", "add", name, "text/plain") == 0
@@ -357,6 +370,13 @@ def test_dtype_add_and_list(cli, unique, capsys, caplog):
     caplog.clear()
     assert cli("dtype", "add", name, "text/plain") == 1
     assert "a dtype with this name already exists" in caplog.text
+
+
+def test_changes_refused_by_api2(cli, registry_api, unique, caplog):
+    if registry_api < 2:
+        pytest.skip("the registry accepts changes from this version")
+    assert cli("dtype", "add", unique("dtype"), "text/plain") == 1
+    assert "upgrade to neurobank 1.0" in caplog.text
 
 
 def test_archive_list(cli, archive, capsys):

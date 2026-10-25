@@ -177,10 +177,30 @@ def unique():
     return make
 
 
+@pytest.fixture(scope="session")
+def registry_api(registry) -> int:
+    """The major version of the registry's API."""
+    url, params = reg.get_info(registry.url)
+    info = httpx.get(url, params=params).json()
+    return int(info.get("api_version", "1").split(".")[0])
+
+
+@pytest.fixture(autouse=True)
+def skip_writes_to_api2(request):
+    """Skips tests marked `writes` against a registry with API 2.0 or later, which
+    refuses changes from this version of neurobank."""
+    if request.node.get_closest_marker("writes") and (
+        request.getfixturevalue("registry_api") >= 2
+    ):
+        pytest.skip("neurobank 0.13 can't change a registry with API 2.0 or later")
+
+
 @pytest.fixture
-def client(registry):
-    """An HTTP client that is authenticated to the registry."""
-    with httpx.Client(auth=registry.auth) as session:
+def client(registry, registry_api):
+    """An HTTP client that is authenticated to the registry. It asks for API 2.0
+    from a registry that has it, so that tests can set up records there."""
+    headers = {"Accept": "application/json; version=2.0"} if registry_api >= 2 else {}
+    with httpx.Client(auth=registry.auth, headers=headers) as session:
         yield session
 
 
@@ -301,17 +321,27 @@ def cli(registry, netrc_home):
 
 
 @pytest.fixture
-def deposit_file(registry, tmp_path, unique):
-    """Returns a function that makes a file and deposits it. Returns the id."""
+def deposit_file(registry, registry_api, register, tmp_path, unique):
+    """Returns a function that makes a file and deposits it. Returns the id.
+
+    A registry with API 2.0 or later refuses deposits from this version, so there
+    the file is registered with the test client and stored in the archive directly.
+    """
 
     def deposit(archive: Archive, dtype: str, contents: str | None = None, **kwargs):
         name = unique("res")
         src = tmp_path / f"{name}.txt"
         src.write_text(contents or name)
-        [item] = core.deposit(
-            archive.path, [src], dtype=dtype, auth=registry.auth, **kwargs
-        )
-        return item["id"]
+        if registry_api < 2:
+            [item] = core.deposit(
+                archive.path, [src], dtype=dtype, auth=registry.auth, **kwargs
+            )
+            return item["id"]
+        hashed = kwargs.get("hash") or archive.config["policy"]["require_hash"]
+        sha1 = util.hash(src) if hashed else None
+        register(name, dtype=dtype, archive=archive.name, sha1=sha1)
+        nbank_archive.store_resource(archive.config, src, id=name)
+        return name
 
     return deposit
 

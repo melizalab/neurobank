@@ -2,12 +2,14 @@
 import uuid
 
 import httpx
+import pytest
 
 from nbank import registry as reg
 from nbank import util
 
-# the major version of the registry API that the client is written for
-API_MAJOR_VERSION = "1"
+# the major versions of the registry API that the client can read: it's written
+# for 1.x, and 2.x refuses only its changes
+API_MAJOR_VERSIONS = ("1", "2")
 
 
 def test_registry_info(registry):
@@ -21,9 +23,10 @@ def test_api_version(registry):
     url, params = reg.get_info(registry.url)
     with httpx.Client() as session:
         info = util.query_registry(session, url, params)
-    assert info["api_version"].split(".")[0] == API_MAJOR_VERSION
+    assert info["api_version"].split(".")[0] in API_MAJOR_VERSIONS
 
 
+@pytest.mark.writes
 def test_authenticated_write(registry):
     name = f"smoke-{uuid.uuid4().hex[:8]}"
     url, params = reg.add_datatype(registry.url, name, "text/plain")

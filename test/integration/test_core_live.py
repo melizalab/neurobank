@@ -30,6 +30,7 @@ def deposit_one(registry, archive, dtype, src, **kwargs):
     return item["id"]
 
 
+@pytest.mark.writes
 def test_deposit(registry, archive, dtype, tmp_path, unique):
     name = unique("res")
     src = write_file(tmp_path / f"{name}.txt", name)
@@ -57,6 +58,7 @@ def test_deposit(registry, archive, dtype, tmp_path, unique):
     assert record["created_by"] == registry.auth[0]
 
 
+@pytest.mark.writes
 def test_deposit_core_fields(core_fields, registry, archive, dtype, tmp_path, unique):
     animal, _ = core_fields
     name = unique("res")
@@ -75,6 +77,7 @@ def test_deposit_core_fields(core_fields, registry, archive, dtype, tmp_path, un
     assert record["metadata"]["protocol"] == "chorus"
 
 
+@pytest.mark.writes
 def test_deposit_reads_metadata_from_the_file(
     core_fields, registry, archive, dtype, tmp_path, unique, monkeypatch
 ):
@@ -104,6 +107,7 @@ def test_deposit_reads_metadata_from_the_file(
     assert (record["metadata"]["pen"], record["metadata"]["site"]) == (1, 2)
 
 
+@pytest.mark.writes
 def test_deposit_unknown_animal_is_refused(
     core_fields, registry, archive, dtype, tmp_path, unique
 ):
@@ -134,12 +138,14 @@ def test_deposit_dry_run(registry, archive, dtype, tmp_path, unique):
     assert not nbank_archive.resource_path(archive.config, name).exists()
 
 
+@pytest.mark.writes
 def test_deposit_without_hash(registry, archive, dtype, tmp_path, unique):
     src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
     name = deposit_one(registry, archive, dtype, src)
     assert core.describe(registry.url, name)["sha1"] is None
 
 
+@pytest.mark.writes
 def test_deposit_several(registry, archive, dtype, tmp_path, unique):
     names = [unique("res") for _ in range(3)]
     files = [write_file(tmp_path / f"{n}.txt", n) for n in names]
@@ -164,6 +170,7 @@ def test_deposit_refuses_directories(registry, make_archive, dtype, tmp_path, un
     assert (src / "a.txt").exists()
 
 
+@pytest.mark.writes
 def test_deposit_auto_id(registry, make_archive, dtype, tmp_path, unique):
     archive = make_archive(require_hash=False, auto_identifiers=True)
     stem = unique("res")
@@ -175,6 +182,7 @@ def test_deposit_auto_id(registry, make_archive, dtype, tmp_path, unique):
     assert nbank_archive.resource_path(archive.config, name, resolve_ext=True).exists()
 
 
+@pytest.mark.writes
 def test_deposit_auto_id_uuid(registry, make_archive, dtype, tmp_path, unique):
     archive = make_archive(
         require_hash=False, auto_identifiers=True, auto_id_type="uuid"
@@ -185,6 +193,7 @@ def test_deposit_auto_id_uuid(registry, make_archive, dtype, tmp_path, unique):
     assert core.describe(registry.url, name) is not None
 
 
+@pytest.mark.writes
 def test_deposit_duplicate_name(registry, archive, dtype, tmp_path, unique):
     # found in the archive, before anything is registered
     name = unique("res")
@@ -199,6 +208,7 @@ def test_deposit_duplicate_name(registry, archive, dtype, tmp_path, unique):
     assert [r["name"] for r in core.search(registry.url, name=name)] == [name]
 
 
+@pytest.mark.writes
 def test_deposit_duplicate_name_skipped(registry, archive, dtype, tmp_path, unique):
     name = unique("res")
     deposit_one(registry, archive, dtype, write_file(tmp_path / f"{name}.txt", "first"))
@@ -210,6 +220,7 @@ def test_deposit_duplicate_name_skipped(registry, archive, dtype, tmp_path, uniq
     assert "already stored" in item["error"]
 
 
+@pytest.mark.writes
 def test_deposit_duplicate_name_in_another_archive(
     registry, archive, make_archive, dtype, tmp_path, unique
 ):
@@ -227,6 +238,7 @@ def test_deposit_duplicate_name_in_another_archive(
         nbank_archive.resource_path(other.config, name, resolve_ext=True)
 
 
+@pytest.mark.writes
 def test_deposit_duplicate_hash(registry, archive, dtype, tmp_path, unique):
     first = write_file(tmp_path / f"{unique('res')}.txt", "same contents")
     deposit_one(registry, archive, dtype, first, hash=True)
@@ -315,6 +327,7 @@ def test_search_by_core_fields(core_fields, registry, register, dtype):
     assert search(experimenter__isnull="true") == {b}
 
 
+@pytest.mark.writes
 def test_update_core_fields(core_fields, registry, register):
     animal, _ = core_fields
     name = register(animal=animal, pen=1)["name"]
@@ -341,9 +354,8 @@ def test_search_is_paginated(registry, client, register, dtype):
     assert set(found) == set(names)
 
 
-def test_get_deposited(registry, archive, dtype, tmp_path, unique):
-    src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
-    name = deposit_one(registry, archive, dtype, src)
+def test_get_deposited(registry, archive, dtype, deposit_file):
+    name = deposit_file(archive, dtype)
     resource = core.get(registry.url, name)
     assert resource.path == nbank_archive.resource_path(
         archive.config, name, resolve_ext=True
@@ -351,11 +363,10 @@ def test_get_deposited(registry, archive, dtype, tmp_path, unique):
 
 
 def test_find_all_locations(
-    registry, client, archive, make_archive, dtype, tmp_path, unique
+    registry, client, archive, make_archive, dtype, deposit_file, tmp_path
 ):
     other = make_archive(require_hash=False)
-    src = write_file(tmp_path / f"{unique('res')}.txt", "contents")
-    name = deposit_one(registry, archive, dtype, src)
+    name = deposit_file(archive, dtype)
     url, body = reg.add_location(registry.url, name, other.name)
     client.post(url, json=body).raise_for_status()
     copy = write_file(tmp_path / "copy.txt", "contents")
@@ -430,6 +441,7 @@ def test_verify_missing_id(registry, tmp_path, unique):
         core.verify(registry.url, src, id=unique("missing"))
 
 
+@pytest.mark.writes
 def test_update_metadata(registry, register):
     name = register(a=1, b=2)["name"]
     [result] = core.update(
@@ -441,6 +453,7 @@ def test_update_metadata(registry, register):
     assert core.describe(registry.url, name)["metadata"] == result["metadata"]
 
 
+@pytest.mark.writes
 def test_update_several(registry, register):
     names = [register()["name"] for _ in range(2)]
     results = list(
@@ -450,6 +463,7 @@ def test_update_several(registry, register):
     assert all(r["metadata"] == {"k": "v"} for r in results)
 
 
+@pytest.mark.writes
 def test_update_missing(registry, register, unique):
     missing = unique("missing")
     name = register()["name"]

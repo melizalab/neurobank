@@ -4,6 +4,8 @@
 # Each Python version is tested against the registry release in uv.lock and
 # against the registry's master branch. The master runs can fail without
 # failing the workflow; they are an early warning of changes to the registry.
+# On maint branches, tests marked `writes` are skipped against registries with
+# API 2.0 and later, which refuse changes from neurobank before 1.0.
 #
 # The registry changes independently of this repository, so its workflow can
 # start these tests (e.g., after its own tests pass on master) with
@@ -15,6 +17,7 @@ on:
   push:
     branches:
       - master
+      - "maint/**"
   workflow_dispatch:
 
 jobs:

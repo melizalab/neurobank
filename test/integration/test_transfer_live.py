@@ -40,6 +40,7 @@ def test_find_sources(
     assert from_b.path == nbank_archive.resource_path(b.config, name, resolve_ext=True)
 
 
+@pytest.mark.writes
 def test_receive_and_add_location(
     cli, registry, make_archive, register, unique, tmp_path
 ):

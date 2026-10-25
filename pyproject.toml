@@ -66,6 +66,7 @@ addopts = "-v -m 'not integration'"
 testpaths = ["test"]
 markers = [
     "integration: tests that run against a live registry (deselected by default)",
+    "writes: integration tests in which neurobank changes the registry (skipped for API 2.0 and later)",
 ]
 
 [tool.ruff]

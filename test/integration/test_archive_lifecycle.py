@@ -285,6 +285,7 @@ def test_check_registered_elsewhere(cli, copied, caplog):
     assert "registered elsewhere: 1" in caplog.text
 
 
+@pytest.mark.writes
 def test_check_fix_adds_location(cli, registry, copied, answers, caplog):
     prompts = answers("a")
     assert cli("check", "archive", "--fix", str(copied.archive.path)) == 0
@@ -341,6 +342,7 @@ def test_check_fix_misplaced_copy(cli, copied, answers):
     assert moved.exists()
 
 
+@pytest.mark.writes
 def test_check_fix_only_copy(
     cli, registry, register, archive, answers, tmp_path, caplog
 ):
@@ -426,6 +428,7 @@ def listing(tmp_path, *names):
     return path
 
 
+@pytest.mark.writes
 def test_prune(cli, registry, two_archives, dtype, deposit_file, replicate, tmp_path):
     a, b = two_archives
     name = deposit_file(a, dtype)
@@ -478,6 +481,7 @@ def test_prune_unknown_resource_and_archive(cli, archive, tmp_path, unique, capl
     assert "No such archive" in caplog.text
 
 
+@pytest.mark.writes
 def test_register_tar(
     cli, registry, client, archive, dtype, deposit_file, tmp_path, unique, caplog
 ):
@@ -507,6 +511,7 @@ def test_register_tar_dry_run(
     assert client.get(url).status_code == 404
 
 
+@pytest.mark.writes
 def test_import_tar(
     cli, registry, two_archives, dtype, deposit_file, tmp_path, unique, caplog
 ):
@@ -576,6 +581,7 @@ def dir_archives(make_archive):
     )
 
 
+@pytest.mark.writes
 def test_import_tar_directory_resource(
     store_directory, cli, registry, dir_archives, dtype, unique, tmp_path, caplog
 ):
@@ -594,6 +600,7 @@ def test_import_tar_directory_resource(
     assert cli("check", "archive", str(b.path)) == 0
 
 
+@pytest.mark.writes
 def test_export_and_import(
     store_directory,
     cli,
@@ -670,6 +677,7 @@ def test_export_zip_and_directory(
         )
 
 
+@pytest.mark.writes
 def test_copy(
     store_directory,
     cli,
@@ -712,6 +720,7 @@ def test_copy(
     assert "already in destination: 2" in caplog.text
 
 
+@pytest.mark.writes
 def test_copy_from_archive(
     cli, registry, make_archive, dtype, deposit_file, replicate, caplog
 ):
@@ -764,6 +773,7 @@ def test_copy_directory_to_archive_without_directories(
     assert "doesn't allow directory resources" in caplog.text
 
 
+@pytest.mark.writes
 def test_import_tar_read_error(
     cli, registry, two_archives, dtype, deposit_file, unique, failing_tar, caplog
 ):
@@ -801,6 +811,7 @@ def three_in_tar(two_archives, dtype, deposit_file, unique, tmp_path):
     return SimpleNamespace(a=a, b=b, names=names, tar=tar)
 
 
+@pytest.mark.writes
 def test_import_tar_selected(cli, registry, three_in_tar, caplog):
     t = three_in_tar
     first, second, _ = t.names
@@ -818,6 +829,7 @@ def test_import_tar_selected(cli, registry, three_in_tar, caplog):
     assert "unable to read" not in caplog.text
 
 
+@pytest.mark.writes
 def test_import_tar_selected_from_file(cli, three_in_tar, unique, tmp_path, caplog):
     t = three_in_tar
     first, second, _ = t.names
@@ -832,6 +844,7 @@ def test_import_tar_selected_from_file(cli, three_in_tar, unique, tmp_path, capl
     assert f"✗ {missing} -> not reached, as reading stopped" in caplog.text
 
 
+@pytest.mark.writes
 def test_import_tar_selected_not_in_tar(
     cli, two_archives, dtype, deposit_file, unique, tmp_path, caplog
 ):
@@ -879,6 +892,7 @@ def test_import_tar_dry_run_checks_hashes(
     assert "don't match the registered hash" in caplog.text
 
 
+@pytest.mark.writes
 def test_import_tar_from_stdin(
     cli, registry, two_archives, dtype, deposit_file, tmp_path, monkeypatch
 ):
@@ -891,6 +905,7 @@ def test_import_tar_from_stdin(
     assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
 
 
+@pytest.mark.writes
 def test_import_tar_full_paths(
     cli, registry, two_archives, dtype, deposit_file, tmp_path
 ):
@@ -1032,6 +1047,7 @@ def tape(cli, archive, dtype, deposit_file, unique, tmp_path):
     return SimpleNamespace(name=tape_name, tar=tar, resources=names)
 
 
+@pytest.mark.writes
 def test_check_tar_archive_complete(cli, tape, caplog):
     caplog.clear()
     assert cli("check", "tar", "--archive", tape.name, str(tape.tar)) == 0
@@ -1040,6 +1056,7 @@ def test_check_tar_archive_complete(cli, tape, caplog):
     )
 
 
+@pytest.mark.writes
 def test_check_tar_archive_missing(cli, register, tape, caplog):
     # the registry says this resource is on the tape, but it isn't
     lost = register(archive=tape.name)["name"]
@@ -1049,6 +1066,7 @@ def test_check_tar_archive_missing(cli, register, tape, caplog):
     assert "Missing from the tar file: 1" in caplog.text
 
 
+@pytest.mark.writes
 def test_check_tar_archive_not_registered(
     cli, archive, dtype, deposit_file, tape, tmp_path, caplog
 ):
@@ -1065,6 +1083,7 @@ def test_check_tar_archive_not_registered(
     assert f"not registered to {tape.name}: 1" in caplog.text
 
 
+@pytest.mark.writes
 def test_check_tar_unknown_archive(cli, tape, unique, caplog):
     missing = unique("tape")
     assert cli("check", "tar", "--archive", missing, str(tape.tar)) == 1

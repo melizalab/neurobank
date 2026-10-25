@@ -38,6 +38,7 @@ def stored_path(archive, name):
     return nbank_archive.resource_path(archive.config, name, resolve_ext=True)
 
 
+@pytest.mark.writes
 def test_delete(admin_cli, registry, archive, dtype, deposit_file, tmp_path, unique):
     names = [deposit_file(archive, dtype) for _ in range(2)]
     paths = [stored_path(archive, name) for name in names]
@@ -65,6 +66,7 @@ def test_delete_resource_without_script_globals(registry, client, archive, regis
     assert core.describe(registry.url, name) is None
 
 
+@pytest.mark.writes
 def test_update_hash(admin_cli, registry, archive, dtype, deposit_file, tmp_path):
     names = [deposit_file(archive, dtype) for _ in range(2)]
     assert all(core.describe(registry.url, n)["sha1"] is None for n in names)
@@ -87,6 +89,7 @@ def test_update_hash_dry_run(
     assert core.describe(registry.url, name)["sha1"] is None
 
 
+@pytest.mark.writes
 def test_update_hash_skips_resources_not_on_this_host(
     admin_cli, registry, archive, dtype, deposit_file, register, tmp_path
 ):
