@@ -4,6 +4,8 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Breaking
 
+- CLI commands are reorganized, with no aliases for the old names: `nbank init`
+  is `nbank archive init`.
 - Every request asks for registry API 2.0 (`Accept: application/json;
   version=2.0`), and nbank checks once per registry that `info/` reports API
   2.x, raising `nbank.util.RegistryVersionError` (an error message in the CLI)

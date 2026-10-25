@@ -84,7 +84,7 @@ archives <https://neurobank.readthedocs.io/en/stable/guide/archives.html>`__):
 
 .. code:: bash
 
-   nbank init /home/data/my-project
+   nbank archive init /home/data/my-project
 
 Deposit files. Each one is registered under its filename unless you ask for an
 automatic identifier (``-A``), and moved into the archive. Use ``-d`` to specify

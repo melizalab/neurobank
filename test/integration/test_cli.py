@@ -35,7 +35,7 @@ def test_registry_info(cli, registry, caplog):
 
 def test_init(cli, registry, client, tmp_path, unique):
     path = tmp_path / unique("arch")
-    assert cli("init", str(path)) == 0
+    assert cli("archive", "init", str(path)) == 0
     url, _ = reg.get_archive(registry.url, path.name)
     record = client.get(url).json()
     assert record["scheme"] == "neurobank"
@@ -45,14 +45,14 @@ def test_init(cli, registry, client, tmp_path, unique):
 
 def test_init_with_name(cli, registry, client, tmp_path, unique):
     name = unique("arch")
-    cli("init", "-n", name, str(tmp_path / "archive"))
+    cli("archive", "init", "-n", name, str(tmp_path / "archive"))
     url, _ = reg.get_archive(registry.url, name)
     assert client.get(url).status_code == 200
 
 
 def test_init_duplicate_name(cli, archive, tmp_path, caplog):
     path = tmp_path / "second"
-    assert cli("init", "-n", archive.name, str(path)) == 1
+    assert cli("archive", "init", "-n", archive.name, str(path)) == 1
     assert "an archive with this name already exists" in caplog.text
     assert not path.exists()
 

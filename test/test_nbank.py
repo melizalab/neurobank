@@ -996,7 +996,7 @@ def test_init_shared_archive(mocked_api, tmp_path):
     group = grp.getgrgid(os.getgid()).gr_name
     root = tmp_path / "archive"
     mocked_api.post(archives_url).respond(201, json={})
-    run_main("init", "--shared", "-g", group, str(root))
+    run_main("archive", "init", "--shared", "-g", group, str(root))
     access = archive.get_config(root)["policy"]["access"]
     assert access["user"] is None
     assert access["group"] == group
@@ -1006,7 +1006,7 @@ def test_init_shared_archive(mocked_api, tmp_path):
 def test_init_unknown_group(mocked_api, tmp_path, caplog):
     # no registry route is mocked: the archive must not be registered
     root = tmp_path / "archive"
-    run_main("init", "-g", "no-such-group-xyzzy", str(root))
+    run_main("archive", "init", "-g", "no-such-group-xyzzy", str(root))
     assert "group 'no-such-group-xyzzy' does not exist" in caplog.text
     assert not root.exists()
 
@@ -1154,7 +1154,7 @@ def test_init_existing_archive(mocked_api, tmp_archive, caplog):
     # no registry route is mocked: the archive must not be registered
     config = tmp_archive["path"] / "nbank.json"
     before = config.read_text()
-    run_main("init", str(tmp_archive["path"]))
+    run_main("archive", "init", str(tmp_archive["path"]))
     assert f"'{config}' already exists" in caplog.text
     assert config.read_text() == before
 

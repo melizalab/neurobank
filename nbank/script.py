@@ -224,41 +224,6 @@ def make_parser() -> argparse.ArgumentParser:
     pp = sub.add_parser("registry-info", help="get information about the registry")
     pp.set_defaults(func=registry_info)
 
-    pp = sub.add_parser("init", help="initialize a data archive")
-    pp.set_defaults(func=init_archive)
-    pp.add_argument(
-        "directory",
-        type=Path,
-        help="path of the directory for the archive. "
-        "The directory should be empty or not exist.",
-    )
-    pp.add_argument(
-        "-n",
-        dest="name",
-        help="name to give the archive in the registry. "
-        "The default is to use the directory name of the archive.",
-        default=None,
-    )
-    pp.add_argument(
-        "-u",
-        dest="umask",
-        help="umask for newly created files in archive, "
-        "as an octal. The default is %(default)03o.",
-        type=octalint,
-        default=archive._default_umask,
-    )
-    pp.add_argument(
-        "-g",
-        "--group",
-        help="group for the archive. The default is your primary group.",
-    )
-    pp.add_argument(
-        "--shared",
-        action="store_true",
-        help="configure archive for shared use, with users depositing under "
-        "their own accounts",
-    )
-
     pp = sub.add_parser("deposit", help="deposit resource(s)")
     pp.set_defaults(func=store_resources)
     pp.add_argument("directory", type=Path, help="path of the archive ")
@@ -557,6 +522,41 @@ def make_parser() -> argparse.ArgumentParser:
 
     pp = sub.add_parser("archive", help="list and manipulate archives")
     ppsub = pp.add_subparsers(title="subcommands")
+
+    pp = ppsub.add_parser("init", help="create a neurobank archive and register it")
+    pp.set_defaults(func=init_archive)
+    pp.add_argument(
+        "directory",
+        type=Path,
+        help="path of the directory for the archive. "
+        "The directory should be empty or not exist.",
+    )
+    pp.add_argument(
+        "-n",
+        dest="name",
+        help="name to give the archive in the registry. "
+        "The default is to use the directory name of the archive.",
+        default=None,
+    )
+    pp.add_argument(
+        "-u",
+        dest="umask",
+        help="umask for newly created files in archive, "
+        "as an octal. The default is %(default)03o.",
+        type=octalint,
+        default=archive._default_umask,
+    )
+    pp.add_argument(
+        "-g",
+        "--group",
+        help="group for the archive. The default is your primary group.",
+    )
+    pp.add_argument(
+        "--shared",
+        action="store_true",
+        help="configure archive for shared use, with users depositing under "
+        "their own accounts",
+    )
 
     pp = ppsub.add_parser("list", help="list archives")
     pp.set_defaults(func=list_archives)

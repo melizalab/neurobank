@@ -93,7 +93,7 @@ def test_deposit_refused_before_the_registry(
 @pytest.mark.parametrize(
     "argv",
     [
-        ["init", "archive"],
+        ["archive", "init", "archive"],
         ["deposit", "archive", "file"],
         ["copy", "archive", "res_1"],
         ["archive", "import-tar", "file.tar", "archive"],

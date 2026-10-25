@@ -39,7 +39,7 @@ Initialize an archive with:
 
 .. code:: bash
 
-   nbank [-a username:password] [-r registry-url] init [-n name] [-u umask] [-g group] [--shared] my-archive-path
+   nbank [-a username:password] [-r registry-url] archive init [-n name] [-u umask] [-g group] [--shared] my-archive-path
 
 The script contacts the registry and adds the archive. By default, the archive
 is named after the basename of the archive path. For example,
@@ -86,7 +86,7 @@ policies. These are the settings you may want to modify:
    this on unless you have a good reason not to (like multi-terabyte resources)
    and another mechanism to protect against data corruption.
 -  ``access``: Who owns the archive's files and who can read and write them.
-   These are usually set by ``nbank init``.
+   These are usually set by ``nbank archive init``.
 
    -  ``user``: The account that should own the files, or ``null`` for a shared
       archive (``--shared``).
@@ -105,7 +105,7 @@ the following practices are suggested for POSIX operating systems:
 
 1. For each project, create a separate user group. To give a user access to the
    data, add them to the group.
-2. Create the archive with ``nbank init --shared -g GROUP``, where ``GROUP`` is
+2. Create the archive with ``nbank archive init --shared -g GROUP``, where ``GROUP`` is
    the project group. Add ``-u 027`` to keep out users who aren't in the group.
 3. Run ``nbank check all --fix`` as root on a regular schedule (for example, as
    a nightly cron job) to find and repair problems (see :doc:`managing`).
