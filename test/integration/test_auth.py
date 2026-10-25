@@ -147,7 +147,7 @@ def test_log_error_streamed(registry, caplog):
 
 def test_cli_malformed_auth(cli, capsys):
     with pytest.raises(SystemExit) as err:
-        cli("-a", "justauser", "registry-info")
+        cli("-a", "justauser", "registry", "info")
     assert err.value.code == 2
     assert "not of the form username:password" in capsys.readouterr().err
 
@@ -196,7 +196,7 @@ def unusable_netrc_home(tmp_path, monkeypatch):
 
 
 def test_cli_unusable_netrc(cli, unusable_netrc_home, caplog):
-    cli("registry-info")
+    cli("registry", "info")
     assert "unable to use netrc file" in caplog.text
     assert "registry info:" not in caplog.text
 
@@ -205,6 +205,6 @@ def test_cli_credentials_ignore_unusable_netrc(
     cli, registry, unusable_netrc_home, caplog
 ):
     user, password = registry.auth
-    cli("-a", f"{user}:{password}", "registry-info")
+    cli("-a", f"{user}:{password}", "registry", "info")
     assert "unable to use netrc file" not in caplog.text
     assert f"address: {registry.url}" in caplog.text

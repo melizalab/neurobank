@@ -77,7 +77,7 @@ who you're authenticating as with
 .. code:: bash
 
    export NBANK_REGISTRY=https://myregistry.org/neurobank/
-   nbank registry-info
+   nbank registry info
 
 Create an archive, which registers it and sets up its directory (see `Setting up
 archives <https://neurobank.readthedocs.io/en/stable/guide/archives.html>`__):

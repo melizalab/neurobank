@@ -8,11 +8,12 @@ Requires django-neurobank 1.0 (registry API 2.x).
   is `nbank archive init`, and `nbank archive register-tar` is `nbank archive
   register tape`, the first of a command per archive scheme. `nbank archive
   check` is gone; use `nbank check archive`, which now also takes the archive's
-  name in the registry as well as its path.
+  name in the registry as well as its path. `nbank registry-info` is `nbank
+  registry info`.
 - Every request asks for registry API 2.0 (`Accept: application/json;
   version=2.0`), and nbank checks once per registry that `info/` reports API
   2.x, raising `nbank.util.RegistryVersionError` (an error message in the CLI)
-  if it doesn't. `nbank registry-info` skips the check, so it can show any
+  if it doesn't. `nbank registry info` skips the check, so it can show any
   registry's version. Versions before 1.0 can still read from a django-neurobank
   1.0 registry (`search`, `info`, `locate`, `fetch`, `verify`, `check`), finding
   files without keys, but the registry refuses their changes.
@@ -89,7 +90,7 @@ Requires django-neurobank 1.0 (registry API 2.x).
   `NBANK_ALT_BASE` environment variable), to read archives mounted under `DIR`
   instead of at their registered roots, as `find_resources(alt_base=)` does.
 - `nbank.admin supersede` marks resources as superseded, or not to be used.
-- `nbank registry-info` shows who the registry sees you as, and what you can
+- `nbank registry info` shows who the registry sees you as, and what you can
   change: a username and permissions, a superuser, or anonymous (#61).
 - `core.find_resources` and `find_resource` give the path of a file for each
   resource that can be read on this host: from a directory of files named by id

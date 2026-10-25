@@ -145,10 +145,10 @@ def test_search_keeps_underscored_values_as_strings(monkeypatch):
 def test_registry_default_is_read_when_run(monkeypatch):
     monkeypatch.setenv("NBANK_REGISTRY", "https://example.org/neurobank/")
     # the parser doesn't hold the value, so documentation built from it can't show it
-    assert script.make_parser().parse_args(["registry-info"]).registry_url is None
+    assert script.make_parser().parse_args(["registry", "info"]).registry_url is None
     seen = []
     monkeypatch.setattr(script, "registry_info", lambda args: seen.append(args))
-    script.main(["registry-info"])
+    script.main(["registry", "info"])
     assert seen[0].registry_url == "https://example.org/neurobank/"
 
 

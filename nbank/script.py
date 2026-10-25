@@ -214,7 +214,12 @@ def make_parser() -> argparse.ArgumentParser:
 
     sub = p.add_subparsers(title="subcommands")
 
-    pp = sub.add_parser("registry-info", help="get information about the registry")
+    pp = sub.add_parser("registry", help="registry information")
+    ppsub = pp.add_subparsers(title="subcommands")
+
+    pp = ppsub.add_parser(
+        "info", help="show the registry's version, and who it sees you as"
+    )
     pp.set_defaults(func=registry_info)
 
     pp = sub.add_parser("deposit", help="deposit resource(s)")

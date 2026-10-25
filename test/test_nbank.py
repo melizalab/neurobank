@@ -1567,7 +1567,7 @@ def test_registry_info_shows_the_user(mocked_api, caplog, user, lines):
     mocked_api.get(f"{base_url}info/").respond(
         json={"name": "django-neurobank", "api_version": "2.0", "user": user}
     )
-    assert run_main("registry-info") is None
+    assert run_main("registry", "info") is None
     messages = [r.getMessage() for r in caplog.records]
     assert "  - name: django-neurobank" in messages
     assert [m for m in messages if m.startswith(("  - user", "  - perm"))] == [
@@ -1586,14 +1586,14 @@ def test_registry_info_shows_a_registry_it_cant_use(mocked_api, monkeypatch, cap
     caplog.set_level(logging.INFO, logger="nbank")
     monkeypatch.setattr(util, "_checked_registries", set())
     mocked_api.get(f"{base_url}info/").respond(json={"api_version": "1.3"})
-    assert run_main("registry-info") is None
+    assert run_main("registry", "info") is None
     assert "api_version: 1.3" in caplog.text
 
 
 def test_registry_info_without_user(mocked_api, caplog):
     caplog.set_level(logging.INFO, logger="nbank")
     mocked_api.get(f"{base_url}info/").respond(json={"api_version": "1.2"})
-    assert run_main("registry-info") is None
+    assert run_main("registry", "info") is None
     assert "user" not in caplog.text
 
 

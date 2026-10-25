@@ -25,12 +25,12 @@ If your registry requires authentication, supply it with ``-a
 username:password``, or in your `netrc
 <https://www.gnu.org/software/inetutils/manual/html_node/The-_002enetrc-file.html>`__
 file (``~/.netrc``, or ``~/_netrc`` on Windows). Credentials are sent with every request, so wrong ones are refused even
-for reading. ``nbank registry-info`` shows the registry's version, which user
+for reading. ``nbank registry info`` shows the registry's version, which user
 you're connecting as, and what you can change:
 
 .. code:: bash
 
-   nbank -r https://gracula.psyc.virginia.edu/neurobank/ registry-info
+   nbank -r https://gracula.psyc.virginia.edu/neurobank/ registry info
 
 Creating an archive
 -------------------

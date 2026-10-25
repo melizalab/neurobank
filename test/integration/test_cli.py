@@ -26,7 +26,7 @@ def json_objects(text):
 
 
 def test_registry_info(cli, registry, caplog):
-    cli("registry-info")
+    cli("registry", "info")
     assert f"address: {registry.url}" in caplog.text
     assert "name: django-neurobank" in caplog.text
     user, _ = registry.auth
