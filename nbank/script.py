@@ -409,7 +409,8 @@ def make_parser() -> argparse.ArgumentParser:
 
     pp = sub.add_parser(
         "fetch",
-        help="fetch downloadable resources from the registry server",
+        help="copy resources from an archive on this host, or download them, "
+        "from the first location that works",
     )
     pp.set_defaults(func=fetch_resources)
     pp.add_argument("-f", "--force", help="overwrite target file", action="store_true")
