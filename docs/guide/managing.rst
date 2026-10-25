@@ -87,7 +87,7 @@ resources to cold storage is a multi-step process:
    straight from the tape drive (e.g. ``/dev/nst0`` after positioning the tape
    with ``mt fsf``), or from standard input (``-``).
 5. Register what's in the tape archive with neurobank by running ``nbank archive
-   register-tar -n <name_of_archive> <name_of_tape> <tape_index> <tar_file>``.
+   register tape -n <name_of_archive> <name_of_tape> <tape_index> <tar_file>``.
    This will create a record for the tape archive and update the records for the
    resources in the tar file. To avoid having to re-read the entire tape, this
    command works on the temporary tar file from step 2, which you can delete

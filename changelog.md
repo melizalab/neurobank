@@ -5,7 +5,8 @@ Requires django-neurobank 1.0 (registry API 2.x).
 ### Breaking
 
 - CLI commands are reorganized, with no aliases for the old names: `nbank init`
-  is `nbank archive init`.
+  is `nbank archive init`, and `nbank archive register-tar` is `nbank archive
+  register tape`, the first of a command per archive scheme.
 - Every request asks for registry API 2.0 (`Accept: application/json;
   version=2.0`), and nbank checks once per registry that `info/` reports API
   2.x, raising `nbank.util.RegistryVersionError` (an error message in the CLI)
@@ -34,8 +35,8 @@ Requires django-neurobank 1.0 (registry API 2.x).
   only hashes files. The `allow_directories` policy is gone (archives' `nbank.json`
   can keep it; it's ignored), and `archive.store_resource` refuses directories.
   `nbank check archive` reports a directory where a resource should be (status
-  `DIRECTORY`) without reading it, and `--fix` leaves it alone; `archive register-tar`
-  refuses a directory with a registered id, and skips its contents; `nbank
+  `DIRECTORY`) without reading it, and `--fix` leaves it alone; `archive register
+  tape` refuses a directory with a registered id, and skips its contents; `nbank
   verify` refuses a directory.
 - `nbank.util.registry_session()` yields an HTTP client for the registry that
   asks for API 2.0 and checks the registry's version. Code that changes the
@@ -61,7 +62,7 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 - New locations in neurobank archives record the stored file's name as their
   key: deposit, `copy`, `archive import-tar`, and adding a location with `check
-  archive --fix`. `archive register-tar` records each resource's tar member as
+  archive --fix`. `archive register tape` records each resource's tar member as
   the key of its tape location (#60).
 - `nbank check archive` (and `check all`) reports a resource whose location has
   no key, or a key that isn't the name of its file, as an error, and `--fix`
@@ -71,8 +72,8 @@ Requires django-neurobank 1.0 (registry API 2.x).
   archives, depositing, searching, accessing and managing resources, and
   references for the CLI and the Python API. The README is now a short tour.
 - nbank and `nbank.admin` run on Windows as clients: commands that write or check
-  archives (`init`, `deposit`, `copy`, `archive import-tar`, `prune` and
-  `register-tar`, `check archive` and `check all`, and `nbank.admin delete` and
+  archives (`archive init`, `deposit`, `copy`, `archive import-tar`, `prune` and
+  `register tape`, `check archive` and `check all`, and `nbank.admin delete` and
   `update-hash`) refuse there with a message, as do the library functions that
   write or check archives (`archive.ArchiveHostError`). Output is written as
   UTF-8, so names and notes print even when output is redirected. Credentials

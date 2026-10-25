@@ -569,10 +569,17 @@ def make_parser() -> argparse.ArgumentParser:
     add_check_archive_args(pp)
 
     pp = ppsub.add_parser(
-        "register-tar",
-        help="register a tar file as an archive in the registry",
+        "register",
+        help="register an archive stored elsewhere, and the resources in it",
     )
-    pp.set_defaults(func=register_tar)
+    regsub = pp.add_subparsers(title="schemes")
+
+    pp = regsub.add_parser(
+        "tape",
+        help="register a tar file written to tape as an archive, and the resources "
+        "in it. Refuses an archive that is already registered",
+    )
+    pp.set_defaults(func=register_tape)
     pp.add_argument(
         "-y",
         "--dry-run",
@@ -1543,7 +1550,7 @@ def check_all(args):
     return 1 if failed else 0
 
 
-def register_tar(args):
+def register_tape(args):
     archive_root = f"{args.tape_name}:{args.file_number}"
     archive_name = args.archive_name or f"{args.tape_name}-{args.file_number}"
     url, params = registry.add_archive(
@@ -2366,7 +2373,7 @@ _archive_commands = frozenset(
         copy_resources,
         import_tar,
         prune_archive,
-        register_tar,
+        register_tape,
         check_archive,
         check_all,
     }

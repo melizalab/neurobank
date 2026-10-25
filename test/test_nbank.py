@@ -1467,7 +1467,7 @@ def test_export_manifest_already_in_directory(exportable, tmp_path, caplog):
 
 @pytest.mark.posix
 @respx.mock(assert_all_mocked=True, assert_all_called=False)
-def test_register_tar_skips_manifest(respx_mock, tmp_path, caplog):
+def test_register_tape_skips_manifest(respx_mock, tmp_path, caplog):
     import tarfile
 
     looked_up = respx_mock.get(resource_url + "manifest/").respond(
@@ -1478,7 +1478,7 @@ def test_register_tar_skips_manifest(respx_mock, tmp_path, caplog):
     tar = tmp_path / "export.tar"
     with tarfile.open(tar, "w") as t:
         t.add(manifest, arcname="manifest.json")
-    run_main("archive", "register-tar", "-y", "tape01", "1", str(tar))
+    run_main("archive", "register", "tape", "-y", "tape01", "1", str(tar))
     assert not looked_up.called
     assert "manifest.json -> manifest, skipping" in caplog.text
 

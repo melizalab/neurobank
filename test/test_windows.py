@@ -98,7 +98,7 @@ def test_deposit_refused_before_the_registry(
         ["copy", "archive", "res_1"],
         ["archive", "import-tar", "file.tar", "archive"],
         ["archive", "prune", "archive", "list"],
-        ["archive", "register-tar", "tape01", "1", "file.tar"],
+        ["archive", "register", "tape", "tape01", "1", "file.tar"],
         ["archive", "check", "archive"],
         ["check", "archive", "archive"],
         ["check", "all"],

@@ -58,7 +58,7 @@ On Windows
 Archives rely on ownership, groups and permission bits, so they require a POSIX host (Linux or macOS),
 for creation and deposit, and the Windows client is limited to searching and updating the registry, and
 finding, fetching, exporting and verifying resources. The ``archive init``, ``deposit``, ``copy``, ``archive import-tar``,
-``prune`` and ``register-tar``, and ``check archive`` and ``check all`` will all refuse
+``prune`` and ``archive register tape``, and ``check archive`` and ``check all`` will all refuse
 to run on Windows.
 
 To read an archive on a share, map the share's directory of archives and give

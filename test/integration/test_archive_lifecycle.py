@@ -550,7 +550,7 @@ def test_prune_unknown_resource_and_archive(cli, archive, tmp_path, unique, capl
     assert "No such archive" in caplog.text
 
 
-def test_register_tar(
+def test_register_tape(
     cli,
     registry,
     client,
@@ -567,7 +567,7 @@ def test_register_tar(
     other.write_text("not in the registry")
     tar = make_tar(tmp_path / "archive.tar", stored_path(archive, name), other)
     tape = unique("tape")
-    assert cli("archive", "register-tar", "-n", tape, "tape01", "3", str(tar)) == 0
+    assert cli("archive", "register", "tape", "-n", tape, "tape01", "3", str(tar)) == 0
     assert set(core.describe(registry.url, name)["locations"]) == {archive.name, tape}
     # the key of a tape location is the tar member
     assert location_key(name, tape) == stored_path(archive, name).name
@@ -578,7 +578,7 @@ def test_register_tar(
     assert f"{other.name} -> no match in registry" in caplog.text
 
 
-def test_register_tar_refuses_a_directory(
+def test_register_tape_refuses_a_directory(
     plant_directory,
     cli,
     registry,
@@ -601,7 +601,7 @@ def test_register_tar_refuses_a_directory(
         t.add(nbank_archive.resource_path(archive.config, planted), arcname=planted)
         t.add(stored_path(archive, name), arcname=stored_path(archive, name).name)
     tape = unique("tape")
-    assert cli("archive", "register-tar", "-n", tape, tape, "1", str(tar)) == 1
+    assert cli("archive", "register", "tape", "-n", tape, tape, "1", str(tar)) == 1
     assert f"{planted} -> is a directory, which isn't a resource" in caplog.text
     assert core.describe(registry.url, planted)["locations"] == [archive.name]
     assert set(core.describe(registry.url, name)["locations"]) == {archive.name, tape}
@@ -618,13 +618,13 @@ def test_check_archive_reports_a_directory(
     assert "other layout errors: 1" in caplog.text
 
 
-def test_register_tar_dry_run(
+def test_register_tape_dry_run(
     cli, registry, client, archive, dtype, deposit_file, tmp_path, unique
 ):
     name = deposit_file(archive, dtype)
     tar = make_tar(tmp_path / "archive.tar", stored_path(archive, name))
     tape = unique("tape")
-    cli("archive", "register-tar", "-y", "-n", tape, "tape01", "3", str(tar))
+    cli("archive", "register", "tape", "-y", "-n", tape, "tape01", "3", str(tar))
     assert core.describe(registry.url, name)["locations"] == [archive.name]
     url = f"{registry.url}archives/{tape}/"
     assert client.get(url).status_code == 404
@@ -1092,7 +1092,9 @@ def tape(cli, archive, dtype, deposit_file, unique, tmp_path):
     tape_name = unique("tape")
     # archive roots (tape label and file number) must be unique too
     label = unique("label")
-    assert cli("archive", "register-tar", "-n", tape_name, label, "1", str(tar)) == 0
+    assert (
+        cli("archive", "register", "tape", "-n", tape_name, label, "1", str(tar)) == 0
+    )
     return SimpleNamespace(name=tape_name, tar=tar, resources=names)
 
 
