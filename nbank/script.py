@@ -765,7 +765,9 @@ def registry_info(args):
     log.info("  - address: %s", args.registry_url)
     url, params = registry.get_info(args.registry_url)
     # no version check, so this shows any registry's API version
-    with util.registry_session(auth=args.auth) as session:
+    with util.registry_session(
+        args.registry_url, auth=args.auth, check_version=False
+    ) as session:
         info = util.query_registry(session, url, params)
     # registries before API 1.3 don't say who the request is from
     has_user = "user" in info

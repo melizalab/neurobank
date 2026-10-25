@@ -425,11 +425,47 @@ def test_other_registry_versions_are_refused(mocked_api, unchecked, info):
 def test_queries_use_the_session_auth(mocked_api):
     get = mocked_api.get(info_url).respond(200, json={})
     bulk = mocked_api.post(f"{registry_url}bulk/").respond(200, text="")
-    with util.registry_session(auth=("user", "pw")) as session:
+    with util.registry_session(registry_url, auth=("user", "pw")) as session:
         util.query_registry(session, info_url)
         list(util.query_registry_bulk(session, f"{registry_url}bulk/", {}))
     for route in (get, bulk):
         assert route.calls.last.request.headers["Authorization"].startswith("Basic ")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://elsewhere.org/files/res_1/",
+        # the same host on another port or scheme is another origin
+        "https://meliza.org:8443/neurobank/download/res_1/",
+        "http://meliza.org/neurobank/download/res_1/",
+    ],
+)
+def test_session_auth_stays_with_the_registry(mocked_api, url):
+    route = mocked_api.get(url).respond(200, content=b"contents")
+    with util.registry_session(registry_url, auth=("user", "pw")) as session:
+        session.get(url)
+    assert "Authorization" not in route.calls.last.request.headers
+
+
+def test_download_from_another_host_has_no_credentials(mocked_api, tmp_path):
+    download = mocked_api.get("https://elsewhere.org/files/res_1/").respond(
+        200, content=b"contents"
+    )
+    location = {
+        "scheme": "https",
+        "root": "elsewhere.org/files",
+        "resource_name": "res_1",
+    }
+    with util.registry_session(registry_url, auth=("user", "pw")) as session:
+        util.fetch_resource(session, [location], tmp_path / "res_1")
+    assert "Authorization" not in download.calls.last.request.headers
+
+
+def test_session_auth_needs_the_registry_url():
+    with pytest.raises(ValueError, match="registry_url"):
+        with util.registry_session(auth=("user", "pw")):
+            pass
 
 
 def test_fetch_resource_verifies_hash(mocked_api, tmp_path):

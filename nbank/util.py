@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path, PurePath, PurePosixPath
 from typing import Any, BinaryIO
 
-from httpx import USE_CLIENT_DEFAULT, Client, Response, codes
+from httpx import URL, USE_CLIENT_DEFAULT, Auth, BasicAuth, Client, Response, codes
 
 # imported so that their resource classes register their location schemes
 from nbank import archive, registry, tape_archive  # noqa: F401
@@ -41,16 +41,44 @@ class RegistryVersionError(RuntimeError):
     """The registry doesn't support the API version this client needs."""
 
 
+class _RegistryAuth(Auth):
+    """Authenticates requests to the registry's host and port, and no others, so the
+    registry's credentials aren't sent to hosts that its locations name."""
+
+    def __init__(self, auth, registry_url: str):
+        self.auth = BasicAuth(*auth) if isinstance(auth, tuple) else auth
+        self.origin = _origin(URL(registry_url))
+
+    def sync_auth_flow(self, request):
+        if _origin(request.url) != self.origin:
+            yield request
+            return
+        yield from self.auth.sync_auth_flow(request)
+
+
+def _origin(url: URL) -> tuple[str, str, int | None]:
+    default = {"http": 80, "https": 443}.get(url.scheme)
+    return (url.scheme, url.host, url.port or default)
+
+
 @contextmanager
-def registry_session(registry_url: str | None = None, *, auth=None) -> Iterator[Client]:
+def registry_session(
+    registry_url: str | None = None, *, auth=None, check_version: bool = True
+) -> Iterator[Client]:
     """Yields an HTTP client that asks for API_VERSION in every request.
 
-    If registry_url is given, first checks that the registry supports it (see
+    auth (an httpx Auth or a (user, password) tuple) is used only for requests to
+    registry_url's host, and needs registry_url. If registry_url is given and
+    check_version is true, first checks that the registry supports API_VERSION (see
     check_registry_version).
     """
+    if auth is not None:
+        if registry_url is None:
+            raise ValueError("auth needs the registry_url it's for")
+        auth = _RegistryAuth(auth, registry_url)
     headers = {"Accept": f"application/json; version={API_VERSION}"}
     with Client(auth=auth, headers=headers) as session:
-        if registry_url is not None:
+        if registry_url is not None and check_version:
             check_registry_version(session, registry_url)
         yield session
 
