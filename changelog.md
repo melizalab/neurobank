@@ -8,7 +8,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
   version=2.0`), and nbank checks once per registry that `info/` reports API
   2.x, raising `nbank.util.RegistryVersionError` (an error message in the CLI)
   if it doesn't. `nbank registry-info` skips the check, so it can show any
-  registry's version.
+  registry's version. Versions before 1.0 can still read from a django-neurobank
+  1.0 registry (`search`, `info`, `locate`, `fetch`, `verify`, `check`), finding
+  files without keys, but the registry refuses their changes.
 - `core.get` and `core.find` are removed; use `core.find_resource(s)`, which
   return paths, or `nbank locate` for every location of a resource.
   `archive.iter_resources` is removed; use `check.check_archive_contents`.
