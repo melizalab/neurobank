@@ -24,4 +24,11 @@ def cache_dir() -> Path:
     return base / "neurobank"
 
 
+def host_dir(netloc: str) -> str:
+    """Returns the name of the cache's directory for downloads from netloc (host or
+    host:port). The port follows an '_', as Windows doesn't allow ':' in file
+    names."""
+    return netloc.replace(":", "_")
+
+
 __all__ = ["cache_dir"]

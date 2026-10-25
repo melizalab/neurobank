@@ -78,7 +78,7 @@ def test_download_into_cache(mocked_api, nbank_cache):
     respond_with(mocked_api, record("res_1", http_location("res_1")))
     download = mocked_api.get(f"{download_url}res_1/").respond(content=contents)
     path = find("res_1")["res_1"]
-    assert path == nbank_cache / "localhost:8000" / "res_1.txt"
+    assert path == nbank_cache / "localhost_8000" / "res_1.txt"
     assert path.read_bytes() == contents
     # the second time it's in the cache
     assert find("res_1") == {"res_1": path}
@@ -96,7 +96,7 @@ def test_failed_download_leaves_nothing(mocked_api, nbank_cache):
     respond_with(mocked_api, record("res_1", http_location("res_1")))
     mocked_api.get(f"{download_url}res_1/").respond(500)
     assert isinstance(find("res_1")["res_1"], FileNotFoundError)
-    assert list((nbank_cache / "localhost:8000").iterdir()) == []
+    assert list((nbank_cache / "localhost_8000").iterdir()) == []
 
 
 def test_unregistered(mocked_api, tmp_archive):
@@ -131,7 +131,7 @@ def test_verify_skips_a_bad_copy(mocked_api, tmp_archive):
 
 
 def test_verify_replaces_a_bad_cached_file(mocked_api, nbank_cache):
-    cached = nbank_cache / "localhost:8000" / "res_1.txt"
+    cached = nbank_cache / "localhost_8000" / "res_1.txt"
     cached.parent.mkdir(parents=True)
     cached.write_bytes(b"corrupted")
     respond_with(mocked_api, record("res_1", http_location("res_1")))
@@ -144,7 +144,7 @@ def test_verify_refuses_a_bad_download(mocked_api, nbank_cache):
     respond_with(mocked_api, record("res_1", http_location("res_1")))
     mocked_api.get(f"{download_url}res_1/").respond(content=b"corrupted")
     assert isinstance(find("res_1", verify=True)["res_1"], FileNotFoundError)
-    assert list((nbank_cache / "localhost:8000").iterdir()) == []
+    assert list((nbank_cache / "localhost_8000").iterdir()) == []
 
 
 def test_requests_are_batched(mocked_api, monkeypatch, tmp_archive):
@@ -184,6 +184,11 @@ def test_cache_dir(monkeypatch, tmp_path):
     assert cache.cache_dir() == tmp_path / "xdg" / "neurobank"
 
 
+def test_cache_host_dir():
+    assert cache.host_dir("localhost:8000") == "localhost_8000"
+    assert cache.host_dir("localhost") == "localhost"
+
+
 class CutOff(httpx.SyncByteStream):
     def __iter__(self):
         yield contents[:4]
@@ -196,7 +201,7 @@ def test_interrupted_download_leaves_nothing(mocked_api, nbank_cache):
         return_value=httpx.Response(200, stream=CutOff())
     )
     assert isinstance(find("res_1")["res_1"], FileNotFoundError)
-    assert list((nbank_cache / "localhost:8000").iterdir()) == []
+    assert list((nbank_cache / "localhost_8000").iterdir()) == []
 
 
 class Fails(httpx.SyncByteStream):
@@ -211,4 +216,4 @@ def test_download_that_raises_leaves_nothing(mocked_api, nbank_cache):
     download.mock(return_value=httpx.Response(200, stream=Fails()))
     with pytest.raises(RuntimeError):
         find("res_1")
-    assert list((nbank_cache / "localhost:8000").iterdir()) == []
+    assert list((nbank_cache / "localhost_8000").iterdir()) == []

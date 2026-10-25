@@ -463,7 +463,7 @@ def _find_resource(
     import tempfile
     from urllib.parse import urlparse
 
-    from nbank.cache import cache_dir
+    from nbank.cache import cache_dir, host_dir
     from nbank.util import HttpResource, hash, parse_location
 
     id = record["name"]
@@ -479,7 +479,7 @@ def _find_resource(
     for location in record["locations"]:
         resource = parse_location(location, alt_base=alt_base, http_session=session)
         if isinstance(resource, HttpResource):
-            target_dir = cache_dir() / urlparse(resource.url).netloc
+            target_dir = cache_dir() / host_dir(urlparse(resource.url).netloc)
             target = target_dir / record.get("filename", id)
             if target.exists():
                 if matches(target):

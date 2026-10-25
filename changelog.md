@@ -70,7 +70,10 @@ Requires django-neurobank 1.0 (registry API 2.x).
   UTF-8, so names and notes print even when output is redirected. Credentials
   are read from `~/_netrc` when there's no `~/.netrc`. `nbank locate -L` says
   when Windows won't let you create symbolic links, and reports a link it can't
-  make rather than failing with a traceback.
+  make rather than failing with a traceback. Downloads work there: URLs are
+  built with forward slashes, and the cache's directory for a host with a port
+  is named `host_port` on every platform, as Windows doesn't allow `:` in file
+  names.
 - `nbank locate`, `fetch`, `export` and `copy` take `--alt-base DIR` (or the
   `NBANK_ALT_BASE` environment variable), to read archives mounted under `DIR`
   instead of at their registered roots, as `find_resources(alt_base=)` does.

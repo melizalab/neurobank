@@ -7,7 +7,7 @@ import json
 import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from pathlib import Path, PurePath
+from pathlib import Path, PurePath, PurePosixPath
 from typing import Any, BinaryIO
 
 from httpx import USE_CLIENT_DEFAULT, Client, Response, codes
@@ -92,12 +92,13 @@ class HttpResource(FetchableResource):
             "https",
         ), "location scheme is not 'http' or 'https'"
         self.session = session
-        root = Path(location["root"])
-        # the root contains the netloc and the base path
+        # the root contains the netloc and the base path; a URL path has forward
+        # slashes on any host
+        root = PurePosixPath(location["root"])
         netloc = root.parts[0]
         # this will strip off any trailing slash
         self.id = location["resource_name"]
-        path = Path(*root.parts[1:], self.id)
+        path = PurePosixPath(*root.parts[1:], self.id)
         self.url = urlunparse(
             (
                 location["scheme"],
