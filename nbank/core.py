@@ -99,11 +99,13 @@ def deposit(
     - httpx.ConnectError: the registry can't be reached
     - KeyError: a file for an id appeared after the check, as the archive and registry
       disagree
+    - archive.ArchiveHostError: this is a Windows host, where archives aren't written
     """
     from nbank import canonical_zip, readers, util
     from nbank.archive import (
         get_config,
         new_resource_path,
+        require_posix,
         staging_dir,
         store_resource,
         verify_no_symlinks,
@@ -119,6 +121,7 @@ def deposit(
         get_datatypes,
     )
 
+    require_posix("deposit")
     try:
         archive_cfg = get_config(archive_path)
     except FileNotFoundError as err:

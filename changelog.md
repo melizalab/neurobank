@@ -62,6 +62,11 @@ Requires django-neurobank 1.0 (registry API 2.x).
 - Documentation on Read the Docs (https://neurobank.readthedocs.io): guides to
   archives, depositing, searching, accessing and managing resources, and
   references for the CLI and the Python API. The README is now a short tour.
+- nbank and `nbank.admin` run on Windows as clients: commands that write or check
+  archives (`init`, `deposit`, `copy`, `archive import-tar`, `prune` and
+  `register-tar`, `check archive` and `check all`, and `nbank.admin delete` and
+  `update-hash`) refuse there with a message, as do the library functions that
+  write or check archives (`archive.ArchiveHostError`).
 - `nbank locate`, `fetch`, `export` and `copy` take `--alt-base DIR` (or the
   `NBANK_ALT_BASE` environment variable), to read archives mounted under `DIR`
   instead of at their registered roots, as `find_resources(alt_base=)` does.

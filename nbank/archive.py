@@ -21,6 +21,22 @@ from nbank.types import location_scheme
 log = logging.getLogger("nbank")  # root logger
 
 ArchiveConfig = NewType("ArchiveConfig", dict)
+
+
+class ArchiveHostError(RuntimeError):
+    """An archive was to be written or checked on a host that can't (Windows)."""
+
+
+def require_posix(action: str) -> None:
+    """Raises ArchiveHostError, saying what couldn't be done, unless this is a POSIX
+    host."""
+    if not _posix:
+        raise ArchiveHostError(
+            f"unable to {action}: archives are written and checked on a POSIX host "
+            "(Linux or macOS), not on Windows"
+        )
+
+
 _README_fname = "README.md"
 _config_fname = "nbank.json"
 _config_schema = "https://melizalab.github.io/neurobank/config.json#"
@@ -31,6 +47,9 @@ _default_umask = 0o002
 # Linux needs setgid on directories for new files to inherit their group. BSD
 # and macOS always inherit the group of the parent directory.
 _setgid = stat.S_ISGID if sys.platform.startswith("linux") else 0
+# archives rely on POSIX ownership, groups and mode bits, so they're only written and
+# checked on POSIX hosts; Windows hosts can read them
+_posix = os.name == "posix"
 _README = """
 This directory contains a [neurobank](https://github.com/melizalab/neurobank)
 data management archive. The following files and directories are part of the archive:
@@ -112,9 +131,10 @@ def create(
     read-only. policies can set auto_identifiers, auto_id_type, or require_hash.
 
     Creates archive_path and its parents as needed. Raises FileExistsError if any file
-    it would create already exists, ValueError if group doesn't exist, and OSError for
-    other failures.
+    it would create already exists, ValueError if group doesn't exist,
+    ArchiveHostError on Windows, and OSError for other failures.
     """
+    require_posix("create an archive")
     import grp
     import pwd
     from os import chown, getgid, getuid
@@ -308,9 +328,10 @@ def _can_remove(path: Path) -> bool:
     """True if this process can remove the resource at path.
 
     For a directory (not a resource, but one may be left in an archive), this includes
-    making read-only directories inside it writable.
+    making read-only directories inside it writable. Always False on Windows, where
+    archives aren't written.
     """
-    if not os.access(path.parent, os.W_OK | os.X_OK):
+    if not _posix or not os.access(path.parent, os.W_OK | os.X_OK):
         return False
     if not path.is_dir() or path.is_symlink():
         return True
@@ -326,8 +347,9 @@ def remove(path: Path) -> None:
 
     A directory, which may be left in an archive, is removed with everything in it,
     making read-only directories inside it writable first. Raises PermissionError if
-    that isn't allowed.
+    that isn't allowed, and ArchiveHostError on Windows.
     """
+    require_posix("remove a file from an archive")
     if not path.is_dir() or path.is_symlink():
         path.unlink()
         return
@@ -393,14 +415,15 @@ def store_resource(cfg: ArchiveConfig, src: Path, *, id: str | None = None) -> P
     """Moves src into the archive as id and returns the stored path.
 
     id defaults to the name of src. Doesn't register anything: the caller makes sure id
-    is valid and registered. The stored name keeps the extension of src if the policy
-    keeps extensions. If the directory holding src isn't writable, src is copied instead
+    is valid and registered. The stored name keeps the extension of src. If the
+    directory holding src isn't writable, src is copied instead
     and left in place, with a warning. Policies come from cfg, not from the archive's
     nbank.json.
 
-    Raises KeyError if a file is already stored for id, and TypeError if src is a
-    directory.
+    Raises KeyError if a file is already stored for id, TypeError if src is a
+    directory, and ArchiveHostError on Windows.
     """
+    require_posix("store a resource in an archive")
     if src.is_dir():
         raise TypeError(f"'{src}' is a directory; zip it first")
 
@@ -503,6 +526,7 @@ def permission_fixer(cfg: ArchiveConfig, quiet: bool = False):
 
 
 __all__ = [
+    "ArchiveHostError",
     "create",
     "get_config",
     "id_stub",

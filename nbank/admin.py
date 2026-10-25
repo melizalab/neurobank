@@ -18,7 +18,7 @@ from typing import TextIO
 
 import httpx
 
-from nbank import __version__, core, registry, util
+from nbank import __version__, archive, core, registry, util
 from nbank.script import setup_log, userpwd
 
 log = logging.getLogger("nbank")  # root logger
@@ -342,6 +342,13 @@ if __name__ == "__main__":
         )
     setup_log(log, args.debug)
     log.info("nbank admin version: %s", __version__)
+    # delete and update-hash work with the files in archives
+    if not archive._posix and args.func in (delete_resources, update_hashes):
+        log.error(
+            "error: archives are written and checked on a POSIX host (Linux or "
+            "macOS), not on Windows"
+        )
+        raise SystemExit(1)
     try:
         args.auth = core.make_auth(args.auth)
     except NetrcParseError as err:

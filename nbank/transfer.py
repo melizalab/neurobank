@@ -149,6 +149,9 @@ def _check_hash(sha1: str, registered: str | None) -> bool:
 
 
 def _fsync_dir(path: Path) -> None:
+    # Windows can't open a directory (nor are archives written there)
+    if os.name != "posix":
+        return
     fd = os.open(path, os.O_RDONLY)
     try:
         os.fsync(fd)
@@ -218,12 +221,14 @@ def receive_file(
     The data is staged beside its destination and moved into place only if it matches
     sha1, the registered hash (or sha1 is None); otherwise nothing is left behind.
     progress is called with name and the bytes read so far. Raises TransferError if the
-    resource can't be stored, and passes TarReadError on.
+    resource can't be stored, ArchiveHostError on Windows unless cfg is None, and
+    passes TarReadError on.
     """
     report = _progress_for(progress, name)
     if cfg is None:
         digest = util.hash_stream(source, progress=report)
         return Received(None, digest, _check_hash(digest, sha1))
+    nbank_archive.require_posix("store a resource in an archive")
     target = _destination(cfg, id, name)
     partial = target.parent / _partial_name(target.name)
     created = False

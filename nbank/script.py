@@ -6,7 +6,6 @@
 import argparse
 import concurrent.futures
 import datetime
-import grp
 import json
 import logging
 import os
@@ -704,6 +703,13 @@ def main(argv=None):
         log.error("error: unable to use netrc file: %s", err.msg)
         return 1
 
+    if not archive._posix and args.func in _archive_commands:
+        log.error(
+            "error: archives are written and checked on a POSIX host (Linux or "
+            "macOS), not on Windows"
+        )
+        return 1
+
     # most commands require a registry, so check it here once
     if args.registry_url is None and args.func not in (
         store_resources,
@@ -769,6 +775,8 @@ def init_archive(args):
         args.name = args.directory.name
     # check before registering, so a problem doesn't leave a registered archive
     if args.group is not None:
+        import grp
+
         try:
             grp.getgrnam(args.group)
         except KeyError:
@@ -2317,6 +2325,21 @@ def check_file_metadata(path: Path, record: dict, found_readers: dict) -> bool:
         return False
     print(f"{path}: metadata OK")
     return True
+
+
+# commands that write or check archives, which can't be done on Windows
+_archive_commands = frozenset(
+    {
+        init_archive,
+        store_resources,
+        copy_resources,
+        import_tar,
+        prune_archive,
+        register_tar,
+        check_archive,
+        check_all,
+    }
+)
 
 
 # Variables:

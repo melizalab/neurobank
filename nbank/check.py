@@ -4,9 +4,7 @@
 """Integrity checks for archives and the registry."""
 
 import enum
-import grp
 import os
-import pwd
 import stat
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
@@ -211,8 +209,10 @@ def check_archive_contents(
     archive; a resource can have more than one. check_hash=False skips reading files.
     keys, {name: key or None}, gives the key of each resource's location in the
     archive, which should be the name of its file (NO_KEY, WRONG_KEY); without it,
-    keys aren't checked. Doesn't contact the registry.
+    keys aren't checked. Doesn't contact the registry. Raises archive.ArchiveHostError
+    on Windows.
     """
+    archive.require_posix("check an archive")
     remaining = dict(expected)
     files, problems = _scan_archive(archive_path)
     yield from problems
@@ -307,6 +307,8 @@ def recheck_unregistered(
 
 
 def _user_name(uid: int) -> str:
+    import pwd
+
     try:
         return pwd.getpwuid(uid).pw_name
     except KeyError:
@@ -314,6 +316,8 @@ def _user_name(uid: int) -> str:
 
 
 def _group_name(gid: int) -> str:
+    import grp
+
     try:
         return grp.getgrgid(gid).gr_name
     except KeyError:
@@ -387,8 +391,13 @@ def check_archive_permissions(
     archive.mode_policy. Symbolic links, stray files, leftover partial transfers, and
     directories that can't be listed are skipped; check_archive_contents reports them.
     With fix, fixes what it can (ownership needs root) and marks those findings fixed.
-    Raises ValueError if the policy's user or group doesn't exist.
+    Raises ValueError if the policy's user or group doesn't exist, and
+    archive.ArchiveHostError on Windows.
     """
+    archive.require_posix("check an archive")
+    import grp
+    import pwd
+
     access = cfg["policy"]["access"]
     user = access.get("user")
     try:
