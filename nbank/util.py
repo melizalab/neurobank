@@ -16,6 +16,7 @@ from httpx import URL, USE_CLIENT_DEFAULT, Auth, BasicAuth, Client, Response, co
 from nbank import archive, registry, tape_archive  # noqa: F401
 from nbank.types import (
     FetchableResource,
+    LocationContext,
     NotFetchableError,
     Resource,
     location_class,
@@ -109,8 +110,8 @@ class HttpResource(FetchableResource):
     schemes = ("http", "https")
 
     @classmethod
-    def from_location(cls, location, *, alt_base=None, http_session=None):
-        return cls(location, http_session)
+    def from_location(cls, location, context):
+        return cls(location, context.http_session)
 
     def __init__(self, location: Mapping[str, str], session: Client | None = None):
         from urllib.parse import urlunparse
@@ -178,7 +179,8 @@ def parse_location(
     if cls is None:
         log.debug("Unrecognized location scheme %s", scheme)
         return None
-    return cls.from_location(location, alt_base=alt_base, http_session=http_session)
+    context = LocationContext(alt_base=alt_base, http_session=http_session)
+    return cls.from_location(location, context)
 
 
 def id_from_fname(fname: Path | str) -> str:

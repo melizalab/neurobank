@@ -91,7 +91,7 @@ def other_scheme(monkeypatch):
             self.host = location["root"]
 
         @classmethod
-        def from_location(cls, location, **kwargs):
+        def from_location(cls, location, context):
             return cls(location)
 
         def fetch(self, target):

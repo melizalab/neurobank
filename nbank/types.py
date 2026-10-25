@@ -4,8 +4,12 @@
 """Types used by other modules"""
 
 from abc import abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from httpx import Client
 
 
 class NotFetchableError(Exception):
@@ -48,15 +52,29 @@ class RemoteResource(FetchableResource, Protocol):
 
 Resource = FetchableResource | NonFetchableResource
 
+
+@dataclass(frozen=True)
+class LocationContext:
+    """What a location scheme's class may use to build a resource for a location.
+
+    alt_base replaces the directory that contains each neurobank archive (see
+    archive.Resource). http_session is the registry's client, for fetching over http(s);
+    it sends the registry's credentials only to the registry.
+    """
+
+    alt_base: Path | None = None
+    http_session: "Client | None" = None
+
+
 _location_schemes: dict[str, type] = {}
 
 
 def location_scheme(cls: type) -> type:
     """Class decorator that registers cls to build resources for its location schemes.
 
-    cls needs a `schemes` tuple and a classmethod `from_location(location, *, alt_base,
-    http_session)` that returns a resource, or None if it can't be reached from this
-    host. Raises ValueError if a scheme already has a class.
+    cls needs a `schemes` tuple and a classmethod `from_location(location, context)` that
+    returns a resource, or None if it can't be reached from this host; context is a
+    LocationContext. Raises ValueError if a scheme already has a class.
     """
     for scheme in cls.schemes:
         existing = _location_schemes.get(scheme)

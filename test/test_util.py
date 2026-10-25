@@ -177,7 +177,7 @@ def test_register_new_location_scheme(monkeypatch):
             self.id = id
 
         @classmethod
-        def from_location(cls, location, *, alt_base=None, http_session=None):
+        def from_location(cls, location, context):
             return cls(location["resource_name"])
 
     location = {"scheme": "dummy", "root": "somewhere", "resource_name": "res_1"}

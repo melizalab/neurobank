@@ -44,11 +44,11 @@ class Resource:
         # TODO: set local to True if alt_base is set?
 
     @classmethod
-    def from_location(cls, location, *, alt_base=None, http_session=None):
+    def from_location(cls, location, context):
         return cls(
             location["root"],
             location["resource_name"],
-            alt_base,
+            context.alt_base,
             member=location.get("key"),
         )
 

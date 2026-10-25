@@ -5,7 +5,8 @@ import stat
 
 import pytest
 
-from nbank import archive, check
+from nbank import archive, check, util
+from nbank.types import LocationContext
 from test import place_resource, running_as_root, skip_unless_posix
 
 dummy_registry = "https://localhost:8000/neurobank"
@@ -82,7 +83,9 @@ def stored_wav(archive_layout):
 
 def test_location_key_names_the_file(stored_wav):
     path, location = stored_wav
-    resource = archive.Resource.from_location({**location, "key": "res_1.wav"})
+    resource = archive.Resource.from_location(
+        {**location, "key": "res_1.wav"}, LocationContext()
+    )
     assert resource.path == path
 
 
@@ -101,7 +104,10 @@ def test_location_key_names_the_file(stored_wav):
 )
 def test_location_key_not_found(stored_wav, key):
     _, location = stored_wav
-    assert archive.Resource.from_location({**location, "key": key}) is None
+    assert (
+        archive.Resource.from_location({**location, "key": key}, LocationContext())
+        is None
+    )
 
 
 def test_location_key_alt_base(stored_wav, archive_layout, tmp_path):
@@ -110,9 +116,7 @@ def test_location_key_alt_base(stored_wav, archive_layout, tmp_path):
     alt_base = tmp_path / "mnt"
     alt_base.mkdir()
     archive_layout["path"].rename(alt_base / "archive")
-    resource = archive.Resource.from_location(
-        {**location, "key": "res_1.wav"}, alt_base=alt_base
-    )
+    resource = util.parse_location({**location, "key": "res_1.wav"}, alt_base=alt_base)
     assert resource.path == alt_base / path.relative_to(tmp_path)
 
 

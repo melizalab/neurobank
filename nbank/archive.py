@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any, NewType
 
-from nbank.types import location_scheme
+from nbank.types import LocationContext, location_scheme
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -276,9 +276,7 @@ class Resource:
             raise FileNotFoundError(f"resource '{self.path}' does not exist")
 
     @classmethod
-    def from_location(
-        cls, location, *, alt_base=None, http_session=None
-    ) -> "Resource | None":
+    def from_location(cls, location, context: LocationContext) -> "Resource | None":
         """Returns None if the location has no key, or the archive or the resource
         isn't on this host."""
         key = location.get("key")
@@ -290,7 +288,9 @@ class Resource:
             )
             return None
         try:
-            return cls(location["root"], location["resource_name"], key, alt_base)
+            return cls(
+                location["root"], location["resource_name"], key, context.alt_base
+            )
         except FileNotFoundError:
             return None
 
