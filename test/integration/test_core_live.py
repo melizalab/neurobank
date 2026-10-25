@@ -316,6 +316,8 @@ def test_search_streams_more_than_a_page(registry, client, register, unique):
     url, _ = reg.find_resource(registry.url)
     accept = f"{util.NDJSON}; version={util.API_VERSION}"
     r = client.get(url, params={"name": tag}, headers={"Accept": accept})
+    # a registry that can't stream answers 406
+    assert r.status_code == 200, r.text
     assert r.headers["content-type"] == util.NDJSON
     assert len(r.text.splitlines()) == 12
 
