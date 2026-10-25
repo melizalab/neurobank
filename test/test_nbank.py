@@ -837,6 +837,41 @@ def test_update_with_netrc(mocked_api, netrc_auth):
     assert updated == [{"metadata": metadata, "name": name}]
 
 
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    return home
+
+
+def auth_header(auth):
+    request = httpx.Request("GET", f"{base_url}/resources/")
+    return next(auth.auth_flow(request)).headers.get("Authorization")
+
+
+@pytest.mark.parametrize("name", [".netrc", "_netrc"])
+def test_make_auth_reads_netrc(home, name):
+    netrc = home / name
+    netrc.write_text("machine localhost\nlogin {}\npassword {}\n".format(*auth))
+    netrc.chmod(0o600)
+    assert auth_header(core.make_auth(None)) == f"Basic {auth_enc}"
+
+
+def test_make_auth_prefers_dot_netrc(home):
+    (home / ".netrc").write_text(
+        "machine localhost\nlogin {}\npassword {}\n".format(*auth)
+    )
+    (home / ".netrc").chmod(0o600)
+    (home / "_netrc").write_text("machine localhost\nlogin other\npassword other\n")
+    assert auth_header(core.make_auth(None)) == f"Basic {auth_enc}"
+
+
+def test_make_auth_without_netrc(home):
+    assert core.make_auth(None) is None
+
+
 def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
     root = tmp_archive["path"]
     src = tmp_path / "res_1"

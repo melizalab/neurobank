@@ -25,13 +25,22 @@ _auto_id_attempts = 3
 
 
 def make_auth(auth: RegistryAuth) -> httpx.Auth | None:
-    """Converts a RegistryAuth to an httpx Auth, using .netrc if auth is None."""
+    """Converts a RegistryAuth to an httpx Auth, using a netrc file if auth is None.
+
+    The netrc file is ~/.netrc, or ~/_netrc (the Windows name) if there's no
+    ~/.netrc. None if there's neither.
+    """
     if isinstance(auth, httpx.Auth):
         return auth
     if isinstance(auth, tuple):
         return httpx.BasicAuth(*auth)
     try:
+        # the default file, so that netrc checks its permissions
         return httpx.NetRCAuth()
+    except FileNotFoundError:
+        pass
+    try:
+        return httpx.NetRCAuth(Path.home() / "_netrc")
     except FileNotFoundError:
         pass
 
