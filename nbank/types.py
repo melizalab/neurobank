@@ -5,7 +5,7 @@
 
 from abc import abstractmethod
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 
 class NotFetchableError(Exception):
@@ -36,6 +36,14 @@ class LocalResource(FetchableResource, Protocol):
     def link(self, target: Path) -> Path:
         """Links the resource into target; returns the path of the link."""
         pass
+
+
+@runtime_checkable
+class RemoteResource(FetchableResource, Protocol):
+    """A resource downloaded from another host. find_resources caches downloads in a
+    directory for the host (host or host:port)."""
+
+    host: str
 
 
 Resource = FetchableResource | NonFetchableResource

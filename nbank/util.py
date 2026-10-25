@@ -124,6 +124,7 @@ class HttpResource(FetchableResource):
         # slashes on any host
         root = PurePosixPath(location["root"])
         netloc = root.parts[0]
+        self.host = netloc
         # this will strip off any trailing slash
         self.id = location["resource_name"]
         path = PurePosixPath(*root.parts[1:], self.id)

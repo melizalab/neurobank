@@ -74,6 +74,52 @@ def test_local_archive(mocked_api, tmp_archive):
     assert find("res_1") == {"res_1": path}
 
 
+@pytest.fixture
+def other_scheme(monkeypatch):
+    """Registers a scheme whose resources are downloaded from another host (like a
+    public repository), and returns the files it has served."""
+    from nbank import types
+
+    monkeypatch.setattr(types, "_location_schemes", dict(types._location_schemes))
+    served = []
+
+    @types.location_scheme
+    class Repository:
+        schemes = ("repository",)
+
+        def __init__(self, location):
+            self.host = location["root"]
+
+        @classmethod
+        def from_location(cls, location, **kwargs):
+            return cls(location)
+
+        def fetch(self, target):
+            target.write_bytes(contents)
+            served.append(target)
+            return target
+
+    return served
+
+
+def test_other_remote_scheme_downloads_into_cache(
+    mocked_api, nbank_cache, other_scheme
+):
+    location = {
+        "scheme": "repository",
+        "root": "repo.org:8080",
+        "resource_name": "res_1",
+    }
+    respond_with(mocked_api, record("res_1", location))
+    path = find("res_1")["res_1"]
+    assert path == nbank_cache / cache.host_dir("repo.org:8080") / "res_1.txt"
+    assert path.read_bytes() == contents
+    # cached after the first download
+    respond_with(mocked_api, record("res_1", location))
+    assert find("res_1")["res_1"] == path
+    assert len(other_scheme) == 1
+
+
 def test_download_into_cache(mocked_api, nbank_cache):
     respond_with(mocked_api, record("res_1", http_location("res_1")))
     download = mocked_api.get(f"{download_url}res_1/").respond(content=contents)

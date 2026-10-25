@@ -461,10 +461,10 @@ def _find_resource(
     locations in order (see find_resources). Raises FileNotFoundError if none works."""
     import os
     import tempfile
-    from urllib.parse import urlparse
 
     from nbank.cache import cache_dir, host_dir
-    from nbank.util import HttpResource, hash, parse_location
+    from nbank.types import RemoteResource
+    from nbank.util import hash, parse_location
 
     id = record["name"]
 
@@ -478,8 +478,8 @@ def _find_resource(
 
     for location in record["locations"]:
         resource = parse_location(location, alt_base=alt_base, http_session=session)
-        if isinstance(resource, HttpResource):
-            target_dir = cache_dir() / host_dir(urlparse(resource.url).netloc)
+        if isinstance(resource, RemoteResource):
+            target_dir = cache_dir() / host_dir(resource.host)
             target = target_dir / record.get("filename", id)
             if target.exists():
                 if matches(target):
@@ -488,7 +488,7 @@ def _find_resource(
                 target.unlink()
             if not download:
                 continue
-            log.debug("%s: downloading from %s", id, resource.url)
+            log.debug("%s: downloading from %s", id, resource)
             target_dir.mkdir(parents=True, exist_ok=True)
             # a partial download never has the cached file's name
             fd, partial = tempfile.mkstemp(dir=target_dir, prefix=f".{id}.")
@@ -500,7 +500,7 @@ def _find_resource(
                     partial.replace(target)
                     return target
             except httpx.HTTPError as err:
-                log.warning("%s: unable to download from %s: %s", id, resource.url, err)
+                log.warning("%s: unable to download from %s: %s", id, resource, err)
             finally:
                 partial.unlink(missing_ok=True)
         elif (path := getattr(resource, "path", None)) is not None and path.exists():
