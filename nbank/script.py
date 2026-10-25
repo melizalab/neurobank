@@ -4,6 +4,7 @@
 """Script entry points for neurobank"""
 
 import argparse
+import codecs
 import concurrent.futures
 import datetime
 import json
@@ -23,6 +24,20 @@ import httpx
 from nbank import __version__, archive, check, core, readers, registry, transfer, util
 
 log = logging.getLogger("nbank")  # root logger
+
+
+def utf8_console():
+    """Writes standard output and error as UTF-8 when they use another encoding.
+
+    Windows writes redirected output in its ANSI code page, which can't hold every
+    name or note in the registry; characters a stream can't take are replaced.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        encoding = getattr(stream, "encoding", None)
+        if encoding is None or not hasattr(stream, "reconfigure"):
+            continue
+        if codecs.lookup(encoding).name != "utf-8":
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def setup_log(log, debug=False):
@@ -686,6 +701,7 @@ def main(argv=None):
         p.print_usage()
         return 0
 
+    utf8_console()
     setup_log(log, args.debug)
     log.debug("version: %s", __version__)
     log.debug("run time: %s", datetime.datetime.now())

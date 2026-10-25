@@ -66,7 +66,8 @@ Requires django-neurobank 1.0 (registry API 2.x).
   archives (`init`, `deposit`, `copy`, `archive import-tar`, `prune` and
   `register-tar`, `check archive` and `check all`, and `nbank.admin delete` and
   `update-hash`) refuse there with a message, as do the library functions that
-  write or check archives (`archive.ArchiveHostError`).
+  write or check archives (`archive.ArchiveHostError`). Output is written as
+  UTF-8, so names and notes print even when output is redirected.
 - `nbank locate`, `fetch`, `export` and `copy` take `--alt-base DIR` (or the
   `NBANK_ALT_BASE` environment variable), to read archives mounted under `DIR`
   instead of at their registered roots, as `find_resources(alt_base=)` does.

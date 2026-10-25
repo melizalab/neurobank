@@ -19,7 +19,7 @@ from typing import TextIO
 import httpx
 
 from nbank import __version__, archive, core, registry, util
-from nbank.script import setup_log, userpwd
+from nbank.script import setup_log, userpwd, utf8_console
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -340,6 +340,7 @@ if __name__ == "__main__":
             f"supply a registry url with '-r' or {registry._env_registry} "
             "environment variable"
         )
+    utf8_console()
     setup_log(log, args.debug)
     log.info("nbank admin version: %s", __version__)
     # delete and update-hash work with the files in archives
