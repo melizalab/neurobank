@@ -49,11 +49,11 @@ def test_check_archive_command(monkeypatch):
         log.setLevel(level)
     assert status == 1
     [args] = received
-    assert (args.fix, args.no_hash, args.verbose, args.path) == (
+    assert (args.fix, args.no_hash, args.verbose, args.archive) == (
         True,
         True,
         False,
-        Path("archive"),
+        "archive",
     )
 
 

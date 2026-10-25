@@ -5,7 +5,9 @@ Checking archives
 -----------------
 
 You can check whether an archive contains all the files it's supposed to by
-running ``nbank check archive <path_to_archive>``. This command compares each
+running ``nbank check archive <path_to_archive>``, or with the archive's name in
+the registry instead of its path (an existing directory is taken as a path).
+This command compares each
 resource in the archive to its record in the registry and gives a summary of any
 resources missing from the archive and files that don't have matches in the
 registry (which might indicate corrupted data). It also checks that the

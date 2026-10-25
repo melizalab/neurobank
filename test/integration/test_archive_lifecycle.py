@@ -155,6 +155,33 @@ def test_check_unregistered_archive(cli, registry, tmp_path, caplog):
     assert "No archive associated with" in caplog.text
 
 
+def test_check_archive_by_name(cli, archive, dtype, deposit_file, caplog):
+    deposit_file(archive, dtype, hash=True)
+    assert cli("check", "archive", archive.name) == 0
+    assert f"archive {archive.name}: {archive.path}" in caplog.text
+    check_summary(caplog, 1, 0, 0, 0)
+
+
+def test_check_archive_by_name_refused(cli, registry, client, unique, caplog):
+    def add_archive(name, scheme, root):
+        url, body = nbank_registry.add_archive(registry.url, name, scheme, root)
+        client.post(url, json=body).raise_for_status()
+
+    missing = unique("arch")
+    assert cli("check", "archive", missing) == 1
+    assert f"'{missing}' is not a directory or an archive in the registry" in (
+        caplog.text
+    )
+    unmounted = unique("arch")
+    add_archive(unmounted, "neurobank", f"/nonexistent/{unmounted}")
+    assert cli("check", "archive", unmounted) == 1
+    assert f"/nonexistent/{unmounted} is not on this host" in caplog.text
+    tape = unique("tape")
+    add_archive(tape, "tape", f"{tape}:1")
+    assert cli("check", "archive", tape) == 1
+    assert "checking tape archives isn't supported" in caplog.text
+
+
 def test_check_ignores_archive_with_similar_name(
     cli, client, registry, register, archive, tmp_path, caplog
 ):

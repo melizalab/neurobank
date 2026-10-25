@@ -648,7 +648,11 @@ def make_parser() -> argparse.ArgumentParser:
     )
     pp.set_defaults(func=check_archive)
     add_check_options(pp)
-    pp.add_argument("path", type=Path, help="path of the archive to check")
+    pp.add_argument(
+        "archive",
+        help="path of the archive to check, or its name in the registry. "
+        "An existing directory is taken as a path",
+    )
 
     pp = ppsub.add_parser(
         "all",
@@ -1095,14 +1099,17 @@ def check_archive(args):
     Files must be readable and match their registry records and hashes, every resource
     registered to the archive must have a file, the key of each resource's location
     must be the name of its file, and ownership and permissions must follow the policy
-    (keys and permissions are fixed with --fix). Returns 1 if there are errors that
-    weren't fixed or the check couldn't be run.
+    (keys and permissions are fixed with --fix). The archive is a path if it's an
+    existing directory, and otherwise a name in the registry. Returns 1 if there are
+    errors that weren't fixed or the check couldn't be run.
     """
-    # TODO support non-neurobank archives
+    path = Path(args.archive)
+    if not path.is_dir():
+        return _check_archive_by_name(args, args.archive)
     try:
-        archive_cfg = archive.get_config(args.path)
+        archive_cfg = archive.get_config(path)
     except FileNotFoundError:
-        log.error(f"error: {args.path} is not a valid neurobank archive")
+        log.error(f"error: {path} is not a valid neurobank archive")
         return 1
     archive_path = archive_cfg["path"]  # this will resolve the path
     log.info("archive: %s", archive_path)
@@ -1119,6 +1126,66 @@ def check_archive(args):
             session, registry_url, archive_info["name"], archive_cfg, args
         )
     return 0 if ok else 1
+
+
+def _check_archive_by_name(args, name: str) -> int:
+    """Checks the archive with this name in the registry. It must be a neurobank archive
+    on this host."""
+    registry_url = args.registry_url
+    log.info("registry: %s", registry_url)
+    with util.registry_session(registry_url, auth=args.auth) as session:
+        url, _ = registry.get_archive(registry_url, name)
+        info = util.query_registry(session, url)
+        if info is None:
+            log.error(
+                "error: '%s' is not a directory or an archive in the registry", name
+            )
+            return 1
+        if info["scheme"] not in archive.Resource.schemes:
+            log.error("error: checking %s archives isn't supported", info["scheme"])
+            return 1
+        if not Path(info["root"]).is_dir():
+            log.error("error: %s is not on this host", info["root"])
+            return 1
+        ok = _check_registered_archive(session, registry_url, info, args)
+    return 0 if ok else 1
+
+
+def _check_registered_archive(session, registry_url, info, args) -> bool:
+    """Checks a neurobank archive on this host, given its registry record: its
+    configuration must match the record, then its contents are checked. Returns True if
+    there are no errors."""
+    name = info["name"]
+    root = Path(info["root"])
+    log.info("\narchive %s: %s", name, root)
+    try:
+        archive_cfg = archive.get_config(root)
+    except FileNotFoundError:
+        log.error(" - %s is not a valid neurobank archive", root)
+        return False
+    except (OSError, ValueError, KeyError) as err:
+        log.error(" - unable to read nbank.json: %s", err)
+        return False
+    ok = True
+    if archive_cfg["path"] != root:
+        log.error(
+            " - registered root resolves to %s; deposits won't find the archive",
+            archive_cfg["path"],
+        )
+        ok = False
+    if archive_cfg["registry"].rstrip("/") != registry_url.rstrip("/"):
+        log.error(
+            " - nbank.json points to a different registry (%s)",
+            archive_cfg["registry"],
+        )
+        ok = False
+    try:
+        if not _check_archive(session, registry_url, name, archive_cfg, args):
+            ok = False
+    except OSError as err:
+        log.error(" - unable to check: %s", err)
+        ok = False
+    return ok
 
 
 def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bool:
@@ -1498,37 +1565,7 @@ def check_all(args):
             if not root.is_dir():
                 skipped.append((name, f"{root} is not on this host"))
                 continue
-            log.info("\narchive %s: %s", name, root)
-            try:
-                archive_cfg = archive.get_config(root)
-            except FileNotFoundError:
-                log.error(" - %s is not a valid neurobank archive", root)
-                failed.append(name)
-                continue
-            except (OSError, ValueError, KeyError) as err:
-                log.error(" - unable to read nbank.json: %s", err)
-                failed.append(name)
-                continue
-            ok = True
-            if archive_cfg["path"] != root:
-                log.error(
-                    " - registered root resolves to %s; deposits won't find the archive",
-                    archive_cfg["path"],
-                )
-                ok = False
-            if archive_cfg["registry"].rstrip("/") != registry_url.rstrip("/"):
-                log.error(
-                    " - nbank.json points to a different registry (%s)",
-                    archive_cfg["registry"],
-                )
-                ok = False
-            try:
-                if not _check_archive(session, registry_url, name, archive_cfg, args):
-                    ok = False
-            except OSError as err:
-                log.error(" - unable to check: %s", err)
-                ok = False
-            if not ok:
+            if not _check_registered_archive(session, registry_url, info, args):
                 failed.append(name)
     log.info("\nskipped archives: %d", len(skipped))
     for name, reason in skipped:

@@ -100,6 +100,8 @@ def test_export(cli, in_both, only_unknown, tmp_path, caplog):
 
 def test_check(cli, local, unknown_archive, in_both, only_unknown, caplog):
     assert cli("check", "archive", str(local.path)) == 0
+    assert cli("check", "archive", unknown_archive) == 1
+    assert f"checking {SCHEME} archives isn't supported" in caplog.text
     caplog.clear()
     # other tests leave archives that fail, so only this test's archives are checked
     cli("check", "all")
