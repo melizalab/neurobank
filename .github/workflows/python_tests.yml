@@ -20,6 +20,8 @@ jobs:
           - platform: windows-latest
             python-version: "3.14"
     runs-on: ${{ matrix.platform }}
+    # the suite takes seconds; fail a hung test rather than wait GitHub's 6 hours
+    timeout-minutes: 20
 
     steps:
     - uses: actions/checkout@v7

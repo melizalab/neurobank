@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import tarfile
+import threading
 import zipfile
 
 import httpx
@@ -517,8 +518,14 @@ def test_tar_resources_directory():
 def test_open_tar_from_stdin(monkeypatch):
     # a pipe can't seek, like a tape drive
     read_fd, write_fd = os.pipe()
-    os.write(write_fd, tar_bytes([("res_1.wav", b"one")]))
-    os.close(write_fd)
+
+    # from a thread, as the tar is larger than a Windows pipe holds
+    def write():
+        with open(write_fd, "wb") as fp:
+            fp.write(tar_bytes([("res_1.wav", b"one")]))
+
+    writer = threading.Thread(target=write)
+    writer.start()
 
     class Stdin:
         buffer = open(read_fd, "rb")
@@ -527,6 +534,7 @@ def test_open_tar_from_stdin(monkeypatch):
     with Stdin.buffer, transfer.open_tar("-") as tar:
         items = transfer.iter_tar_resources(tar, lambda id, m: {"name": id})
         results = [(res.name, res.data.read()) for res in items]
+    writer.join()
     assert results == [("res_1.wav", b"one")]
 
 
