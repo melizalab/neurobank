@@ -14,9 +14,10 @@ Requires django-neurobank 1.0 (registry API 2.x).
   `archive.iter_resources` is removed; use `check.check_archive_contents`.
 - Resources in neurobank archives are found by their location's key, the name
   of the file, instead of by looking for any file named with the id. A location
-  without a key, or whose key names no file, isn't found on this host: run
-  `nbank check all --fix` to set keys (#60). nbank versions before 1.0 ignore
-  keys and still find files by looking for them, so they keep working.
+  without a key, or whose key names no file, isn't found on this host (#60).
+  django-neurobank 1.0 sets each existing location's key to the resource's file
+  name when it's migrated; then run `nbank check archive --fix --no-hash` on
+  each archive to correct the few files named otherwise.
 - The `keep_extensions` policy is gone: files always keep their extensions in
   the archive. Archives' `nbank.json` can keep it; `false` is ignored with a
   warning.
