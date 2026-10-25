@@ -125,6 +125,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
   one streamed response (`util.query_registry_stream`), instead of a page at a
   time, which is much faster for large archives. Registries that can't stream
   are paged through as before.
+- `nbank archive import-tar` ends with a summary line, as `copy` and `export`
+  do. When a resource's only copies are offline (on tape), `copy` and `export`
+  name those archives and say to read it with `nbank archive import-tar`.
 
 ### Fixed
 

@@ -1112,26 +1112,48 @@ def check_archive(args):
     path = Path(args.archive)
     if not path.is_dir():
         return _check_archive_by_name(args, args.archive)
-    try:
-        archive_cfg = archive.get_config(path)
-    except FileNotFoundError:
-        log.error(f"error: {path} is not a valid neurobank archive")
+    archive_cfg = _archive_config(path)
+    if archive_cfg is None:
         return 1
-    archive_path = archive_cfg["path"]  # this will resolve the path
-    log.info("archive: %s", archive_path)
+    log.info("archive: %s", archive_cfg["path"])
     registry_url = archive_cfg["registry"]
     log.info("registry: %s", registry_url)
     with util.registry_session(registry_url, auth=args.auth) as session:
-        # check that archive exists for this path
-        url, params = registry.find_archive_by_path(registry_url, archive_path)
-        archive_info = util.query_registry_first(session, url, params)
-        if archive_info is None:
-            log.error("No archive associated with '%s' in the registry", archive_path)
+        name = _registered_name(session, registry_url, archive_cfg["path"])
+        if name is None:
             return 1
-        ok = _check_archive(
-            session, registry_url, archive_info["name"], archive_cfg, args
-        )
+        ok = _check_archive(session, registry_url, name, archive_cfg, args)
     return 0 if ok else 1
+
+
+def _archive_config(path: Path) -> archive.ArchiveConfig | None:
+    """Returns the configuration of the neurobank archive at path, or None (logging an
+    error) if there isn't one."""
+    try:
+        return archive.get_config(path)
+    except FileNotFoundError:
+        log.error("error: %s is not a valid neurobank archive", path)
+        return None
+
+
+def _registered_name(session, registry_url: str, archive_path: Path) -> str | None:
+    """Returns the registry's name for the archive at archive_path, or None (logging an
+    error) if it isn't registered."""
+    url, params = registry.find_archive_by_path(registry_url, archive_path)
+    info = util.query_registry_first(session, url, params)
+    if info is None:
+        log.error("No archive associated with '%s' in the registry", archive_path)
+        return None
+    return info["name"]
+
+
+def _log_summary(*counts: str, failed: int) -> None:
+    """Logs the counts of a transfer, then the number that failed, as one line."""
+    text = "Resources " + "; ".join([*counts, f"failed: {failed}"])
+    if failed:
+        log.error("%s (marked with ✗ above)", text)
+    else:
+        log.info("%s", text)
 
 
 def _check_archive_by_name(args, name: str) -> int:
@@ -1979,21 +2001,18 @@ def import_tar(args):
         if wanted is None:
             return 1
         wanted = set(wanted)
-    try:
-        archive_cfg = archive.get_config(args.dest)
-    except FileNotFoundError:
-        log.error(f"error: {args.dest} is not a valid neurobank archive")
+    n_requested = None if wanted is None else len(wanted)
+    archive_cfg = _archive_config(args.dest)
+    if archive_cfg is None:
         return 1
     registry_url = args.registry_url or archive_cfg["registry"]
     archive_path = archive_cfg["path"]  # this will resolve the path
     log.info("registry: %s", registry_url)
+    n_imported = n_already = total = 0
     with util.registry_session(registry_url, auth=args.auth) as session:
-        url, params = registry.find_archive_by_path(registry_url, archive_path)
-        archive_info = util.query_registry_first(session, url, params)
-        if archive_info is None:
-            log.error("No archive associated with '%s' in the registry", archive_path)
+        archive_name = _registered_name(session, registry_url, archive_path)
+        if archive_name is None:
             return 1
-        archive_name = archive_info["name"]
         log.info("destination archive: %s (%s)", archive_name, archive_path)
         log.info("source: %s", args.tar)
         if args.dry_run:
@@ -2011,11 +2030,13 @@ def import_tar(args):
 
         def import_one(res, progress) -> bool:
             """Imports a resource from the tar file. Returns False if it fails."""
+            nonlocal n_imported, n_already, total
             id = res.record["name"]
             if archive_name in res.record["locations"]:
                 log.info(
                     "  ✗ %s -> '%s' is already in the destination archive", res.name, id
                 )
+                n_already += 1
                 return True
             progress.start(res.name, res.size)
             try:
@@ -2032,6 +2053,8 @@ def import_tar(args):
             except transfer.TransferError as err:
                 log.error("  ✗ %s -> %s", res.name, err)
                 return False
+            n_imported += 1
+            total += progress.nbytes
             result = received.path if dest is not None else "OK"
             note = "" if received.verified else " (no registered hash to check)"
             log.info("  - %s -> %s%s  (%s)", res.name, result, note, progress.summary())
@@ -2057,6 +2080,14 @@ def import_tar(args):
         )
         log.error("  ✗ %s -> %s", id, reason)
         n_failed += 1
+    counts = [] if n_requested is None else [f"requested: {n_requested}"]
+    _log_summary(
+        *counts,
+        f"{'checked' if args.dry_run else 'imported'}: {n_imported} "
+        f"({_human_size(total)})",
+        f"already in destination: {n_already}",
+        failed=n_failed,
+    )
     return 1 if n_failed else None
 
 
@@ -2137,14 +2168,11 @@ def export_resources(args):
     n_requested = len(sources)
 
     def summarize():
-        text = (
-            f"Resources requested: {n_requested}; "
-            f"exported: {n_written} ({_human_size(total)}); failed: {n_failed}"
+        _log_summary(
+            f"requested: {n_requested}",
+            f"exported: {n_written} ({_human_size(total)})",
+            failed=n_failed,
         )
-        if n_failed:
-            log.error("%s (marked with ✗ above)", text)
-        else:
-            log.info("%s", text)
 
     for source in sources:
         if not source.ok:
@@ -2237,22 +2265,17 @@ def copy_resources(args):
     ids = _requested_ids(args)
     if ids is None:
         return 1
-    try:
-        archive_cfg = archive.get_config(args.dest)
-    except FileNotFoundError:
-        log.error("error: %s is not a valid neurobank archive", args.dest)
+    archive_cfg = _archive_config(args.dest)
+    if archive_cfg is None:
         return 1
     registry_url = args.registry_url or archive_cfg["registry"]
     archive_path = archive_cfg["path"]
     log.info("registry: %s", registry_url)
     n_failed = n_copied = total = 0
     with util.registry_session(registry_url, auth=args.auth) as session:
-        url, params = registry.find_archive_by_path(registry_url, archive_path)
-        archive_info = util.query_registry_first(session, url, params)
-        if archive_info is None:
-            log.error("No archive associated with '%s' in the registry", archive_path)
+        dest_name = _registered_name(session, registry_url, archive_path)
+        if dest_name is None:
             return 1
-        dest_name = archive_info["name"]
         if args.archive == dest_name:
             log.error("error: the source and destination archives are the same")
             return 1
@@ -2307,16 +2330,12 @@ def copy_resources(args):
                     note,
                     progress.summary(),
                 )
-    text = (
-        f"Resources requested: {len(ids)}; "
-        f"{'checked' if args.dry_run else 'copied'}: {n_copied} "
-        f"({_human_size(total)}); already in destination: {len(already)}; "
-        f"failed: {n_failed}"
+    _log_summary(
+        f"requested: {len(ids)}",
+        f"{'checked' if args.dry_run else 'copied'}: {n_copied} ({_human_size(total)})",
+        f"already in destination: {len(already)}",
+        failed=n_failed,
     )
-    if n_failed:
-        log.error("%s (marked with ✗ above)", text)
-    else:
-        log.info("%s", text)
     return 1 if n_failed else None
 
 

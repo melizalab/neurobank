@@ -679,10 +679,16 @@ def test_import_tar(
     assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
     assert location_key(name, b.name) == stored_path(b, name).name
     assert "not in the registry" in caplog.text
+    assert "Resources imported: 1 (12 B); already in destination: 0; failed: 0" in (
+        caplog.text
+    )
 
     caplog.clear()
     assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
     assert "is already in the destination archive" in caplog.text
+    assert "Resources imported: 0 (0 B); already in destination: 1; failed: 0" in (
+        caplog.text
+    )
 
 
 def test_import_tar_dry_run(cli, registry, two_archives, dtype, deposit_file, tmp_path):
@@ -818,6 +824,23 @@ def test_copy(
     assert "already in destination: 2" in caplog.text
 
 
+def test_copy_only_offline(
+    cli, registry, client, register, make_archive, unique, caplog
+):
+    tape = unique("tape")
+    url, body = nbank_registry.add_archive(
+        registry.url, tape, "tape", f"{tape}:1", accessibility="offline"
+    )
+    client.post(url, json=body).raise_for_status()
+    name = register(archive=tape, key="member.txt")["name"]
+    dest = make_archive()
+    assert cli("copy", str(dest.path), name) == 1
+    assert (
+        f"{name} -> no copy on this host; offline in {tape} "
+        "(read it with `nbank archive import-tar`)"
+    ) in caplog.text
+
+
 def test_copy_from_archive(
     cli, registry, make_archive, dtype, deposit_file, replicate, caplog
 ):
@@ -937,6 +960,8 @@ def test_import_tar_selected_not_in_tar(
     assert cli("archive", "import-tar", str(tar), str(b.path), name, missing) == 1
     assert stored_path(b, name).exists()
     assert f"✗ {missing} -> not in the tar file" in caplog.text
+    assert "Resources requested: 2; imported: 1 (" in caplog.text
+    assert "already in destination: 0; failed: 1 (marked with ✗ above)" in caplog.text
 
 
 def changed_tar(archive, name, tmp_path):

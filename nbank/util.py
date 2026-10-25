@@ -319,7 +319,7 @@ def query_registry_stream(
 
 def query_registry_first(
     session: Client, url: str, params: Mapping[str, Any] | None = None
-) -> dict:
+) -> dict | None:
     """Perform a GET response to a url and return the first result or None"""
     try:
         return next(query_registry_paginated(session, url, params))

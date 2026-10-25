@@ -29,6 +29,7 @@ from httpx import Client
 
 from nbank import archive as nbank_archive
 from nbank import registry, util
+from nbank.types import NonFetchableResource
 
 
 @dataclass(frozen=True)
@@ -51,14 +52,22 @@ class Source:
 
 
 def _find_local_copy(record: dict, alt_base: Path | None) -> Source:
-    """Returns a Source for the first readable local copy among a record's locations."""
+    """Returns a Source for the first readable local copy among a record's locations.
+
+    If there's none, the error names any offline archives (tape) that have a copy, which
+    must be read with `nbank archive import-tar`.
+    """
     fields = {
         "id": record["name"],
         "sha1": record.get("sha1"),
     }
-    error = "no copy on this host"
+    error = None
+    offline = []
     for location in record["locations"]:
         resource = util.parse_location(location, alt_base=alt_base)
+        if isinstance(resource, NonFetchableResource):
+            offline.append(location["archive_name"])
+            continue
         path = getattr(resource, "path", None)
         if path is None:
             continue
@@ -69,6 +78,13 @@ def _find_local_copy(record: dict, alt_base: Path | None) -> Source:
             error = f"'{path}' is not readable"
             continue
         return Source(path=path, archive=location["archive_name"], **fields)
+    if error is None:
+        error = "no copy on this host"
+        if offline:
+            error += (
+                f"; offline in {', '.join(offline)} "
+                "(read it with `nbank archive import-tar`)"
+            )
     return Source(error=error, **fields)
 
 

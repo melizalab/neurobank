@@ -142,6 +142,25 @@ def test_find_no_copy_on_this_host(respx_mock, tmp_path):
 
 
 @respx.mock(assert_all_mocked=True)
+def test_find_names_offline_copies(respx_mock, tmp_path):
+    FakeBulkLocations(
+        respx_mock,
+        [
+            record(
+                "res_1",
+                None,
+                location("tape", "tape01:1", "res_1", scheme="tape"),
+                location("elsewhere", tmp_path / "gone", "res_1"),
+            )
+        ],
+    )
+    [source] = find(["res_1"])
+    assert source.error == (
+        "no copy on this host; offline in tape (read it with `nbank archive import-tar`)"
+    )
+
+
+@respx.mock(assert_all_mocked=True)
 def test_find_unregistered(respx_mock):
     FakeBulkLocations(respx_mock, [])
     [source] = find(["missing"])

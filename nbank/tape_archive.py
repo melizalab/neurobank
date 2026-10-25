@@ -6,13 +6,13 @@
 import logging
 from pathlib import Path
 
-from nbank.types import location_scheme
+from nbank.types import NonFetchableResource, location_scheme
 
 log = logging.getLogger("nbank")  # root logger
 
 
 @location_scheme
-class Resource:
+class Resource(NonFetchableResource):
     """A resource stored on a tape.
 
     The `root` field of the location is interpreted as
