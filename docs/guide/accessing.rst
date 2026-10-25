@@ -50,6 +50,38 @@ archives with ``--alt-base /mnt/data``, or set ``NBANK_ALT_BASE`` to it. The
 archive's registered parent directory is replaced, so the archive keeps its
 name. In Python, ``find_resources`` takes the same directory as ``alt_base``.
 
+.. _accessing-windows:
+
+On Windows
+----------
+
+Archives rely on ownership, groups and permission bits, so they require a POSIX host (Linux or macOS),
+for creation and deposit, and the Windows client is limited to searching and updating the registry, and
+finding, fetching, exporting and verifying resources. The ``init``, ``deposit``, ``copy``, ``archive import-tar``,
+``prune`` and ``register-tar``, and ``check archive`` and ``check all`` will all refuse
+to run on Windows.
+
+To read an archive on a share, map the share's directory of archives and give
+it as the alternate base. For an archive registered as
+``/home/data/starlings``, with ``/home/data`` mapped to ``Z:``:
+
+.. code:: doscon
+
+   > setx NBANK_ALT_BASE Z:\
+   > nbank locate st32_1_2_1
+   st32_1_2_1      Z:\starlings\resources\st\st32_1_2_1.wav
+
+``setx`` sets the variable for new terminals; use ``--alt-base Z:\`` for a
+single command. A few other differences:
+
+- Credentials can be in ``%USERPROFILE%\_netrc``, the name Windows tools use,
+  if there's no ``.netrc`` there.
+- ``locate -L`` makes symbolic links, which Windows allows only in Developer
+  Mode or with administrator rights. Without either, use the paths ``locate``
+  prints, or ``fetch`` copies.
+- Downloads are cached in ``%LOCALAPPDATA%\neurobank``.
+- Output is written as UTF-8, including when it's redirected to a file.
+
 Fetching copies
 ---------------
 
@@ -130,7 +162,8 @@ that can be read on this host, looking in this order:
 
 Results come as they're ready, as downloads run in parallel. The cache is
 ``neurobank`` in the user's cache directory (``~/.cache`` on Linux,
-``~/Library/Caches`` on macOS), or ``NBANK_CACHE`` if it's set. Downloads are
+``~/Library/Caches`` on macOS, ``%LOCALAPPDATA%`` on Windows), or
+``NBANK_CACHE`` if it's set. Downloads are
 stored under their final names only once they're complete. ``download=False``
 leaves out downloads, ``verify=True`` checks each file against its registered
 hash, and ``alt_base`` replaces the directory that contains each archive, for

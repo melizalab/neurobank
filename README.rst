@@ -63,6 +63,9 @@ Installation
 
 For the **neurobank** CLI, it's recommended to install using `pipx <https://pipx.pypa.io/stable/>`__ or `uv tool <https://docs.astral.sh/uv/concepts/tools/>`__. To use the Python interface, pip install ``neurobank>=1.0,<2`` or add it to your ``pyproject.toml``.
 
+neurobank runs on Linux, macOS and Windows, but archive management requires a
+POSIX filesystem, so the Windows client only supports read operations.
+
 A quick tour
 ------------
 

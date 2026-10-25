@@ -1,9 +1,11 @@
 Setting up archives
 ===================
 
-An archive is a directory on a local or shared filesystem (which could be an
-NFS or SSHFS mount) where neurobank stores resources. Each archive is registered
-with one registry, which records which resources it contains.
+An archive is a directory on a local or shared filesystem (which could be an NFS
+or SSHFS mount) where neurobank stores resources. Each archive is registered
+with one registry, which records which resources it contains. Archives are
+created and managed on a POSIX host (Linux or macOS). Windows can only read them
+(see :ref:`accessing-windows`).
 
 The registry
 ------------
@@ -22,7 +24,7 @@ guaranteed to be unique within this domain.
 If your registry requires authentication, supply it with ``-a
 username:password``, or in your `netrc
 <https://www.gnu.org/software/inetutils/manual/html_node/The-_002enetrc-file.html>`__
-file (``~/.netrc``, or ``~/_netrc``, the name Windows tools use). Credentials are sent with every request, so wrong ones are refused even
+file (``~/.netrc``, or ``~/_netrc`` on Windows). Credentials are sent with every request, so wrong ones are refused even
 for reading. ``nbank registry-info`` shows the registry's version, which user
 you're connecting as, and what you can change:
 
