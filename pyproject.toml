@@ -97,6 +97,10 @@ ignore = ["E221", "E501", "E701"]
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 
+[tool.ty.environment]
+# nbank runs on Windows clients too, so platform checks shouldn't be narrowed
+python-platform = "all"
+
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
