@@ -15,6 +15,10 @@ jobs:
       matrix:
         platform: [macos-15-intel, macos-latest, ubuntu-26.04]
         python-version: ["3.11", "3.12", "3.13", "3.14", "pypy3.11"]
+        # Windows is a client only: tests that need a POSIX host skip themselves
+        include:
+          - platform: windows-latest
+            python-version: "3.14"
     runs-on: ${{ matrix.platform }}
 
     steps:

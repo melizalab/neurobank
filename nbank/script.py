@@ -891,6 +891,9 @@ def locate_resources(args):
                             break
                         except AttributeError:
                             log.info("%s doesn't support linking", resource)
+                        except OSError as err:
+                            log.error("%s: unable to link: %s", id, _link_error(err))
+                            break
                     elif args.print0:
                         try:
                             print(str(resource.path), end="\0")
@@ -907,6 +910,16 @@ def locate_resources(args):
                     registry.log_error(e)
             n_failed += not found
     return 1 if n_failed else None
+
+
+def _link_error(err: OSError) -> str:
+    # ERROR_PRIVILEGE_NOT_HELD
+    if getattr(err, "winerror", None) == 1314:
+        return (
+            "Windows creates symbolic links only in Developer Mode or with "
+            "administrator rights"
+        )
+    return str(err)
 
 
 def hash_search_param(value: str) -> dict:

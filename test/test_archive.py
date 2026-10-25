@@ -6,12 +6,14 @@ import stat
 import pytest
 
 from nbank import archive, check
+from test import place_resource, running_as_root, skip_unless_posix
 
 dummy_registry = "https://localhost:8000/neurobank"
 
 
 @pytest.fixture()
 def tmp_archive(tmp_path):
+    skip_unless_posix()
     root = tmp_path / "archive"
     return archive.create(root, dummy_registry)
 
@@ -50,37 +52,29 @@ def test_store_and_find_resource(tmp_archive, tmp_path):
     assert path.read_text() == contents
 
 
-def test_parse_neurobank_location(tmp_archive, tmp_path):
+def test_parse_neurobank_location(archive_layout):
     from nbank.util import parse_location
 
     name = "dummy_1"
-    src = tmp_path / name
-    contents = '{"foo": 10}\n'
-    src.write_text(contents)
-    archive.store_resource(tmp_archive, src, id=name)
-
+    path = place_resource(archive_layout, name, name)
     location = {
         "scheme": "neurobank",
-        "root": tmp_archive["path"],
+        "root": archive_layout["path"],
         "resource_name": name,
         "key": name,
     }
     res = parse_location(location)
     assert isinstance(res, archive.Resource)
-    assert res.path == archive.resource_path(
-        location["root"], location["resource_name"]
-    )
+    assert res.path == path
 
 
 @pytest.fixture
-def stored_wav(tmp_archive, tmp_path):
+def stored_wav(archive_layout):
     """res_1, stored as res_1.wav, and a location for it without a key."""
-    src = tmp_path / "res_1.wav"
-    src.write_text("contents")
-    path = archive.store_resource(tmp_archive, src)
+    path = place_resource(archive_layout, "res_1", "res_1.wav")
     location = {
         "scheme": "neurobank",
-        "root": str(tmp_archive["path"]),
+        "root": str(archive_layout["path"]),
         "resource_name": "res_1",
     }
     return path, location
@@ -110,12 +104,12 @@ def test_location_key_not_found(stored_wav, key):
     assert archive.Resource.from_location({**location, "key": key}) is None
 
 
-def test_location_key_alt_base(stored_wav, tmp_archive, tmp_path):
+def test_location_key_alt_base(stored_wav, archive_layout, tmp_path):
     path, location = stored_wav
     # the archive is mounted under another directory on this host
     alt_base = tmp_path / "mnt"
     alt_base.mkdir()
-    tmp_archive["path"].rename(alt_base / "archive")
+    archive_layout["path"].rename(alt_base / "archive")
     resource = archive.Resource.from_location(
         {**location, "key": "res_1.wav"}, alt_base=alt_base
     )
@@ -201,6 +195,7 @@ def test_cannot_violate_directory_policy(tmp_archive, tmp_path):
         archive.store_resource(tmp_archive, dir)
 
 
+@pytest.mark.posix
 def test_keep_extensions_false_is_ignored(tmp_path, caplog):
     # set by archives made before the policy was retired
     root = tmp_path / "archive"
@@ -292,7 +287,7 @@ def test_verify_permissions_ok(tmp_archive, tmp_path):
     assert archive.verify_permissions(tmp_archive, dummy, name) is None
 
 
-@pytest.mark.skipif(os.getuid() == 0, reason="root can read anything")
+@pytest.mark.skipif(running_as_root, reason="root can read anything")
 def test_verify_permissions_checks_directory_contents(tmp_archive, tmp_path):
     # a directory is deposited as a zip of its contents, so they must be readable
     dname = tmp_path / "tempdir"
@@ -331,6 +326,7 @@ def restrictive_umask():
     os.umask(old)
 
 
+@pytest.mark.posix
 def test_store_resource_applies_mode_policy(tmp_path, restrictive_umask):
     # the depositor's umask shouldn't leave files or directories less
     # accessible than the archive's policy requires
@@ -343,6 +339,7 @@ def test_store_resource_applies_mode_policy(tmp_path, restrictive_umask):
     assert list(check.check_archive_permissions(cfg)) == []
 
 
+@pytest.mark.posix
 def test_verify_no_symlinks(tmp_path):
     real = tmp_path / "real"
     real.write_text("contents")
@@ -369,7 +366,7 @@ def test_verify_no_symlinks(tmp_path):
         archive.verify_no_symlinks(src)
 
 
-@pytest.mark.skipif(os.getuid() == 0, reason="root can change ownership")
+@pytest.mark.skipif(running_as_root, reason="root can change ownership")
 def test_permission_fixer_changes_mode_when_chown_fails(tmp_archive, tmp_path, caplog):
     import grp
 
@@ -390,6 +387,7 @@ def test_permission_fixer_changes_mode_when_chown_fails(tmp_archive, tmp_path, c
     assert caplog.text == ""
 
 
+@pytest.mark.posix
 def test_create_resources_directory_mode(tmp_path, restrictive_umask):
     cfg = archive.create(tmp_path / "archive", dummy_registry, umask=0o002)
     resdir = cfg["path"] / "resources"
@@ -398,6 +396,7 @@ def test_create_resources_directory_mode(tmp_path, restrictive_umask):
     assert list(check.check_archive_permissions(cfg)) == []
 
 
+@pytest.mark.posix
 def test_create_staging_directory(tmp_path, restrictive_umask):
     cfg = archive.create(tmp_path / "archive", dummy_registry, umask=0o002)
     staging = archive.staging_dir(cfg)
@@ -409,6 +408,7 @@ def test_create_staging_directory(tmp_path, restrictive_umask):
     assert "staging/" in (cfg["path"] / ".gitignore").read_text().split()
 
 
+@pytest.mark.posix
 def test_create_shared_archive(tmp_path):
     cfg = archive.create(tmp_path / "archive", dummy_registry, shared=True)
     assert cfg["policy"]["access"]["user"] is None
@@ -418,7 +418,8 @@ def test_create_shared_archive(tmp_path):
     assert list(check.check_archive_permissions(cfg)) == []
 
 
-@pytest.mark.skipif(os.getuid() == 0, reason="root can own anything")
+@pytest.mark.posix
+@pytest.mark.skipif(running_as_root, reason="root can own anything")
 def test_owner_is_checked_unless_shared(tmp_path):
     import pwd
 
@@ -430,6 +431,7 @@ def test_owner_is_checked_unless_shared(tmp_path):
     assert list(check.check_archive_permissions(cfg)) == []
 
 
+@pytest.mark.posix
 def test_create_with_group(tmp_path):
     import grp
 
@@ -444,6 +446,7 @@ def test_create_with_group(tmp_path):
         assert path.stat().st_gid == os.getgid()
 
 
+@pytest.mark.posix
 def test_create_with_unknown_group(tmp_path):
     root = tmp_path / "archive"
     with pytest.raises(ValueError, match="no-such-group-xyzzy"):
@@ -451,7 +454,8 @@ def test_create_with_unknown_group(tmp_path):
     assert not root.exists()
 
 
-@pytest.mark.skipif(os.getuid() == 0, reason="root can change any group")
+@pytest.mark.posix
+@pytest.mark.skipif(running_as_root, reason="root can change any group")
 def test_create_with_group_not_a_member(tmp_path, caplog):
     import grp
 
@@ -481,6 +485,7 @@ def test_permission_fixer_as_root(tmp_archive, monkeypatch, user):
     assert calls == [(expected_uid, gid)]
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize("existing", ["nbank.json", "README.md", ".gitignore"])
 def test_create_does_not_overwrite(tmp_path, existing):
     root = tmp_path / "archive"
@@ -492,6 +497,7 @@ def test_create_does_not_overwrite(tmp_path, existing):
     assert (root / existing).read_text() == "keep me"
 
 
+@pytest.mark.posix
 def test_create_in_empty_directory(tmp_path):
     root = tmp_path / "archive"
     root.mkdir()
@@ -551,6 +557,7 @@ def test_cannot_remove_others_read_only_directory(tmp_archive, tmp_path, monkeyp
     assert archive._can_remove(file_path)
 
 
+@pytest.mark.posix
 def test_fix_makes_existing_resources_read_only(tmp_path):
     cfg = archive.create(
         tmp_path / "archive", dummy_registry, read_only_resources=False

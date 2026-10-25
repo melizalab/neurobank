@@ -8,7 +8,11 @@ create a virtual environment and install dependencies, or ``uv sync --no-dev
 Testing
 -------
 
-``uv run pytest`` runs the unit tests against a mock registry.
+``uv run pytest`` runs the unit tests against a mock registry. On Windows, the
+tests that need a POSIX host skip themselves: those marked ``posix``, and those
+that create an archive (the ``tmp_archive`` fixtures). Tests that only read an
+archive use the ``archive_layout`` fixture, which writes an archive's files
+directly, so they run on Windows too.
 
 Integration tests run against a live registry (django-neurobank) that the tests
 start themselves, using a temporary sqlite database. They are skipped by

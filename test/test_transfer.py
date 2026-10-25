@@ -12,6 +12,7 @@ import pytest
 import respx
 
 from nbank import archive, check, transfer, util
+from test import running_as_root, skip_unless_posix
 from test.test_registry import base_url, bulk_url
 
 bulk_locations_url = bulk_url + "locations/"
@@ -19,6 +20,7 @@ bulk_locations_url = bulk_url + "locations/"
 
 @pytest.fixture
 def tmp_archive(tmp_path):
+    skip_unless_posix()
     return archive.create(tmp_path / "archive", base_url)
 
 
@@ -166,7 +168,7 @@ def test_find_in_archive(respx_mock, tmp_archive, tmp_path):
     assert sources[1].error == "not in archive 'arch'"
 
 
-@pytest.mark.skipif(os.getuid() == 0, reason="root can read anything")
+@pytest.mark.skipif(running_as_root, reason="root can read anything")
 @respx.mock(assert_all_mocked=True)
 def test_find_unreadable(respx_mock, tmp_archive, tmp_path):
     path, sha1 = store(tmp_archive, tmp_path, "res_1")
@@ -591,6 +593,7 @@ def raise_enomem(self, buffer):
     raise OSError(errno.ENOMEM, "Cannot allocate memory")
 
 
+@pytest.mark.posix
 def test_open_tar_explains_large_tape_blocks(monkeypatch):
     # /dev/null is a character device, as a tape drive is
     monkeypatch.setattr(transfer._BlockReader, "readinto", raise_enomem)
@@ -722,7 +725,9 @@ def test_export_leaves_out_mismatched_file(tmp_path, export_format):
 empty_size = {"tar": tarfile.RECORDSIZE, "zip": 22}
 
 
-@pytest.mark.parametrize("kind", ["link", "directory"])
+@pytest.mark.parametrize(
+    "kind", [pytest.param("link", marks=pytest.mark.posix), "directory"]
+)
 def test_export_refuses_what_isnt_a_file(tmp_path, export_format, kind):
     path = tmp_path / "res_1"
     if kind == "link":
@@ -738,7 +743,8 @@ def test_export_refuses_what_isnt_a_file(tmp_path, export_format, kind):
         assert out.stat().st_size == empty_size[export_format]
 
 
-@pytest.mark.skipif(os.getuid() == 0, reason="root can read anything")
+@pytest.mark.posix
+@pytest.mark.skipif(running_as_root, reason="root can read anything")
 def test_export_unreadable_file(tmp_path, export_format):
     path = tmp_path / "res_1"
     path.write_bytes(b"one")
@@ -801,6 +807,7 @@ def test_export_directory_keeps_mtime(tmp_path):
     assert (out / "res_1").stat().st_mtime == 1_000_000_000
 
 
+@pytest.mark.posix
 def test_export_writable_copies(tmp_path):
     # resources in an archive are read-only; exported copies needn't be
     path = tmp_path / "res_1"
@@ -914,7 +921,7 @@ def test_receive_source_mismatch(tmp_archive, tmp_path, dry_run):
     assert leftovers(tmp_archive) == []
 
 
-@pytest.mark.skipif(os.getuid() == 0, reason="root can read anything")
+@pytest.mark.skipif(running_as_root, reason="root can read anything")
 @pytest.mark.parametrize("dry_run", [False, True])
 def test_receive_source_unreadable(tmp_archive, tmp_path, dry_run):
     path = tmp_path / "res_1"

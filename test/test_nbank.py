@@ -13,6 +13,7 @@ import pytest
 import respx
 
 from nbank import archive, canonical_zip, core, registry, script, util
+from test import skip_unless_posix
 from test.test_registry import (
     archives_url,
     base_url,
@@ -194,6 +195,7 @@ def test_deposit_resource_unknown_dtype(mocked_api, tmp_archive, tmp_path):
         _ = list(core.deposit(root, files=[src], dtype=dtype))
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize("auto_id_type", [None, "base36"])
 def test_deposit_auto_id(mocked_api, tmp_path, auto_id_type):
     root = tmp_path / "archive"
@@ -226,6 +228,7 @@ def test_deposit_auto_id(mocked_api, tmp_path, auto_id_type):
 
 @pytest.fixture
 def auto_id_archive(mocked_api, tmp_path):
+    skip_unless_posix()
     root = tmp_path / "archive"
     archive.create(root, base_url, require_hash=False, auto_identifiers=True)
     mocked_api.get(
@@ -279,6 +282,7 @@ def test_deposit_name_taken_is_not_retried(mocked_api, tmp_archive, tmp_path):
     assert "error" in item
 
 
+@pytest.mark.posix
 def test_deposit_unknown_auto_id_type(tmp_path):
     root = tmp_path / "archive"
     archive.create(root, base_url, auto_identifiers=True, auto_id_type="base64")
@@ -289,6 +293,7 @@ def test_deposit_unknown_auto_id_type(tmp_path):
     assert src.exists()
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize("skip_errors", [False, True])
 def test_deposit_refuses_directories(mocked_api, tmp_path, skip_errors, caplog):
     # even when the archive's policy allows directory resources
@@ -331,6 +336,7 @@ def recording(tmp_path):
 
 @pytest.fixture
 def zip_archive(mocked_api, tmp_path):
+    skip_unless_posix()
     root = tmp_path / "archive"
     archive.create(root, base_url, require_hash=True)
     mocked_api.get(
@@ -480,6 +486,7 @@ def test_deposit_resource_source_errors(mocked_api, tmp_archive, tmp_path):
         _ = list(core.deposit(root, files=[src], dtype=dtype))
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize("dry_run", [False, True])
 def test_deposit_rejects_symlinks(mocked_api, tmp_path, dry_run):
     root = tmp_path / "archive"
@@ -661,6 +668,7 @@ def test_store_resources_passes_dry_run(monkeypatch):
     assert captured["dry_run"] is True
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize(
     "flags, expected",
     [
@@ -694,6 +702,7 @@ def test_deposit_passes_file_metadata_options(monkeypatch, flags, expected):
     assert {k: captured[k] for k in expected} == expected
 
 
+@pytest.mark.posix
 def test_deposit_metadata_keys_can_share_option_names(monkeypatch):
     captured = {}
 
@@ -980,6 +989,7 @@ def run_main(*argv):
         log.setLevel(level)
 
 
+@pytest.mark.posix
 def test_init_shared_archive(mocked_api, tmp_path):
     import grp
 
@@ -992,6 +1002,7 @@ def test_init_shared_archive(mocked_api, tmp_path):
     assert access["group"] == group
 
 
+@pytest.mark.posix
 def test_init_unknown_group(mocked_api, tmp_path, caplog):
     # no registry route is mocked: the archive must not be registered
     root = tmp_path / "archive"
@@ -1262,6 +1273,7 @@ def test_check_tar_missing_file(tmp_path, caplog):
 @pytest.fixture
 def exportable(respx_mock, tmp_path):
     """Two resources in a local archive, registered with their hashes."""
+    skip_unless_posix()
     from test.test_transfer import FakeBulkLocations, location, record
 
     cfg = archive.create(tmp_path / "archive", base_url)
@@ -1418,6 +1430,7 @@ def test_export_manifest(exportable, tmp_path):
     assert "locations" not in entry
 
 
+@pytest.mark.posix
 @respx.mock(assert_all_mocked=True)
 def test_export_manifest_name_taken(respx_mock, tmp_path, caplog):
     from test.test_transfer import FakeBulkLocations, location, record
@@ -1452,6 +1465,7 @@ def test_export_manifest_already_in_directory(exportable, tmp_path, caplog):
     assert sorted(p.name for p in out.iterdir()) == ["manifest.json"]
 
 
+@pytest.mark.posix
 @respx.mock(assert_all_mocked=True, assert_all_called=False)
 def test_register_tar_skips_manifest(respx_mock, tmp_path, caplog):
     import tarfile

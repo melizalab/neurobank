@@ -72,6 +72,7 @@ addopts = "-v -m 'not integration'"
 testpaths = ["test"]
 markers = [
     "integration: tests that run against a live registry (deselected by default)",
+    "posix: tests that need a POSIX host (skipped on Windows)",
 ]
 
 [tool.ruff]

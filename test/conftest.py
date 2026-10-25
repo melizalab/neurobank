@@ -7,6 +7,7 @@ import pytest
 import respx
 
 from nbank import archive, transfer, util
+from test import skip_unless_posix
 from test.test_registry import base_url
 
 
@@ -36,10 +37,41 @@ def registry_version_checked(monkeypatch):
     monkeypatch.setattr(util, "_checked_registries", _AllRegistries())
 
 
+def pytest_runtest_setup(item):
+    if not archive._posix and item.get_closest_marker("posix"):
+        pytest.skip("needs a POSIX host")
+
+
 @pytest.fixture
 def tmp_archive(tmp_path):
+    skip_unless_posix()
     root = tmp_path / "archive"
     return archive.create(root, base_url, umask=0o027, require_hash=False)
+
+
+@pytest.fixture
+def archive_layout(tmp_path):
+    """An archive's files written directly rather than by archive.create, so tests
+    that only read an archive also run on Windows."""
+    root = tmp_path / "archive"
+    (root / archive._resource_subdir).mkdir(parents=True)
+    (root / archive._staging_subdir).mkdir()
+    config = {
+        "registry": base_url,
+        "policy": {
+            "auto_identifiers": False,
+            "auto_id_type": None,
+            "require_hash": False,
+            "access": {
+                "user": None,
+                "group": None,
+                "umask": 0o027,
+                "read_only_resources": True,
+            },
+        },
+    }
+    (root / archive._config_fname).write_text(json.dumps(config))
+    return archive.get_config(root)
 
 
 @pytest.fixture

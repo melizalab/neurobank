@@ -1,8 +1,6 @@
 # -*- mode: python -*-
-import grp
 import json
 import os
-import pwd
 import time
 
 import pytest
@@ -10,6 +8,7 @@ import respx
 
 from nbank import archive, check, util
 from nbank.check import Status
+from test import running_as_root, skip_unless_posix
 from test.test_registry import (
     archives_url,
     base_url,
@@ -20,6 +19,7 @@ from test.test_registry import (
 
 @pytest.fixture
 def tmp_archive(tmp_path):
+    skip_unless_posix()
     return archive.create(tmp_path / "archive", base_url, umask=0o027)
 
 
@@ -254,8 +254,11 @@ def test_check_permissions_subdirectory_mode(tmp_archive, tmp_path):
     assert "missing" in findings[0].detail
 
 
-@pytest.mark.skipif(os.getuid() == 0, reason="root can own anything")
+@pytest.mark.skipif(running_as_root, reason="root can own anything")
 def test_check_permissions_owner_and_group(tmp_archive, tmp_path):
+    import grp
+    import pwd
+
     path, _ = store(tmp_archive, tmp_path, "res_1")
     root = tmp_archive["path"] / "resources"
     tmp_archive["policy"]["access"]["user"] = pwd.getpwuid(0).pw_name
@@ -329,7 +332,7 @@ def test_fix_permissions(tmp_archive, tmp_path):
     assert permission_findings(tmp_archive) == []
 
 
-@pytest.mark.skipif(os.getuid() == 0, reason="root can list anything")
+@pytest.mark.skipif(running_as_root, reason="root can list anything")
 def test_fix_permissions_reaches_unlistable_directories(tmp_archive, tmp_path):
     path, _ = store(tmp_archive, tmp_path, "res_1")
     path.chmod(0o600)
@@ -346,8 +349,11 @@ def test_fix_permissions_reaches_unlistable_directories(tmp_archive, tmp_path):
     ]
 
 
-@pytest.mark.skipif(os.getuid() == 0, reason="root can change ownership")
+@pytest.mark.skipif(running_as_root, reason="root can change ownership")
 def test_fix_permissions_without_root(tmp_archive, tmp_path):
+    import grp
+    import pwd
+
     path, _ = store(tmp_archive, tmp_path, "res_1")
     path.chmod(0o604)
     tmp_archive["policy"]["access"]["user"] = pwd.getpwuid(0).pw_name

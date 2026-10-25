@@ -177,6 +177,7 @@ def test_file_that_changes_size_is_an_error(written, tmp_path, monkeypatch):
     assert not (tmp_path / ".out.zip.partial").exists()
 
 
+@pytest.mark.posix
 def test_zip_directory_refuses_symlinks(tmp_path):
     src = tmp_path / "recording"
     src.mkdir()
