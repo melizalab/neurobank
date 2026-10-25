@@ -6,7 +6,8 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 - CLI commands are reorganized, with no aliases for the old names: `nbank init`
   is `nbank archive init`, and `nbank archive register-tar` is `nbank archive
-  register tape`, the first of a command per archive scheme.
+  register tape`, the first of a command per archive scheme. `nbank archive
+  check` is gone; use `nbank check archive`.
 - Every request asks for registry API 2.0 (`Accept: application/json;
   version=2.0`), and nbank checks once per registry that `info/` reports API
   2.x, raising `nbank.util.RegistryVersionError` (an error message in the CLI)

@@ -168,13 +168,6 @@ def core_field_args(args) -> dict:
     }
 
 
-def add_check_archive_args(pp):
-    """Adds the arguments for checking an archive to a subcommand parser."""
-    pp.set_defaults(func=check_archive)
-    add_check_options(pp)
-    pp.add_argument("path", type=Path, help="path of the archive to check")
-
-
 def add_check_options(pp):
     """Adds the options for checking archives to a subcommand parser."""
     pp.add_argument(
@@ -564,11 +557,6 @@ def make_parser() -> argparse.ArgumentParser:
     pp.add_argument("-n", "--name", help="filter archive list by name")
 
     pp = ppsub.add_parser(
-        "check", help="check an archive (same as 'nbank check archive')"
-    )
-    add_check_archive_args(pp)
-
-    pp = ppsub.add_parser(
         "register",
         help="register an archive stored elsewhere, and the resources in it",
     )
@@ -658,7 +646,9 @@ def make_parser() -> argparse.ArgumentParser:
         help="check an archive's contents against the registry, and its "
         "ownership and permissions against its policy",
     )
-    add_check_archive_args(pp)
+    pp.set_defaults(func=check_archive)
+    add_check_options(pp)
+    pp.add_argument("path", type=Path, help="path of the archive to check")
 
     pp = ppsub.add_parser(
         "all",

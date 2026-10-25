@@ -22,10 +22,7 @@ def test_userpwd_without_colon():
         userpwd("user")
 
 
-@pytest.mark.parametrize(
-    "command", [["check", "archive"], ["archive", "check"]], ids=["main", "alias"]
-)
-def test_check_archive_commands(monkeypatch, command):
+def test_check_archive_command(monkeypatch):
     log = logging.getLogger("nbank")
     handlers, level = list(log.handlers), log.level
     received = []
@@ -37,7 +34,15 @@ def test_check_archive_commands(monkeypatch, command):
     monkeypatch.setattr(script, "check_archive", fake_check_archive)
     try:
         status = script.main(
-            ["-r", "https://localhost/", *command, "--fix", "--no-hash", "archive"]
+            [
+                "-r",
+                "https://localhost/",
+                "check",
+                "archive",
+                "--fix",
+                "--no-hash",
+                "archive",
+            ]
         )
     finally:
         log.handlers[:] = handlers
