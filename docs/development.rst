@@ -31,6 +31,21 @@ don't apply, ``POSTGRES_DB``, ``POSTGRES_USER``, ``POSTGRES_PASSWORD``,
 ``NBANK_TEST_REGISTRY`` to its base URL and ``NBANK_TEST_AUTH`` to
 ``user:password`` for an account that can write.
 
+Linting
+-------
+
+The test workflow checks style, formatting and types in a job of its own, so a
+lint failure doesn't stop the tests:
+
+.. code:: bash
+
+   uv run ruff check
+   uv run ruff format --check
+   uv run --with ty==0.0.91 ty check nbank
+
+ty is pinned because new releases add checks; update the pin in
+``.github/workflows/python_tests.yml`` too.
+
 Documentation
 -------------
 

@@ -37,6 +37,22 @@ jobs:
     - name: Run tests
       run: uv run pytest
 
+  lint:
+    runs-on: ubuntu-26.04
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+    - name: Lint
+      run: uv run --frozen ruff check
+    - name: Check formatting
+      if: ${{ !cancelled() }}
+      run: uv run --frozen ruff format --check
+    # pinned: new ty releases add checks
+    - name: Check types
+      if: ${{ !cancelled() }}
+      run: uv run --frozen --with ty==0.0.91 ty check nbank
+
   docs:
     runs-on: ubuntu-26.04
     steps:

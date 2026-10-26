@@ -101,12 +101,6 @@ ignore = ["E221", "E501", "E701"]
 # nbank runs on Windows clients too, so platform checks shouldn't be narrowed
 python-platform = "all"
 
-[tool.mypy]
-python_version = "3.11"
-ignore_missing_imports = true
-strict_optional = true
-check_untyped_defs = true
-
 [tool.hatch.build]
 include = ["nbank/**"]
 exclude = ["*test*"]
