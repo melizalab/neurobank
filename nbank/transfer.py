@@ -628,8 +628,13 @@ class _DirectoryWriter(ExportWriter):
             )
         self._partial = partial
 
+    def _staged(self) -> Path:
+        if self._partial is None:
+            raise RuntimeError("no resource has been begun")
+        return self._partial
+
     def add_file(self, name: str, st: os.stat_result, reader: _HashingReader) -> None:
-        path = self._partial
+        path = self._staged()
         with open(path, "xb") as fp:
             reader.copy_to(fp)
             fp.flush()
@@ -637,13 +642,13 @@ class _DirectoryWriter(ExportWriter):
         os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))
 
     def add_bytes(self, name: str, data: bytes) -> None:
-        with open(self._partial, "xb") as fp:
+        with open(self._staged(), "xb") as fp:
             fp.write(data)
             fp.flush()
             os.fsync(fp.fileno())
 
     def commit(self) -> None:
-        _move_into_place(self._partial, self._target)
+        _move_into_place(self._staged(), self._target)
         self._partial = None
 
     def abort(self) -> None:

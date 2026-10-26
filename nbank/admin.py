@@ -66,7 +66,7 @@ def delete_resource(
     if not dry_run:
         r = session.send(req)
         r.raise_for_status()
-        if record is not None:
+        if record_fp is not None and record is not None:
             record_fp.write(json.dumps(record) + "\n")
             record_fp.flush()
 

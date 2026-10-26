@@ -1328,6 +1328,7 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     if args.fix:
         refused = dict(_set_keys(session, registry_url, archive_name, wrong_keys))
     for finding in wrong_keys:
+        assert finding.path is not None  # NO_KEY and WRONG_KEY findings are files
         msg = f" - {finding.resource} : {finding.path} - {finding.status.value}"
         if finding.detail:
             msg += f" ({finding.detail})"
@@ -1364,6 +1365,7 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
         log.info("not an interactive terminal, so not asking how to resolve problems")
     n_deleted = 0
     for finding in incomplete:
+        assert finding.path is not None  # INCOMPLETE findings are files
         log.error(" - %s - %s (%s)", finding.path, finding.status.value, finding.detail)
         if prompting and _ask("   [d]elete, [s]kip? ", "ds") == "d":
             try:
@@ -2069,7 +2071,7 @@ def import_tar(args):
                 received = transfer.receive_file(
                     dest, id, res.name, res.data, res.record["sha1"], progress=progress
                 )
-                if dest is not None:
+                if received.path is not None:
                     transfer.add_location(
                         session, registry_url, id, archive_name, received.path
                     )
@@ -2220,11 +2222,13 @@ def export_resources(args):
             Progress() as progress,
         ):
             for source in sources:
+                path = source.path
+                assert path is not None  # sources without copies were left out
                 try:
-                    size = source.path.stat().st_size
+                    size = path.stat().st_size
                 except OSError:
                     size = None
-                progress.start(source.path.name, size)
+                progress.start(path.name, size)
                 try:
                     verified = transfer.write_resource(writer, source, progress)
                 except transfer.TransferError as err:
@@ -2239,7 +2243,7 @@ def export_resources(args):
                 log.info(
                     "  - %s -> %s%s  (%s)",
                     source.id,
-                    source.path.name,
+                    path.name,
                     note,
                     progress.summary(),
                 )
@@ -2328,16 +2332,17 @@ def copy_resources(args):
         dest = None if args.dry_run else archive_cfg
         with Progress() as progress:
             for source in sources:
-                if not source.ok:
+                path = source.path
+                if path is None:
                     continue
                 try:
-                    size = source.path.stat().st_size
+                    size = path.stat().st_size
                 except OSError:
                     size = None
-                progress.start(source.path.name, size)
+                progress.start(path.name, size)
                 try:
                     received = transfer.receive_source(dest, source, progress)
-                    if dest is not None:
+                    if received.path is not None:
                         transfer.add_location(
                             session, registry_url, source.id, dest_name, received.path
                         )
@@ -2388,7 +2393,9 @@ def verify_file_hash(args):
             if core.verify(args.registry_url, path, id=test_id):
                 print(f"{path}: OK")
                 if args.metadata:
-                    matched.append(core.describe(args.registry_url, test_id))
+                    record = core.describe(args.registry_url, test_id)
+                    if record is not None:
+                        matched.append(record)
             else:
                 print(f"{path}: FAILED to match record for {test_id}")
                 n_failed += 1

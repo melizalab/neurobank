@@ -272,7 +272,11 @@ def recheck_unregistered(
     """
     findings = list(findings)
     names = sorted(
-        {f.resource for f in findings if f.status == Status.MISSING_FROM_REGISTRY}
+        {
+            f.resource
+            for f in findings
+            if f.status == Status.MISSING_FROM_REGISTRY and f.resource is not None
+        }
     )
     records = {}
     for i in range(0, len(names), util.bulk_batch_size):
@@ -293,13 +297,15 @@ def recheck_unregistered(
             else "the registry lists no locations"
         )
         sha1 = record["sha1"]
-        if finding.path.is_dir():
+        path = finding.path
+        assert path is not None  # MISSING_FROM_REGISTRY findings are files
+        if path.is_dir():
             status = Status.DIRECTORY
-        elif not os.access(finding.path, os.R_OK):
+        elif not os.access(path, os.R_OK):
             status = Status.UNREADABLE
         elif sha1 is None:
             status = Status.UNVERIFIED_ELSEWHERE
-        elif util.hash(finding.path) != sha1:
+        elif util.hash(path) != sha1:
             status = Status.CHANGED_ELSEWHERE
         else:
             status = Status.REGISTERED_ELSEWHERE

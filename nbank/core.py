@@ -149,12 +149,12 @@ def deposit(
     with util.registry_session(registry_url, auth=make_auth(auth)) as session:
         # check that archive exists for this path
         url, params = find_archive_by_path(registry_url, archive_path)
-        try:
-            archive = util.query_registry_first(session, url, params)["name"]
-        except TypeError as err:
+        archive_record = util.query_registry_first(session, url, params)
+        if archive_record is None:
             raise RuntimeError(
                 f"archive '{archive_path}' not in registry. did it move?"
-            ) from err
+            )
+        archive = archive_record["name"]
         log.info("   archive name: %s", archive)
 
         # check the dtype before hashing any files
@@ -250,6 +250,7 @@ def deposit(
                         log.info("   would be zipped (not built in a dry run)")
                     source = staged or src
                     if reader is not None and checkable:
+                        assert dtype is not None  # reader is for dtype
                         file_metadata = readers.read_file_metadata(
                             reader, dtype, source
                         )
@@ -443,10 +444,11 @@ def find_resources(
 def find_resource(registry_url: str, id: str, **kwargs) -> Path:
     """Returns the path of a file for id that can be read on this host. Takes the
     options of find_resources, and raises FileNotFoundError if there isn't one."""
-    for _, result in find_resources(registry_url, id, **kwargs):
-        if isinstance(result, FileNotFoundError):
-            raise result
-        return result
+    # find_resources yields one result for each id
+    _, result = next(find_resources(registry_url, id, **kwargs))
+    if isinstance(result, FileNotFoundError):
+        raise result
+    return result
 
 
 def _find_resource(
@@ -531,11 +533,10 @@ def verify(
     else:
         log.debug("  searching by id (%s)", id)
         resource = describe(registry_url, id=id)
-        try:
-            log.debug("  registry: %s; file: %s", resource["sha1"], file_hash)
-            return resource["sha1"] == file_hash
-        except TypeError as err:
-            raise ValueError(f"{id} does not exist") from err
+        if resource is None:
+            raise ValueError(f"{id} does not exist")
+        log.debug("  registry: %s; file: %s", resource["sha1"], file_hash)
+        return resource["sha1"] == file_hash
 
 
 def update(
