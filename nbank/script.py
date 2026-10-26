@@ -201,7 +201,9 @@ def make_parser() -> argparse.ArgumentParser:
         "-r",
         dest="registry_url",
         help="URL of the registry service. "
-        f"Default is to use the environment variable '{registry._env_registry}'",
+        f"Default is to use the environment variable '{registry._env_registry}'. "
+        "Commands that store resources in an archive use the registry in its "
+        "nbank.json",
     )
     p.add_argument(
         "-a",
@@ -717,7 +719,9 @@ def main(argv=None):
     log.debug("run time: %s", datetime.datetime.now())
 
     # read after parsing, so the parser (and documentation built from it) doesn't
-    # hold this host's value
+    # hold this host's value. Checks of an archive prefer -r to its nbank.json, but
+    # not NBANK_REGISTRY
+    args.registry_given = args.registry_url is not None
     if args.registry_url is None:
         args.registry_url = registry.default_registry()
     if getattr(args, "alt_base", False) is None and os.environ.get(_env_alt_base):
@@ -736,10 +740,14 @@ def main(argv=None):
         )
         return 1
 
-    # most commands require a registry, so check it here once
+    # most commands require a registry, so check it here once; these can use the one
+    # in an archive's nbank.json
     if args.registry_url is None and args.func not in (
         store_resources,
         locate_resources,
+        copy_resources,
+        import_tar,
+        check_archive,
     ):
         log.error(
             "error: supply a registry url with '-r' or %s environment variable",
@@ -1132,8 +1140,9 @@ def check_archive(args):
     registered to the archive must have a file, the key of each resource's location
     must be the name of its file, and ownership and permissions must follow the policy
     (keys and permissions are fixed with --fix). The archive is a path if it's an
-    existing directory, and otherwise a name in the registry. Returns 1 if there are
-    errors that weren't fixed or the check couldn't be run.
+    existing directory, and otherwise a name in the registry. A path is checked against
+    the registry given with -r, or else the one in its nbank.json. Returns 1 if there
+    are errors that weren't fixed or the check couldn't be run.
     """
     path = Path(args.archive)
     if not path.is_dir():
@@ -1142,8 +1151,9 @@ def check_archive(args):
     if archive_cfg is None:
         return 1
     log.info("archive: %s", archive_cfg.path)
-    registry_url = archive_cfg.registry
+    registry_url = args.registry_url if args.registry_given else archive_cfg.registry
     log.info("registry: %s", registry_url)
+    _warn_other_registry(archive_cfg, registry_url)
     with util.registry_session(registry_url, auth=args.auth) as session:
         name = _registered_name(session, registry_url, archive_cfg.path)
         if name is None:
@@ -1160,6 +1170,16 @@ def _archive_config(path: Path) -> archive.ArchiveConfig | None:
     except FileNotFoundError:
         log.error("error: %s is not a valid neurobank archive", path)
         return None
+
+
+def _warn_other_registry(archive_cfg: archive.ArchiveConfig, registry_url: str) -> None:
+    """Logs a warning if the archive's nbank.json names a registry other than
+    registry_url, the one it's being checked against."""
+    if archive_cfg.registry.rstrip("/") != registry_url.rstrip("/"):
+        log.warning(
+            " - warning: nbank.json points to a different registry (%s)",
+            archive_cfg.registry,
+        )
 
 
 def _registered_name(session, registry_url: str, archive_path: Path) -> str | None:
@@ -1186,6 +1206,13 @@ def _check_archive_by_name(args, name: str) -> int:
     """Checks the archive with this name in the registry. It must be a neurobank archive
     on this host."""
     registry_url = args.registry_url
+    if registry_url is None:
+        log.error(
+            "error: supply a registry url with '-r' or %s environment variable, "
+            "or the path of the archive",
+            registry._env_registry,
+        )
+        return 1
     log.info("registry: %s", registry_url)
     with util.registry_session(registry_url, auth=args.auth) as session:
         url, _ = registry.get_archive(registry_url, name)
@@ -1227,12 +1254,7 @@ def _check_registered_archive(session, registry_url, info, args) -> bool:
             archive_cfg.path,
         )
         ok = False
-    if archive_cfg.registry.rstrip("/") != registry_url.rstrip("/"):
-        log.error(
-            " - nbank.json points to a different registry (%s)",
-            archive_cfg.registry,
-        )
-        ok = False
+    _warn_other_registry(archive_cfg, registry_url)
     try:
         if not _check_archive(session, registry_url, name, archive_cfg, args):
             ok = False
@@ -2033,7 +2055,7 @@ def import_tar(args):
     archive_cfg = _archive_config(args.dest)
     if archive_cfg is None:
         return 1
-    registry_url = args.registry_url or archive_cfg.registry
+    registry_url = archive_cfg.registry
     archive_path = archive_cfg.path  # this will resolve the path
     log.info("registry: %s", registry_url)
     n_imported = n_already = total = 0
@@ -2298,7 +2320,7 @@ def copy_resources(args):
     archive_cfg = _archive_config(args.dest)
     if archive_cfg is None:
         return 1
-    registry_url = args.registry_url or archive_cfg.registry
+    registry_url = archive_cfg.registry
     archive_path = archive_cfg.path
     log.info("registry: %s", registry_url)
     n_failed = n_copied = total = 0

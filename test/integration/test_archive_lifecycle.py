@@ -182,6 +182,48 @@ def test_check_archive_by_name_refused(cli, registry, client, unique, caplog):
     assert "checking tape archives isn't supported" in caplog.text
 
 
+elsewhere = "https://elsewhere.invalid/"
+
+
+def point_elsewhere(archive):
+    """Makes an archive's nbank.json name a registry that doesn't exist."""
+    path = archive.path / "nbank.json"
+    config = json.loads(path.read_text())
+    config["registry"] = elsewhere
+    path.write_text(json.dumps(config))
+
+
+def test_check_archive_prefers_registry_option(
+    cli, archive, dtype, deposit_file, caplog
+):
+    deposit_file(archive, dtype, hash=True)
+    point_elsewhere(archive)
+    assert cli("check", "archive", str(archive.path)) == 0
+    check_summary(caplog, 1, 0, 0, 0)
+    assert f"nbank.json points to a different registry ({elsewhere})" in caplog.text
+
+
+@pytest.mark.parametrize("env", [None, elsewhere])
+def test_check_archive_uses_its_registry(
+    cli, archive, dtype, deposit_file, monkeypatch, caplog, env
+):
+    # without -r, the registry in nbank.json, even if NBANK_REGISTRY names another
+    if env is None:
+        monkeypatch.delenv(nbank_registry._env_registry, raising=False)
+    else:
+        monkeypatch.setenv(nbank_registry._env_registry, env)
+    deposit_file(archive, dtype, hash=True)
+    assert not script.main(["check", "archive", str(archive.path)])
+    check_summary(caplog, 1, 0, 0, 0)
+    assert "different registry" not in caplog.text
+
+
+def test_check_archive_by_name_needs_a_registry(cli, archive, monkeypatch, caplog):
+    monkeypatch.delenv(nbank_registry._env_registry, raising=False)
+    assert script.main(["check", "archive", archive.name]) == 1
+    assert "supply a registry url" in caplog.text
+
+
 def test_check_ignores_archive_with_similar_name(
     cli, client, registry, register, archive, tmp_path, caplog
 ):
@@ -287,9 +329,9 @@ def test_check_all(
     real = nbank_archive.create(tmp_path / f"{linked}-real", registry.url)
     (tmp_path / linked).symlink_to(real.path)
     add_archive(linked, "neurobank", tmp_path / linked)
-    elsewhere = unique("arch")
-    config = nbank_archive.create(tmp_path / elsewhere, "https://elsewhere/")
-    add_archive(elsewhere, "neurobank", config.path)
+    other_registry = unique("arch")
+    config = nbank_archive.create(tmp_path / other_registry, "https://elsewhere/")
+    add_archive(other_registry, "neurobank", config.path)
 
     assert cli("check", "all") == 1
     failed = failed_checks(caplog)
@@ -302,7 +344,8 @@ def test_check_all(
     assert f" - {tape}: tape archive" in caplog.text
     assert linked in failed
     assert "deposits won't find the archive" in caplog.text
-    assert elsewhere in failed
+    # checked against this registry, with a warning
+    assert other_registry not in failed
     assert (
         "nbank.json points to a different registry (https://elsewhere/)" in caplog.text
     )
@@ -834,6 +877,21 @@ def test_copy(
     caplog.clear()
     assert cli("copy", str(b.path), file_name, other) == 0
     assert "already in destination: 2" in caplog.text
+
+
+def test_copy_and_import_use_destination_registry(
+    cli, registry, two_archives, dtype, deposit_file, tmp_path, caplog
+):
+    # they deposit resources, so like deposit they ignore -r and NBANK_REGISTRY
+    a, b = two_archives
+    copied, imported = (deposit_file(a, dtype) for _ in range(2))
+    tar = make_tar(tmp_path / "archive.tar", stored_path(a, imported))
+    assert not script.main(["-r", elsewhere, "copy", str(b.path), copied])
+    assert not script.main(
+        ["-r", elsewhere, "archive", "import-tar", str(tar), str(b.path)]
+    )
+    for name in (copied, imported):
+        assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
 
 
 def test_copy_only_offline(

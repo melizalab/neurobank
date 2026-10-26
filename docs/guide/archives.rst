@@ -11,7 +11,9 @@ The registry
 ------------
 
 Most commands need a registry, given with ``-r registry-url`` or the
-``NBANK_REGISTRY`` environment variable. The registry can be any service that
+``NBANK_REGISTRY`` environment variable. Commands that store resources in an
+archive (``deposit``, ``copy`` and ``archive import-tar``) use the registry in
+the archive's ``nbank.json`` instead. The registry can be any service that
 implements the API defined in
 `django-neurobank <https://github.com/melizalab/django-neurobank>`__ (version
 1.0 or later, which has API 2.x). The registry URL also determines the domain

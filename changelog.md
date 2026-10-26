@@ -21,6 +21,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
   check` is gone; use `nbank check archive`, which now also takes the archive's
   name in the registry as well as its path. `nbank registry-info` is `nbank
   registry info`.
+- `nbank copy` and `nbank archive import-tar` use the registry in the
+  destination archive's `nbank.json`, as `deposit` does, instead of `-r` or
+  `NBANK_REGISTRY`.
 - Every request asks for registry API 2.0 (`Accept: application/json;
   version=2.0`), and nbank checks once per registry that `info/` reports API
   2.x, raising `nbank.util.RegistryVersionError` (an error message in the CLI)
@@ -135,6 +138,11 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Changed
 
+- `nbank check archive PATH` checks against the registry given with `-r`, or
+  else the one in the archive's `nbank.json`, and needs neither `-r` nor
+  `NBANK_REGISTRY`. An archive whose `nbank.json` names a different registry
+  from the one checking it is a warning, not an error, in `check archive` and
+  `check all`, so archives can be checked against a copy of the registry.
 - Searches (`nbank search`, `core.search`) and `nbank check` get every result in
   one streamed response (`util.query_registry_stream`), instead of a page at a
   time, which is much faster for large archives. Registries that can't stream
