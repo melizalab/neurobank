@@ -7,6 +7,7 @@ import argparse
 import codecs
 import concurrent.futures
 import datetime
+import io
 import json
 import logging
 import os
@@ -34,10 +35,9 @@ def utf8_console():
     name or note in the registry; characters a stream can't take are replaced.
     """
     for stream in (sys.stdout, sys.stderr):
-        encoding = getattr(stream, "encoding", None)
-        if encoding is None or not hasattr(stream, "reconfigure"):
+        if not isinstance(stream, io.TextIOWrapper):
             continue
-        if codecs.lookup(encoding).name != "utf-8":
+        if codecs.lookup(stream.encoding).name != "utf-8":
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
@@ -94,14 +94,14 @@ class ParseKeyVal(argparse.Action):
                 raise ValueError(f"{value} is not a valid JSON list or object") from err
             return value
 
-    def __call__(self, parser, namespace, arg, option_string=None):
+    def __call__(self, parser, namespace, values, option_string=None):
         kv = getattr(namespace, self.dest)
         if kv is None:
             kv = dict()
-        if not arg.count("=") == 1:
-            raise ValueError(f"-k {arg} argument badly formed; needs key=value")
+        if not values.count("=") == 1:
+            raise ValueError(f"-k {values} argument badly formed; needs key=value")
         else:
-            key, val = arg.split("=")
+            key, val = values.split("=")
             if key in registry.core_fields:
                 parser.error(
                     f"{option_string} {key}: {key} is not metadata; use --{key}"
@@ -2390,7 +2390,7 @@ def verify_file_hash(args):
         matched = []
         try:
             test_id = id_from_fname(path)
-            if core.verify(args.registry_url, path, id=test_id):
+            if core.verify(args.registry_url, path, test_id):
                 print(f"{path}: OK")
                 if args.metadata:
                     record = core.describe(args.registry_url, test_id)
@@ -2400,7 +2400,7 @@ def verify_file_hash(args):
                 print(f"{path}: FAILED to match record for {test_id}")
                 n_failed += 1
         except ValueError:
-            for resource in core.verify(args.registry_url, path):
+            for resource in core.find_by_hash(args.registry_url, path):
                 print(f"{path}: matches registry resource {resource['name']}")
                 matched.append(resource)
             if not matched:

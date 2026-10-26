@@ -790,7 +790,7 @@ def test_search_nonexistent_resource(mocked_api):
     assert items == data
 
 
-def test_verify_resource_by_hash(mocked_api, tmp_path):
+def test_find_by_hash(mocked_api, tmp_path):
     name = "dummy_1"
     src = tmp_path / name
     contents = '{"foo": 10}\n'
@@ -799,7 +799,7 @@ def test_verify_resource_by_hash(mocked_api, tmp_path):
     data = [{"sha1": sha1}]
     query = {"sha1": sha1}
     mocked_api.get(resource_url, params=query).respond(json=data)
-    items = list(core.verify(base_url, src))
+    items = list(core.find_by_hash(base_url, src))
     assert items == data
 
 
@@ -1622,11 +1622,11 @@ def test_search_leaves_out_superseded_by_default(mocked_api):
     assert route.calls.last.request.url.params["superseded"] == "false"
 
 
-def test_verify_finds_superseded_resources(mocked_api, tmp_path):
+def test_find_by_hash_finds_superseded_resources(mocked_api, tmp_path):
     path = tmp_path / "file.txt"
     path.write_text("contents")
     route = mocked_api.get(resource_url).respond(json=[{"name": "res_1"}])
-    assert [r["name"] for r in core.verify(base_url, path)] == ["res_1"]
+    assert [r["name"] for r in core.find_by_hash(base_url, path)] == ["res_1"]
     assert "superseded" not in route.calls.last.request.url.params
 
 

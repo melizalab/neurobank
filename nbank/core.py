@@ -515,28 +515,28 @@ def _find_resource(
     )
 
 
-def verify(
-    registry_url: str, file: str | Path, *, id: str | None = None
-) -> Iterator[dict] | bool:
-    """Hashes file and returns the registry records with that hash.
+def verify(registry_url: str, file: str | Path, id: str) -> bool:
+    """Returns whether file's hash matches the registered hash of resource id.
 
-    If id is given, returns whether the hash matches id's record instead, and raises
-    ValueError if id isn't registered.
+    Raises ValueError if id isn't registered.
     """
     from nbank.util import hash
 
-    log.debug("verifying %s", file)
     file_hash = hash(Path(file))
-    if id is None:
-        log.debug("  searching by hash (%s)", file_hash)
-        return search(registry_url, sha1=file_hash, superseded=None)
-    else:
-        log.debug("  searching by id (%s)", id)
-        resource = describe(registry_url, id=id)
-        if resource is None:
-            raise ValueError(f"{id} does not exist")
-        log.debug("  registry: %s; file: %s", resource["sha1"], file_hash)
-        return resource["sha1"] == file_hash
+    resource = describe(registry_url, id=id)
+    if resource is None:
+        raise ValueError(f"{id} does not exist")
+    log.debug("verifying %s: registry %s; file %s", file, resource["sha1"], file_hash)
+    return resource["sha1"] == file_hash
+
+
+def find_by_hash(registry_url: str, file: str | Path) -> Iterator[dict]:
+    """Hashes file and yields the registry records with that hash, superseded or not."""
+    from nbank.util import hash
+
+    file_hash = hash(Path(file))
+    log.debug("searching for %s by hash (%s)", file, file_hash)
+    return search(registry_url, sha1=file_hash, superseded=None)
 
 
 def update(
@@ -574,6 +574,7 @@ __all__ = [
     "deposit",
     "describe",
     "describe_many",
+    "find_by_hash",
     "find_resource",
     "find_resources",
     "search",

@@ -28,6 +28,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
   registry's version. Versions before 1.0 can still read from a django-neurobank
   1.0 registry (`search`, `info`, `locate`, `fetch`, `verify`, `check`), finding
   files without keys, but the registry refuses their changes.
+- `core.verify(registry_url, file, id)` returns whether file matches resource
+  id; `core.find_by_hash(registry_url, file)` yields the records with file's
+  hash, which is what `core.verify` without `id` did.
 - `core.get` and `core.find` are removed; use `core.find_resource(s)`, which
   return paths, or `nbank locate` for every location of a resource.
   `archive.iter_resources` is removed; use `check.check_archive_contents`.
@@ -61,8 +64,8 @@ Requires django-neurobank 1.0 (registry API 2.x).
   the version check.
 - `nbank search` and `core.search` leave out superseded resources;
   `--superseded` (`superseded=True`) finds only them, and `--all`
-  (`superseded=None`) both. `core.verify` still finds a file's resource if it's
-  superseded.
+  (`superseded=None`) both. `core.find_by_hash` still finds a file's resource if
+  it's superseded.
 - `nbank deposit --dry-run` needs permission to deposit, as it asks the
   registry to check each resource (see below).
 - Automatic ids (`deposit -A`, or the `auto_identifiers` policy) are made by

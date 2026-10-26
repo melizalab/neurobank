@@ -438,12 +438,12 @@ def test_find_resources_only_unreachable_locations(registry, register, archive):
         core.find_resource(registry.url, name)
 
 
-def test_verify_by_hash(registry, register, tmp_path, unique):
+def test_find_by_hash(registry, register, tmp_path, unique):
     src = write_file(tmp_path / "file.txt", unique("contents"))
     name = register(sha1=util.hash(src))["name"]
-    assert [r["name"] for r in core.verify(registry.url, src)] == [name]
+    assert [r["name"] for r in core.find_by_hash(registry.url, src)] == [name]
     other = write_file(tmp_path / "other.txt", unique("contents"))
-    assert list(core.verify(registry.url, other)) == []
+    assert list(core.find_by_hash(registry.url, other)) == []
 
 
 def test_verify_by_id(registry, register, tmp_path, unique):
