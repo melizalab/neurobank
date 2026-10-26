@@ -543,8 +543,7 @@ class _TarWriter(ExportWriter):
         self.tar = tar
 
     def begin(self, name: str) -> None:
-        members = self.tar.members  # ty: ignore[unresolved-attribute]
-        self._offset, self._n_members = self.tar.offset, len(members)
+        self._offset = self.tar.offset
 
     def _info(self, name: str, st: os.stat_result) -> tarfile.TarInfo:
         # built by hand, as gettarinfo stores hard-linked files as links
@@ -571,7 +570,6 @@ class _TarWriter(ExportWriter):
         self.tar.fileobj.seek(self._offset)
         self.tar.fileobj.truncate()  # ty: ignore[unresolved-attribute]
         self.tar.offset = self._offset
-        del self.tar.members[self._n_members :]  # ty: ignore[unresolved-attribute]
 
 
 class _ZipWriter(ExportWriter):

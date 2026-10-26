@@ -795,6 +795,32 @@ def test_export_file_that_shrinks(tmp_path, export_format, monkeypatch):
     assert export_contents(out) == []
 
 
+@pytest.mark.parametrize("fmt", ["tar", "zip"])
+def test_export_failure_leaves_no_trace(tmp_path, fmt, monkeypatch):
+    # the failed resource comes last, so nothing written after it hides what it left,
+    # and spans several reads, so some of it is written before it fails
+    kept, failed = tmp_path / "res_1", tmp_path / "res_2"
+    kept.write_bytes(b"one")
+    failed.write_bytes(b"x" * int(2.5 * transfer._tape_read_size))
+    real_stat = transfer._stat
+
+    def grown(path):
+        st = list(real_stat(path))
+        if path == failed:
+            st[stat.ST_SIZE] += 10
+        return os.stat_result(st)
+
+    monkeypatch.setattr(transfer, "_stat", grown)
+    for name in ("with", "without"):
+        (tmp_path / name).mkdir()
+    out, results = write_export(
+        tmp_path / "with", fmt, source_for(kept, None), source_for(failed, None)
+    )
+    assert "got shorter" in str(results[1])
+    expected, _ = write_export(tmp_path / "without", fmt, source_for(kept, None))
+    assert out.read_bytes() == expected.read_bytes()
+
+
 def test_export_without_a_copy(tmp_path, export_format):
     _, results = write_export(
         tmp_path, export_format, transfer.Source("res_1", error="no copy")
