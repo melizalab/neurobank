@@ -17,6 +17,7 @@ from nbank import archive, registry, tape_archive  # noqa: F401
 from nbank.types import (
     FetchableResource,
     LocationContext,
+    NonFetchableResource,
     NotFetchableError,
     Resource,
     location_class,
@@ -374,9 +375,11 @@ def fetch_resource(
     for loc in locations:
         location = parse_location(loc, alt_base=alt_base, http_session=session)
         log.debug("trying %s", location)
+        if location is None or isinstance(location, NonFetchableResource):
+            continue
         try:
             path = location.fetch(target)
-        except (AttributeError, NotFetchableError):
+        except NotFetchableError:
             continue
         if sha1 is None or hash(path) == sha1:
             return path

@@ -20,6 +20,7 @@ import httpx
 
 from nbank import __version__, archive, core, registry, util
 from nbank.script import setup_log, userpwd, utf8_console
+from nbank.types import LocalResource
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -49,12 +50,11 @@ def delete_resource(
                 resource_id,
                 loc["archive_name"],
             )
+        elif not isinstance(location, archive.Resource):
+            log.debug("   - %s is not deletable, skipping", location)
         elif not dry_run:
-            try:
-                location.unlink()
-                log.info("  ✗ deleted %s", location.path)
-            except AttributeError:
-                log.debug("   - %s is not deletable, skipping", location)
+            location.unlink()
+            log.info("  ✗ deleted %s", location.path)
     url, params = registry.get_resource(registry_url, resource_id)
     record = None
     if record_fp is not None and not dry_run:
@@ -133,7 +133,7 @@ def update_hashes(args):
             for loc in resource["locations"]:
                 try:
                     location = util.parse_location(loc)
-                    if not hasattr(location, "path"):
+                    if not isinstance(location, LocalResource):
                         log.debug("    - %s is not local, skipping", loc)
                         continue
                     hash = util.hash(location.path)

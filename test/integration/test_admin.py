@@ -65,6 +65,12 @@ def test_delete_resource_without_script_globals(registry, client, archive, regis
     assert core.describe(registry.url, name) is None
 
 
+def test_delete_resource_only_on_tape(admin_cli, registry, on_tape, tmp_path):
+    result = admin_cli("delete", str(listing(tmp_path, on_tape)))
+    assert result.returncode == 0, result.stderr
+    assert core.describe(registry.url, on_tape) is None
+
+
 def test_update_hash(admin_cli, registry, archive, dtype, deposit_file, tmp_path):
     names = [deposit_file(archive, dtype) for _ in range(2)]
     assert all(core.describe(registry.url, n)["sha1"] is None for n in names)

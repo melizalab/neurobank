@@ -338,6 +338,17 @@ def location_key(client, registry):
 
 
 @pytest.fixture
+def on_tape(client, registry, register, unique):
+    """The id of a resource whose only location is in a tape archive."""
+    tape = unique("tape")
+    url, body = reg.add_archive(
+        registry.url, tape, "tape", f"{tape}:1", accessibility="offline"
+    )
+    client.post(url, json=body).raise_for_status()
+    return register(archive=tape, key="member.txt")["name"]
+
+
+@pytest.fixture
 def plant_directory(register):
     """Returns a function that registers a resource in an archive and puts a
     directory where its file would be, as a directory resource would have been

@@ -569,6 +569,18 @@ def test_prune_resource_elsewhere(
     assert stored_path(b, name).exists()
 
 
+def test_prune_file_missing(
+    cli, registry, two_archives, dtype, deposit_file, replicate, tmp_path, caplog
+):
+    a, b = two_archives
+    name = deposit_file(a, dtype)
+    replicate(name, a, b)
+    stored_path(a, name).unlink()
+    assert cli("archive", "prune", a.name, str(listing(tmp_path, name))) == 1
+    assert "resource is not actually present in archive" in caplog.text
+    assert set(core.describe(registry.url, name)["locations"]) == {a.name, b.name}
+
+
 def test_prune_unknown_resource_and_archive(cli, archive, tmp_path, unique, caplog):
     missing = unique("missing")
     assert cli("archive", "prune", archive.name, str(listing(tmp_path, missing))) == 1

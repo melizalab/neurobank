@@ -32,6 +32,7 @@ class FetchableResource(Protocol):
         pass
 
 
+@runtime_checkable
 class LocalResource(FetchableResource, Protocol):
     """A local resource that can be linked or referred to by path"""
 

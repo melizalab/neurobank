@@ -22,6 +22,7 @@ from urllib.parse import urlunparse
 import httpx
 
 from nbank import __version__, archive, check, core, readers, registry, transfer, util
+from nbank.types import LocalResource
 
 log = logging.getLogger("nbank")  # root logger
 
@@ -917,21 +918,22 @@ def locate_resources(args):
                     if resource is None:
                         pass
                     elif args.link is not None:
+                        if not isinstance(resource, LocalResource):
+                            log.info("%s doesn't support linking", resource)
+                            continue
                         try:
                             linkpath = resource.link(args.link)
-                            print(f"{id:<20}\t-> {linkpath}")
-                            found = True
-                            break
-                        except AttributeError:
-                            log.info("%s doesn't support linking", resource)
                         except OSError as err:
                             log.error("%s: unable to link: %s", id, _link_error(err))
                             break
+                        print(f"{id:<20}\t-> {linkpath}")
+                        found = True
+                        break
                     elif args.print0:
-                        try:
+                        if isinstance(resource, LocalResource):
                             print(str(resource.path), end="\0")
                             found = True
-                        except AttributeError:
+                        else:
                             log.info("%s isn't local, skipping", resource)
                     else:
                         print(f"{id:<20}\t{resource}")
@@ -1765,7 +1767,7 @@ def prune_archive(args):
                 # this can throw FileNotFound but that shouldn't happen unless
                 # something is really wrong
                 resource = util.parse_location(locations[args.archive_name])
-                if resource is None:
+                if not isinstance(resource, archive.Resource):
                     log.error("  ✗ resource is not actually present in archive")
                     n_failed += 1
                     continue

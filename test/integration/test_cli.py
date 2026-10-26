@@ -253,6 +253,22 @@ def test_locate_link(cli, archive, dtype, deposit_file, tmp_path):
     assert (links / path.name).resolve() == path
 
 
+def test_locate_only_on_tape(cli, on_tape, tmp_path, capsys, caplog):
+    links = tmp_path / "links"
+    links.mkdir()
+    assert cli("locate", "-L", str(links), on_tape) == 1
+    assert "doesn't support linking" in caplog.text
+    assert list(links.iterdir()) == []
+    assert cli("locate", "-0", on_tape) == 1
+    assert "isn't local, skipping" in caplog.text
+    assert capsys.readouterr().out == ""
+
+
+def test_fetch_only_on_tape(cli, on_tape, dest, capsys):
+    assert cli("fetch", "-d", str(dest), on_tape) == 1
+    assert f"{on_tape:<20}\t-> (no valid locations)" in capsys.readouterr().out
+
+
 def test_modify(cli, registry, register, capsys):
     name = register(a=1, b=2)["name"]
     assert cli("modify", "-k", "b=3", "-k", "c=new", "-K", "a", name) == 0
