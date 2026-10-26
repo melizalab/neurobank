@@ -144,9 +144,8 @@ def test_config_not_json(tmp_path):
     root = tmp_path / "archive"
     root.mkdir()
     (root / "nbank.json").write_text("{not json")
-    with pytest.raises(
-        ValueError, match=re.escape("nbank.json: Expecting property name")
-    ):
+    # the parser's message differs between CPython and PyPy
+    with pytest.raises(ValueError, match=re.escape(f"{root / 'nbank.json'}: ")):
         archive.ArchiveConfig.load(root)
 
 
