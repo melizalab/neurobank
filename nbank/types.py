@@ -13,6 +13,18 @@ if TYPE_CHECKING:
     from httpx import Client
 
 
+class Readable(Protocol):
+    """A binary stream that can be read"""
+
+    def read(self, size: int = -1, /) -> bytes: ...
+
+
+class Writable(Protocol):
+    """A binary stream that can be written"""
+
+    def write(self, data: bytes, /) -> int: ...
+
+
 class NotFetchableError(Exception):
     pass
 

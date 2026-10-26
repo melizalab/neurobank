@@ -18,18 +18,18 @@ import stat
 import tarfile
 import time
 import zipfile
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Generator, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO, NamedTuple
+from typing import NamedTuple
 
 import httpx
 from httpx import Client
 
 from nbank import archive as nbank_archive
 from nbank import registry, util
-from nbank.types import NonFetchableResource
+from nbank.types import NonFetchableResource, Readable, Writable
 
 
 @dataclass(frozen=True)
@@ -226,7 +226,7 @@ def receive_file(
     cfg: nbank_archive.ArchiveConfig | None,
     id: str,
     name: str,
-    source: BinaryIO,
+    source: Readable,
     sha1: str | None,
     progress: Progress | None = None,
 ) -> Received:
@@ -285,7 +285,7 @@ class TarReadError(OSError):
 class _MemberReader:
     """Reads a tar member, raising TarReadError if the tar file ends partway through it."""
 
-    def __init__(self, stream: BinaryIO, name: str):
+    def __init__(self, stream: Readable, name: str):
         self._stream = stream
         self.name = name
 
@@ -316,7 +316,7 @@ class _BlockReader(io.RawIOBase):
     the bytes and blocks read, and raises read errors as TarReadError.
     """
 
-    def __init__(self, raw: BinaryIO, size: int):
+    def __init__(self, raw: io.FileIO, size: int):
         self.raw = raw
         self.size = size
         self.nbytes = 0
@@ -348,7 +348,7 @@ class _BlockReader(io.RawIOBase):
 class _FileReader(io.RawIOBase):
     """Reads and seeks a file, raising read errors as TarReadError."""
 
-    def __init__(self, raw: BinaryIO):
+    def __init__(self, raw: io.FileIO):
         self.raw = raw
 
     def readable(self) -> bool:
@@ -373,7 +373,7 @@ class _FileReader(io.RawIOBase):
 
 
 @contextmanager
-def open_tar(path: str | Path) -> Iterator[tarfile.TarFile]:
+def open_tar(path: str | Path) -> Generator[tarfile.TarFile, None, None]:
     """Opens a tar file, tape device, or '-' (stdin) to read its members in order.
 
     Members that aren't read are seeked past in a file, but have to be read through on
@@ -415,7 +415,7 @@ class TarResource(NamedTuple):
 
     record: dict
     name: str
-    data: BinaryIO
+    data: Readable
     size: int
 
 
@@ -445,7 +445,9 @@ def iter_tar_resources(
         if record is None:
             continue
         if member.isreg():
-            data = _MemberReader(tar.extractfile(member), member.name)
+            stream = tar.extractfile(member)
+            assert stream is not None  # a regular file
+            data = _MemberReader(stream, member.name)
             yield TarResource(record, path.name, data, member.size)
         else:
             inside = path
@@ -482,7 +484,7 @@ class _HashingReader:
             self.progress(self.nbytes)
         return data
 
-    def copy_to(self, dest: BinaryIO) -> None:
+    def copy_to(self, dest: Writable) -> None:
         """Writes the whole file to dest."""
         while self.nbytes < self.size:
             dest.write(self.read(min(_tape_read_size, self.size - self.nbytes)))
@@ -658,7 +660,9 @@ class _DirectoryWriter(ExportWriter):
 
 
 @contextmanager
-def open_export(path: Path, compress: bool = False) -> Iterator[ExportWriter]:
+def open_export(
+    path: Path, compress: bool = False
+) -> Generator[ExportWriter, None, None]:
     """Opens an export: a tar file (.tar), a zip file (.zip), or else a directory.
 
     Yields an ExportWriter. A directory is created if needed; tar and zip files must not

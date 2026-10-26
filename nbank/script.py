@@ -1044,7 +1044,7 @@ def fetch_resources(args):
     if not to_fetch:
         log.error("nbank fetch: error: no identifiers given")
         return 1
-    url, query = registry.get_locations_bulk(args.registry_url, to_fetch)
+    url, query = registry.get_locations_bulk(args.registry_url, sorted(to_fetch))
     with (
         util.registry_session(args.registry_url, auth=args.auth) as session,
         concurrent.futures.ThreadPoolExecutor() as executor,

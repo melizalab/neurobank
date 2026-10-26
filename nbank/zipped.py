@@ -15,7 +15,7 @@ import io
 import struct
 import zipfile
 from pathlib import Path
-from typing import BinaryIO
+from typing import IO
 
 _LOCAL_HEADER = struct.Struct("<4sHHHHHIIIHH")
 _ENCRYPTED = 0x1
@@ -53,7 +53,7 @@ def member_extent(path: Path, name: str) -> tuple[int, int]:
         return offset, info.file_size
 
 
-def open_member(path: Path, name: str) -> BinaryIO:
+def open_member(path: Path, name: str) -> IO[bytes]:
     """Returns a read-only, seekable file object for member name.
 
     A stored member is read straight from the zip file, so seeking is cheap; a
@@ -77,7 +77,7 @@ def extract_member(path: Path, name: str, dest_dir: Path) -> Path:
 class _Slice(io.RawIOBase):
     """The bytes from offset to offset + size of an open file, as a file."""
 
-    def __init__(self, fp: BinaryIO, offset: int, size: int):
+    def __init__(self, fp: io.BufferedReader, offset: int, size: int):
         self._fp = fp
         self._offset = offset
         self._size = size

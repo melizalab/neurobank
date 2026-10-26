@@ -5,10 +5,10 @@
 
 import json
 import logging
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path, PurePath, PurePosixPath
-from typing import Any, BinaryIO, ClassVar
+from typing import Any, ClassVar
 
 from httpx import URL, USE_CLIENT_DEFAULT, Auth, BasicAuth, Client, Response, codes
 
@@ -19,7 +19,9 @@ from nbank.types import (
     LocationContext,
     NonFetchableResource,
     NotFetchableError,
+    Readable,
     Resource,
+    Writable,
     location_class,
     location_scheme,
 )
@@ -66,7 +68,7 @@ def _origin(url: URL) -> tuple[str, str, int | None]:
 @contextmanager
 def registry_session(
     registry_url: str | None = None, *, auth=None, check_version: bool = True
-) -> Iterator[Client]:
+) -> Generator[Client, None, None]:
     """Yields an HTTP client that asks for API_VERSION in every request.
 
     auth (an httpx Auth or a (user, password) tuple) is used only for requests to
@@ -224,9 +226,9 @@ _hash_block_size = 1 << 20
 
 
 def hash_stream(
-    source: BinaryIO,
+    source: Readable,
     method: str = "sha1",
-    copy_to: BinaryIO | None = None,
+    copy_to: Writable | None = None,
     progress: Callable[[int], None] | None = None,
 ) -> str:
     """Returns the hash of everything read from source.
@@ -330,7 +332,7 @@ def query_registry_first(
 
 def query_registry_bulk(
     session: Client, url: str, query: Mapping[str, Any], *, auth=USE_CLIENT_DEFAULT
-) -> list[dict]:
+) -> Iterator[dict]:
     """POSTs query to a bulk endpoint and yields the line-delimited JSON records.
     The request uses the session's auth unless auth is given."""
     with session.stream("POST", url, json=query, auth=auth) as r:

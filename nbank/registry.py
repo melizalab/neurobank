@@ -69,7 +69,7 @@ def get_datatypes(base_url: str) -> tuple[str, None]:
     return (url_join(base_url, "datatypes/"), None)
 
 
-def get_archives(base_url: str, /, **params) -> tuple[str, None]:
+def get_archives(base_url: str, /, **params) -> tuple[str, dict]:
     """Constructs URL to get known archive names"""
     return (url_join(base_url, "archives/"), params)
 

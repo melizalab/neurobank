@@ -40,7 +40,7 @@ def make_auth(auth: RegistryAuth) -> httpx.Auth | None:
     except FileNotFoundError:
         pass
     try:
-        return httpx.NetRCAuth(Path.home() / "_netrc")
+        return httpx.NetRCAuth(str(Path.home() / "_netrc"))
     except FileNotFoundError:
         pass
 
@@ -526,7 +526,7 @@ def verify(
     from nbank.util import hash
 
     log.debug("verifying %s", file)
-    file_hash = hash(file)
+    file_hash = hash(Path(file))
     if id is None:
         log.debug("  searching by hash (%s)", file_hash)
         return search(registry_url, sha1=file_hash, superseded=None)

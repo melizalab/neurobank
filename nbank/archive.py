@@ -350,14 +350,14 @@ class Resource:
     local = True
 
     def __init__(self, root: str, id: str, key: str, alt_base: Path | None = None):
-        root = Path(root)
+        base = Path(root)
         if alt_base is not None:
-            root = Path(alt_base) / root.name
+            base = Path(alt_base) / base.name
         self.id = id
         # a key is a file name, never a path
         if not key or Path(key).name != key:
             raise FileNotFoundError(f"'{key}' isn't the name of a file")
-        self.path = root / _resource_subdir / id_stub(id) / key
+        self.path = base / _resource_subdir / id_stub(id) / key
         if not self.path.exists():
             raise FileNotFoundError(f"resource '{self.path}' does not exist")
 
