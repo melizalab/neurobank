@@ -45,6 +45,16 @@ def make_auth(auth: RegistryAuth) -> httpx.Auth | None:
         pass
 
 
+def not_registered(archive_path: Path) -> str:
+    """The error for an archive that the registry has no root for, at archive_path
+    (its real path)."""
+    return (
+        f"no archive in the registry has '{archive_path}' as its root. An archive is "
+        "registered at its real path; a host that reaches it through a symbolic link "
+        "needs a bind mount at the registered path instead"
+    )
+
+
 def deposit(
     archive_path: Path,
     files: Iterable[Path],
@@ -151,9 +161,7 @@ def deposit(
         url, params = find_archive_by_path(registry_url, archive_path)
         archive_record = util.query_registry_first(session, url, params)
         if archive_record is None:
-            raise RuntimeError(
-                f"archive '{archive_path}' not in registry. did it move?"
-            )
+            raise RuntimeError(not_registered(archive_path))
         archive = archive_record["name"]
         log.info("   archive name: %s", archive)
 

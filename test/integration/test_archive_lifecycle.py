@@ -233,7 +233,29 @@ def test_check_not_an_archive(cli, tmp_path, caplog):
 def test_check_unregistered_archive(cli, registry, tmp_path, caplog):
     config = nbank_archive.create(tmp_path / "unregistered", registry.url)
     assert cli("check", "archive", str(config.path)) == 1
-    assert "No archive associated with" in caplog.text
+    assert f"no archive in the registry has '{config.path}' as its root" in caplog.text
+
+
+def test_archive_registered_through_a_link(
+    cli, client, registry, unique, dtype, tmp_path, caplog
+):
+    # an NFS share mounted elsewhere and linked to where its archives are registered
+    name = unique("arch")
+    (tmp_path / "mount").mkdir()
+    config = nbank_archive.create(tmp_path / "mount" / name, registry.url)
+    (tmp_path / "data").symlink_to(tmp_path / "mount")
+    url, body = nbank_registry.add_archive(
+        registry.url, name, "neurobank", tmp_path / "data" / name
+    )
+    client.post(url, json=body).raise_for_status()
+    src = tmp_path / f"{unique('res')}.txt"
+    src.write_text("contents")
+    assert cli("deposit", "-d", dtype, str(tmp_path / "data" / name), str(src)) == 1
+    assert (
+        f"no archive in the registry has '{config.path}' as its root. An archive is "
+        "registered at its real path; a host that reaches it through a symbolic link "
+        "needs a bind mount at the registered path instead"
+    ) in caplog.text
 
 
 def test_check_archive_by_name(cli, archive, dtype, deposit_file, caplog):

@@ -140,6 +140,10 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Changed
 
+- When the registry has no archive for a directory (`deposit`, `copy`,
+  `archive import-tar`, `check archive`), the error says that an archive is
+  registered at its real path, and that a host reaching it through a symbolic
+  link needs a bind mount at the registered path instead (#65).
 - `nbank check archive PATH` checks against the registry given with `-r`, or
   else the one in the archive's `nbank.json`, and needs neither `-r` nor
   `NBANK_REGISTRY`. An archive whose `nbank.json` names a different registry

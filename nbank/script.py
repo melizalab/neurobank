@@ -1194,12 +1194,12 @@ def _warn_other_registry(archive_cfg: archive.ArchiveConfig, registry_url: str) 
 
 
 def _registered_name(session, registry_url: str, archive_path: Path) -> str | None:
-    """Returns the registry's name for the archive at archive_path, or None (logging an
-    error) if it isn't registered."""
+    """Returns the registry's name for the archive at archive_path, its real path, or
+    None (logging an error) if it isn't registered."""
     url, params = registry.find_archive_by_path(registry_url, archive_path)
     info = util.query_registry_first(session, url, params)
     if info is None:
-        log.error("No archive associated with '%s' in the registry", archive_path)
+        log.error("error: %s", core.not_registered(archive_path))
         return None
     return info["name"]
 
