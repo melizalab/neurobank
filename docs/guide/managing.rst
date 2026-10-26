@@ -24,6 +24,11 @@ the registry given with ``-r`` (not ``NBANK_REGISTRY``), or else the one in its
    ``staging`` directory, and in an interactive terminal, offers to delete
    leftovers from interrupted transfers and deposits, and to resolve files that
    are registered to other archives.
+-  ``--rename``, with ``--fix``, renames files to the registry's ``filename``
+   (the id and the dtype's extension) and sets their keys. The extension isn't
+   part of the id or the hash, so this changes no resource. Files whose
+   contents don't match, duplicates, and files of dtypes without an extension
+   aren't renamed, and an existing file is never replaced.
 -  ``--no-hash`` doesn't verify file hashes, which is much faster for large
    archives.
 -  ``-v`` shows the results for all resources, not just errors.

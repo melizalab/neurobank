@@ -96,6 +96,87 @@ def test_check_fix_sets_wrong_key(
     assert location_key(name, archive.name) == path.name
 
 
+@pytest.fixture
+def txt_dtype(client, registry, unique):
+    """The name of a new datatype with the extension txt, as deposit_file's files."""
+    name = unique("dtype")
+    url, body = nbank_registry.add_datatype(registry.url, name, "text/plain")
+    client.post(url, json={**body, "extension": "txt"}).raise_for_status()
+    return name
+
+
+def misnamed(client, registry, archive, dtype, deposit_file, key, **kwargs):
+    """Deposits a file and renames it to an extension other than its dtype's; key is
+    the key to give its location: 'old' (the new name, as the backfill would set it),
+    'filename' (the registry's filename), or None. Returns (id, the registry's path
+    for it, the misnamed path)."""
+    name = deposit_file(archive, dtype, **kwargs)
+    path = stored_path(archive, name)
+    odd = path.with_name(f"{name}.TXT")
+    path.rename(odd)
+    keys = {"old": odd.name, "filename": path.name, None: None}
+    set_key(client, registry, name, archive, keys[key])
+    return name, path, odd
+
+
+@pytest.mark.parametrize("key", ["old", "filename", None])
+def test_check_rename(
+    cli, client, registry, archive, txt_dtype, deposit_file, location_key, caplog, key
+):
+    name, path, odd = misnamed(client, registry, archive, txt_dtype, deposit_file, key)
+    assert cli("check", "archive", "--fix", "--rename", str(archive.path)) == 0
+    assert f" - {odd} -> {path.name}" in caplog.text
+    assert "Files renamed: 1" in caplog.text
+    assert f"Location keys set: {int(key != 'filename')}" in caplog.text
+    assert path.exists() and not odd.exists()
+    assert location_key(name, archive.name) == path.name
+
+    caplog.clear()
+    assert cli("check", "archive", str(archive.path)) == 0
+    assert "files named other than the registry's filename: 0" in caplog.text
+
+
+def test_check_without_rename_keeps_names(
+    cli, client, registry, archive, txt_dtype, deposit_file, location_key, caplog
+):
+    name, path, odd = misnamed(
+        client, registry, archive, txt_dtype, deposit_file, "old"
+    )
+    assert cli("check", "archive", "--fix", str(archive.path)) == 0
+    assert "files named other than the registry's filename: 1" in caplog.text
+    assert "Files renamed" not in caplog.text
+    assert odd.exists() and not path.exists()
+    assert location_key(name, archive.name) == odd.name
+
+    assert cli("check", "archive", "--rename", str(archive.path)) == 1
+    assert "--rename needs --fix" in caplog.text
+    assert odd.exists()
+
+
+def test_check_rename_skips_changed_file(
+    cli, client, registry, archive, txt_dtype, deposit_file, caplog
+):
+    _, path, odd = misnamed(
+        client, registry, archive, txt_dtype, deposit_file, "old", hash=True
+    )
+    odd.chmod(0o644)
+    odd.write_text("changed")
+    assert cli("check", "archive", "--fix", "--rename", str(archive.path)) == 1
+    assert "Files renamed: 0" in caplog.text
+    assert odd.exists() and not path.exists()
+
+
+def test_check_rename_skips_dtype_without_extension(
+    cli, archive, dtype, deposit_file, caplog
+):
+    name = deposit_file(archive, dtype)
+    path = stored_path(archive, name)
+    assert cli("check", "archive", "--fix", "--rename", str(archive.path)) == 0
+    assert f" - {path} : not renamed, as its dtype has no extension" in caplog.text
+    assert "Files renamed: 0" in caplog.text
+    assert path.exists()
+
+
 def test_check_fix_swapped_keys(
     cli, client, registry, archive, dtype, deposit_file, location_key, caplog
 ):

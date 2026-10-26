@@ -12,7 +12,7 @@ import httpx
 import pytest
 import respx
 
-from nbank import archive, canonical_zip, core, registry, script, util
+from nbank import archive, canonical_zip, check, core, registry, script, util
 from test import skip_unless_posix
 from test.test_registry import (
     archives_url,
@@ -1715,3 +1715,14 @@ def test_verify_refuses_a_directory(mocked_api, tmp_path, capsys):
         capsys.readouterr().out
         == f"{tmp_path}: is a directory, which isn't a resource\n"
     )
+
+
+def test_rename_to_filename_never_replaces(tmp_path):
+    path = tmp_path / "res_1.TXT"
+    path.write_text("one")
+    (tmp_path / "res_1.txt").write_text("other")
+    finding = check.Finding(check.Status.OK, "res_1", path)
+    with pytest.raises(FileExistsError):
+        script._rename_to_filename(finding, "res_1.txt")
+    assert path.read_text() == "one"
+    assert (tmp_path / "res_1.txt").read_text() == "other"

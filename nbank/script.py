@@ -15,7 +15,7 @@ import sys
 import tarfile
 import time
 from collections import Counter, deque
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from netrc import NetrcParseError
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlunparse
@@ -181,6 +181,12 @@ def add_check_options(pp):
         "--fix",
         action="store_true",
         help="fix ownership and permissions (changing ownership requires root)",
+    )
+    pp.add_argument(
+        "--rename",
+        action="store_true",
+        help="with --fix, rename files to the registry's filename (the id and the "
+        "dtype's extension) and set their keys",
     )
     pp.add_argument(
         "--no-hash",
@@ -731,6 +737,10 @@ def main(argv=None):
         args.auth = core.make_auth(args.auth)
     except NetrcParseError as err:
         log.error("error: unable to use netrc file: %s", err.msg)
+        return 1
+
+    if getattr(args, "rename", False) and not args.fix:
+        log.error("error: --rename needs --fix")
         return 1
 
     if not archive._posix and args.func in _archive_commands:
@@ -1310,17 +1320,18 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     unregistered = []  # looked up in the registry after the main pass
     incomplete = []  # left over from transfers; may be deleted after the main pass
     wrong_keys = []  # set after the main pass with --fix
-    other_names = []  # files whose names differ from the registry's filename
+    other_names = []  # (resource, finding, filename) for files named otherwise
     for finding in check.check_archive_contents(
         archive_path, expected, check_hash=not args.no_hash, keys=keys
     ):
         if finding.status in (check.Status.NO_KEY, check.Status.WRONG_KEY):
             wrong_keys.append(finding)
             continue
-        if finding.resource in registered and finding.path is not None:
-            filename = registered[finding.resource][1]
+        resource = finding.resource
+        if resource is not None and resource in registered and finding.path is not None:
+            filename = registered[resource][1]
             if finding.path.name != filename:
-                other_names.append((finding.path, filename))
+                other_names.append((resource, finding, filename))
         if finding.status == check.Status.MISSING_FROM_REGISTRY:
             unregistered.append(finding)
             continue
@@ -1343,6 +1354,22 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
             log.info(
                 " - %s : %s - %s", finding.resource, finding.path, finding.status.value
             )
+    n_renamed = 0
+    if args.fix and args.rename and other_names:
+        log.info("renaming files to the registry's filename:")
+        renamed = {}
+        for resource, finding, filename in other_names:
+            try:
+                path = _rename_to_filename(finding, filename)
+            except OSError as err:
+                log.error(" - %s : unable to rename: %s", finding.path, err)
+                n_errors += 1
+                continue
+            if path is not None:
+                renamed[resource] = path
+        n_renamed = len(renamed)
+        other_names = [entry for entry in other_names if entry[0] not in renamed]
+        wrong_keys = _keys_after_renames(wrong_keys, renamed, keys)
     n_keys_set = 0
     key_counts = Counter()
     if wrong_keys:
@@ -1380,8 +1407,8 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
         "" if args.verbose or not other_names else " (use -v to list)",
     )
     if args.verbose:
-        for path, filename in other_names:
-            log.info(" - %s (filename: %s)", path, filename)
+        for _, finding, filename in other_names:
+            log.info(" - %s (filename: %s)", finding.path, filename)
     prompting = args.fix and _interactive()
     if args.fix and (unregistered or incomplete) and not prompting:
         log.info("not an interactive terminal, so not asking how to resolve problems")
@@ -1442,10 +1469,60 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     if args.fix:
         log.info("Permission errors fixed: %d", n_fixed)
         log.info("Location keys set: %d", n_keys_set)
+        if args.rename:
+            log.info("Files renamed: %d", n_renamed)
         log.info("Files registered elsewhere resolved: %d", n_resolved)
         log.info("Incomplete transfers and deposits deleted: %d", n_deleted)
     n_errors += perm_counts.total() - n_fixed
     return n_errors == 0 and not unable_to_check
+
+
+# files that can be renamed: those whose contents were found to be (or not checked
+# against) the resource's
+_renamable = (check.Status.OK, check.Status.NOT_HASHED, check.Status.HASH_SKIPPED)
+
+
+def _rename_to_filename(finding: check.Finding, filename: str) -> Path | None:
+    """Renames the file of a finding to filename, the registry's name for it.
+
+    Returns the new path, or None if the file isn't renamed because its status isn't
+    one of _renamable (it's reported already) or the dtype has no extension (logged).
+    Raises FileExistsError if a file has that name, and OSError if the rename fails.
+    """
+    path = finding.path
+    assert path is not None  # a file found for a registered resource
+    if finding.status not in _renamable:
+        return None
+    if not Path(filename).suffix:
+        log.info(" - %s : not renamed, as its dtype has no extension", path)
+        return None
+    target = path.with_name(filename)
+    # a change of case only names the same file on a case-insensitive filesystem
+    if target.exists() and not target.samefile(path):
+        raise FileExistsError(f"'{target}' already exists")
+    path.rename(target)
+    log.info(" - %s -> %s", path, filename)
+    return target
+
+
+def _keys_after_renames(
+    wrong_keys: list[check.Finding],
+    renamed: Mapping[str, Path],
+    keys: Mapping[str, str | None],
+) -> list[check.Finding]:
+    """Returns the key findings once files are renamed: renamed is {resource: new path},
+    and keys {resource: the key of its location}. A renamed file's key is wrong unless
+    the registry already has the new name."""
+    out = [f for f in wrong_keys if f.resource not in renamed]
+    for name, path in renamed.items():
+        key = keys.get(name)
+        if key is None:
+            out.append(check.Finding(check.Status.NO_KEY, name, path))
+        elif key != path.name:
+            out.append(
+                check.Finding(check.Status.WRONG_KEY, name, path, f"the key is '{key}'")
+            )
+    return out
 
 
 def _set_keys(
