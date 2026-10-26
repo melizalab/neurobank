@@ -32,3 +32,31 @@ def place_resource(cfg, id, key, contents="contents"):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(contents)
     return path
+
+
+def mock_archive_locations(
+    mocked_api, archive_name, root, resources, scheme="neurobank"
+):
+    """Mocks the registry's locations/ stream for an archive. resources is
+    {name: (sha1, key)}; each resource's filename is name.txt. Returns the route."""
+    import json
+
+    from nbank import util
+    from test.test_registry import locations_url
+
+    records = [
+        {
+            "archive_name": archive_name,
+            "scheme": scheme,
+            "root": str(root),
+            "resource_name": name,
+            "key": key,
+            "filename": f"{name}.txt",
+            "sha1": sha1,
+        }
+        for name, (sha1, key) in resources.items()
+    ]
+    return mocked_api.get(locations_url, params={"archive": archive_name}).respond(
+        headers={"Content-Type": util.NDJSON},
+        text="".join(json.dumps(r) + "\n" for r in records),
+    )

@@ -1282,11 +1282,13 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
         "retrieving resources that should be in %s from the registry...",
         archive_name,
     )
-    expected = check.registry_resources_in_archive(session, registry_url, archive_name)
+    located = check.registry_locations_in_archive(session, registry_url, archive_name)
+    expected = {name: location["sha1"] for name, location in located.items()}
     log.info(" - resources in the registry: %d", len(expected))
-    registered = check.registry_keys_in_archive(
-        session, registry_url, archive_name, expected
-    )
+    registered = {
+        name: (location["key"], location["filename"])
+        for name, location in located.items()
+    }
     keys = {name: key for name, (key, _) in registered.items()}
     log.info("checking ownership and permissions:")
     perm_counts = Counter()

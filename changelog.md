@@ -148,7 +148,10 @@ Requires django-neurobank 1.0 (registry API 2.x).
 - Searches (`nbank search`, `core.search`) and `nbank check` get every result in
   one streamed response (`util.query_registry_stream`), instead of a page at a
   time, which is much faster for large archives. Registries that can't stream
-  are paged through as before.
+  are paged through as before. `nbank check archive` gets an archive's
+  resources, hashes and location keys in one streamed request to the
+  registry's `locations/` (`registry.find_locations`), instead of a search and
+  then a `bulk/locations/` request per 1,000 resources.
 - `nbank archive import-tar` ends with a summary line, as `copy` and `export`
   do. When a resource's only copies are offline (on tape), `copy` and `export`
   name those archives and say to read it with `nbank archive import-tar`.

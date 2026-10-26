@@ -92,6 +92,11 @@ def find_resource(base_url: str, /, **params) -> tuple[str, dict]:
     return (url_join(base_url, "resources/"), params)
 
 
+def find_locations(base_url: str, /, **params) -> tuple[str, dict]:
+    """Constructs URL to find locations that match params"""
+    return (url_join(base_url, "locations/"), params)
+
+
 def get_resource(base_url: str, id: str) -> tuple[str, None]:
     """Constructs URL to retrieve registry record for id"""
     return (full_url(base_url, id), None)
@@ -274,6 +279,7 @@ __all__ = [
     "add_resource",
     "default_registry",
     "find_archive_by_path",
+    "find_locations",
     "find_resource",
     "full_url",
     "get_archives",

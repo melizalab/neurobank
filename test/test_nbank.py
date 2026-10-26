@@ -13,7 +13,7 @@ import pytest
 import respx
 
 from nbank import archive, canonical_zip, check, core, registry, script, util
-from test import skip_unless_posix
+from test import mock_archive_locations, skip_unless_posix
 from test.test_registry import (
     archives_url,
     base_url,
@@ -893,10 +893,11 @@ def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
     mocked_api.get(resource_url, params={"archive": archive_name}).respond(
         json=[{"name": "res_1", "sha1": sha1, "locations": [archive_name]}]
     )
+    # check registry's search for empty archives
     mocked_api.get(resource_url, params={"archive": "tape"}).respond(
         json=[{"name": "res_2", "sha1": None, "locations": ["tape"]}]
     )
-    mock_location_keys(mocked_api, root, {"res_1": "res_1"})
+    mock_archive_locations(mocked_api, archive_name, root, {"res_1": (sha1, "res_1")})
     log = logging.getLogger("nbank")
     handlers, level = list(log.handlers), log.level
     try:
@@ -904,30 +905,6 @@ def test_check_all_passes(mocked_api, tmp_archive, tmp_path):
     finally:
         log.handlers[:] = handlers
         log.setLevel(level)
-
-
-def mock_location_keys(mocked_api, root, keys):
-    """Mocks bulk/locations/ for the resources in keys, {name: key}, in the archive
-    at root."""
-    records = [
-        {
-            "name": name,
-            "filename": f"{name}.txt",
-            "locations": [
-                {
-                    "archive_name": archive_name,
-                    "scheme": "neurobank",
-                    "root": str(root),
-                    "resource_name": name,
-                    "key": key,
-                }
-            ],
-        }
-        for name, key in keys.items()
-    ]
-    return mocked_api.post(f"{bulk_url}locations/").respond(
-        stream=(json.dumps(record).encode() + b"\n" for record in records)
-    )
 
 
 @pytest.fixture
@@ -941,10 +918,7 @@ def keyless_archive(mocked_api, tmp_archive, tmp_path):
     mocked_api.get(
         archives_url, params={"scheme": "neurobank", "root": str(root)}
     ).respond(json=[{"name": archive_name, "root": str(root)}])
-    mocked_api.get(resource_url, params={"archive": archive_name}).respond(
-        json=[{"name": "res_1", "sha1": sha1, "locations": [archive_name]}]
-    )
-    mock_location_keys(mocked_api, root, {"res_1": None})
+    mock_archive_locations(mocked_api, archive_name, root, {"res_1": (sha1, None)})
     return root
 
 
@@ -1497,11 +1471,12 @@ def test_check_tar_read_error(mocked_api, failing_tar, caplog, with_archive):
     argv = ["check", "tar"]
     if with_archive:
         mocked_api.get(archives_url + "tape/").respond(json={"name": "tape"})
-        mocked_api.get(resource_url, params={"archive": "tape"}).respond(
-            json=[
-                {"name": name, "sha1": None, "locations": ["tape"]}
-                for name in ("res_1", "res_2", "res_3")
-            ]
+        mock_archive_locations(
+            mocked_api,
+            "tape",
+            "tape:1",
+            {name: (None, name) for name in ("res_1", "res_2", "res_3")},
+            scheme="tape",
         )
         argv += ["--archive", "tape"]
     # fails partway through res_2
@@ -1528,11 +1503,12 @@ def test_check_tar_truncated(mocked_api, tmp_path, caplog):
             json={"name": name, "sha1": None, "locations": ["tape"]}
         )
     mocked_api.get(archives_url + "tape/").respond(json={"name": "tape"})
-    mocked_api.get(resource_url, params={"archive": "tape"}).respond(
-        json=[
-            {"name": name, "sha1": None, "locations": ["tape"]}
-            for name in ("res_1", "res_2")
-        ]
+    mock_archive_locations(
+        mocked_api,
+        "tape",
+        "tape:1",
+        {name: (None, name) for name in ("res_1", "res_2")},
+        scheme="tape",
     )
     # the tape ran out partway through res_2
     path = tmp_path / "truncated.tar"

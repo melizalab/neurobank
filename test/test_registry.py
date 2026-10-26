@@ -14,6 +14,7 @@ datatypes_url = "https://localhost:8000/neurobank/datatypes/"
 archives_url = "https://localhost:8000/neurobank/archives/"
 download_url = "https://localhost:8000/neurobank/download/"
 bulk_url = "https://localhost:8000/neurobank/bulk/"
+locations_url = "https://localhost:8000/neurobank/locations/"
 
 
 def test_join_url():
@@ -94,6 +95,12 @@ def test_find_resource():
     url, params = registry.find_resource(base_url, **test_params)
     assert url == resource_url
     assert params == test_params
+
+
+def test_find_locations():
+    url, params = registry.find_locations(base_url, archive="arch", has_key="false")
+    assert url == locations_url
+    assert params == {"archive": "arch", "has_key": "false"}
 
 
 def test_get_resource():

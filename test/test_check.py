@@ -8,7 +8,12 @@ import respx
 
 from nbank import archive, check, util
 from nbank.check import Status
-from test import running_as_root, skip_unless_posix, with_access
+from test import (
+    mock_archive_locations,
+    running_as_root,
+    skip_unless_posix,
+    with_access,
+)
 from test.test_registry import (
     archives_url,
     base_url,
@@ -160,16 +165,22 @@ def test_check_contents_duplicate(tmp_archive, tmp_path):
     assert all(f.status == Status.DUPLICATE for f in findings)
 
 
-@respx.mock(assert_all_called=True, assert_all_mocked=True)
-def test_registry_resources_in_archive(respx_mock):
+def test_registry_locations_in_archive(mocked_api):
     import httpx
 
-    respx_mock.get(resource_url, params={"archive": "my-archive"}).respond(
-        json=[{"name": "res_1", "sha1": "abc", "locations": ["my-archive"]}]
+    route = mock_archive_locations(
+        mocked_api, "arch", "/a", {"res_1": ("abc", "res_1.txt"), "res_2": (None, None)}
     )
     with httpx.Client() as session:
-        expected = check.registry_resources_in_archive(session, base_url, "my-archive")
-    assert expected == {"res_1": "abc"}
+        located = check.registry_locations_in_archive(session, base_url, "arch")
+        expected = check.registry_resources_in_archive(session, base_url, "arch")
+    # one streamed request each
+    assert route.call_count == 2
+    assert {name: (loc["key"], loc["filename"]) for name, loc in located.items()} == {
+        "res_1": ("res_1.txt", "res_1.txt"),
+        "res_2": (None, "res_2.txt"),
+    }
+    assert expected == {"res_1": "abc", "res_2": None}
 
 
 def test_check_contents_unlistable_subdirectory(tmp_archive, tmp_path):
@@ -459,42 +470,6 @@ def test_check_missing_resources_directory(tmp_archive):
 
 def bulk_response(*records):
     return (json.dumps(record).encode() + b"\n" for record in records)
-
-
-def test_registry_keys_in_archive(mocked_api, monkeypatch):
-    import httpx
-
-    monkeypatch.setattr(util, "bulk_batch_size", 2)
-    location = {"archive_name": "arch", "scheme": "neurobank", "root": "/a"}
-    route = mocked_api.post(bulk_url + "locations/").mock(
-        side_effect=[
-            httpx.Response(
-                200,
-                stream=bulk_response(
-                    {
-                        "name": "res_1",
-                        "filename": "res_1.wav",
-                        "locations": [{**location, "key": "res_1.wav"}],
-                    },
-                    {
-                        "name": "res_2",
-                        "filename": "res_2.wav",
-                        "locations": [{**location, "key": None}],
-                    },
-                ),
-            ),
-            httpx.Response(200, stream=bulk_response()),
-        ]
-    )
-    with httpx.Client() as session:
-        keys = check.registry_keys_in_archive(
-            session, base_url, "arch", ["res_3", "res_2", "res_1"]
-        )
-    assert [json.loads(call.request.content) for call in route.calls] == [
-        {"names": ["res_1", "res_2"], "archive": "arch"},
-        {"names": ["res_3"], "archive": "arch"},
-    ]
-    assert keys == {"res_1": ("res_1.wav", "res_1.wav"), "res_2": (None, "res_2.wav")}
 
 
 def test_recheck_unregistered(mocked_api, tmp_archive, tmp_path):

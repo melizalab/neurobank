@@ -105,33 +105,24 @@ def check_registry(session: Client, registry_url: str) -> Iterator[Finding]:
             yield Finding(Status.EMPTY_ARCHIVE, None, archive=item["name"])
 
 
+def registry_locations_in_archive(
+    session: Client, registry_url: str, archive_name: str
+) -> dict[str, dict]:
+    """Returns {name: location} for the resources the registry places in
+    archive_name. Each location has its key, and its resource's filename and sha1."""
+    url, params = registry.find_locations(registry_url, archive=archive_name)
+    return {
+        location["resource_name"]: location
+        for location in util.query_registry_stream(session, url, params)
+    }
+
+
 def registry_resources_in_archive(
     session: Client, registry_url: str, archive_name: str
 ) -> dict[str, str | None]:
     """Returns {name: sha1} for the resources the registry places in archive_name."""
-    url, _ = registry.find_resource(registry_url)
-    return {
-        item["name"]: item["sha1"]
-        for item in util.query_registry_stream(session, url, {"archive": archive_name})
-    }
-
-
-def registry_keys_in_archive(
-    session: Client, registry_url: str, archive_name: str, names: Iterable[str]
-) -> dict[str, tuple[str | None, str]]:
-    """Returns {name: (key, filename)} for the resources in names located in
-    archive_name: the key of that location, and the registry's file name for the
-    resource."""
-    names = sorted(names)
-    keys = {}
-    for i in range(0, len(names), util.bulk_batch_size):
-        url, query = registry.get_locations_bulk(
-            registry_url, names[i : i + util.bulk_batch_size], archive=archive_name
-        )
-        for record in util.query_registry_bulk(session, url, query):
-            [location] = record["locations"]
-            keys[record["name"]] = (location["key"], record["filename"])
-    return keys
+    located = registry_locations_in_archive(session, registry_url, archive_name)
+    return {name: location["sha1"] for name, location in located.items()}
 
 
 def _scan_archive(archive_path: Path) -> tuple[dict[str, list[Path]], list[Finding]]:
