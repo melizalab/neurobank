@@ -543,7 +543,8 @@ class _TarWriter(ExportWriter):
         self.tar = tar
 
     def begin(self, name: str) -> None:
-        self._offset, self._n_members = self.tar.offset, len(self.tar.members)
+        members = self.tar.members  # ty: ignore[unresolved-attribute]
+        self._offset, self._n_members = self.tar.offset, len(members)
 
     def _info(self, name: str, st: os.stat_result) -> tarfile.TarInfo:
         # built by hand, as gettarinfo stores hard-linked files as links
@@ -568,9 +569,9 @@ class _TarWriter(ExportWriter):
     def abort(self) -> None:
         # tarfile can't remove members, so this uses its internals
         self.tar.fileobj.seek(self._offset)
-        self.tar.fileobj.truncate()
+        self.tar.fileobj.truncate()  # ty: ignore[unresolved-attribute]
         self.tar.offset = self._offset
-        del self.tar.members[self._n_members :]
+        del self.tar.members[self._n_members :]  # ty: ignore[unresolved-attribute]
 
 
 class _ZipWriter(ExportWriter):
@@ -607,8 +608,10 @@ class _ZipWriter(ExportWriter):
         for info in self.zf.filelist[self._n_members :]:
             del self.zf.NameToInfo[info.filename]
         del self.zf.filelist[self._n_members :]
-        self.zf.fp.seek(self._offset)
-        self.zf.fp.truncate()
+        fp = self.zf.fp
+        assert fp is not None  # the zip file is open
+        fp.seek(self._offset)
+        fp.truncate()
         self.zf.start_dir = self._offset
 
 
@@ -673,7 +676,7 @@ def open_export(
     if suffix in (".gz", ".tgz", ".bz2", ".xz", ".zst", ".7z"):
         raise ValueError(f"can't export to a '{suffix}' file; use .tar or .zip")
     if suffix == ".tar":
-        with tarfile.open(path, "x", copybufsize=_tape_read_size) as tar:
+        with tarfile.TarFile(path, "x", copybufsize=_tape_read_size) as tar:
             yield _TarWriter(tar)
     elif suffix == ".zip":
         compression = zipfile.ZIP_DEFLATED if compress else zipfile.ZIP_STORED
