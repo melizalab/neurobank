@@ -359,14 +359,15 @@ def make_parser() -> argparse.ArgumentParser:
     add_core_field_args(pp, "search")
     group = pp.add_mutually_exclusive_group()
     group.add_argument(
-        "--superseded",
+        "--only-superseded",
         action="store_const",
         const=True,
         default=False,
+        dest="superseded",
         help="find only superseded resources (by default they're left out)",
     )
     group.add_argument(
-        "--all",
+        "--with-superseded",
         action="store_const",
         const=None,
         dest="superseded",

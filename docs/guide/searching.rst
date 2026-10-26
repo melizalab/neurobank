@@ -35,9 +35,9 @@ Superseded resources
 --------------------
 
 Mistakes happen, so resources can be marked as superseded (i.e., not to be used,
-usually because it has a replacement (see :doc:`managing`). Searches leave
-superseded resources out; ``--superseded`` finds only them, and ``--all`` finds
-both.
+usually because there's a replacement; see :doc:`managing`). Searches only
+show unsuperseded resources by default. Use ``--only-superseded`` to only show superceded resources, and
+``--with-superseded`` to include both.
 
 ``nbank check superseded`` reports which of a list of resources are superseded,
 with their replacements and why, or aren't in the registry, and exits with an

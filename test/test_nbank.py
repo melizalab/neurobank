@@ -1634,9 +1634,9 @@ def test_find_by_hash_finds_superseded_resources(mocked_api, tmp_path):
     "argv, sent",
     [
         (["-d", "wav"], "false"),
-        (["-d", "wav", "--superseded"], "true"),
-        (["--superseded"], "true"),
-        (["-d", "wav", "--all"], None),
+        (["-d", "wav", "--only-superseded"], "true"),
+        (["--only-superseded"], "true"),
+        (["-d", "wav", "--with-superseded"], None),
     ],
 )
 def test_search_superseded_options(mocked_api, capsys, argv, sent):
@@ -1646,8 +1646,9 @@ def test_search_superseded_options(mocked_api, capsys, argv, sent):
     assert capsys.readouterr().out == "res_1\n"
 
 
-def test_search_all_needs_a_filter(mocked_api, caplog):
-    assert run_main("search", "--all") == 1
+@pytest.mark.parametrize("argv", [[], ["--with-superseded"]])
+def test_search_needs_a_filter(mocked_api, caplog, argv):
+    assert run_main("search", *argv) == 1
     assert "at least one filter" in caplog.text
 
 

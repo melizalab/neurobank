@@ -66,8 +66,8 @@ Requires django-neurobank 1.0 (registry API 2.x).
   that locations name, and needs `registry_url`; `check_version=False` skips
   the version check.
 - `nbank search` and `core.search` leave out superseded resources;
-  `--superseded` (`superseded=True`) finds only them, and `--all`
-  (`superseded=None`) both. `core.find_by_hash` still finds a file's resource if
+  `--only-superseded` (`superseded=True`) finds only them, and
+  `--with-superseded` (`superseded=None`) both. `core.find_by_hash` still finds a file's resource if
   it's superseded.
 - `nbank deposit --dry-run` needs permission to deposit, as it asks the
   registry to check each resource (see below).

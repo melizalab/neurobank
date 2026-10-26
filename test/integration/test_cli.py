@@ -557,7 +557,7 @@ def test_superseded_resources(cli, registry, client, register, dtype, caplog, ca
         r["name"] for r in core.search(registry.url, dtype=dtype, superseded=True)
     ] == [old]
 
-    assert cli("search", "-d", dtype, "--all") == 0
+    assert cli("search", "-d", dtype, "--with-superseded") == 0
     assert sorted(capsys.readouterr().out.split()) == sorted([old, new])
 
     assert cli("check", "superseded", new, old, "no-such-resource") == 1
