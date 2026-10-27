@@ -205,7 +205,7 @@ def search_resources(args):
     for k, v in args.metadata_neq.items():
         params[f"metadata__{k}__neq"] = v
     if len(params) == 0 and args.superseded is not True:
-        log.error("nbank search: error: at least one filter parameter is required")
+        log.error("error: at least one filter parameter is required")
         return 1
     for d in core.search(args.registry_url, superseded=args.superseded, **params):
         if args.json_out:
@@ -249,13 +249,13 @@ def set_resource_metadata(args):
 def fetch_resources(args):
     dest = args.dest or Path()
     if args.read_stdin and str(args.tar) == "-":
-        log.error("nbank fetch: error: -@ and --tar - both read standard input")
+        log.error("error: -@ and --tar - both read standard input")
         return 1
     to_fetch = set(args.ids)
     if args.read_stdin:
         to_fetch.update(common.stripped_lines(sys.stdin))
     if not to_fetch:
-        log.error("nbank fetch: error: no identifiers given")
+        log.error("error: no identifiers given")
         return 1
     if args.tar is not None:
         return _fetch_from_tar(args, dest, to_fetch)

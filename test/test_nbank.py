@@ -774,6 +774,21 @@ def test_describe_multiple_resources(mocked_api):
     assert info == data
 
 
+def test_describe_many_in_batches(mocked_api, monkeypatch):
+    monkeypatch.setattr(util, "bulk_batch_size", 2)
+    names = ["res_1", "res_2", "res_3"]
+    for batch in (names[:2], names[2:]):
+        stream = (json.dumps({"name": n}).encode() + b"\n" for n in batch)
+        mocked_api.post(
+            registry.url_join(bulk_url, "resources/"), json={"names": batch}
+        ).respond(stream=stream)
+    assert [r["name"] for r in core.describe_many(base_url, *names)] == names
+
+
+def test_describe_many_without_ids_asks_nothing(mocked_api):
+    assert list(core.describe_many(base_url)) == []
+
+
 def test_search_resource(mocked_api):
     data = [{"super": "great!"}, {"also": "awesome!"}]
     query = {"sha1": "abc23"}
@@ -1459,6 +1474,61 @@ def test_register_tape_skips_manifest(respx_mock, tmp_path, caplog):
     run_main("archive", "register", "tape", "-y", "tape01", "1", str(tar))
     assert not looked_up.called
     assert "manifest.json -> manifest, skipping" in caplog.text
+
+
+@pytest.mark.posix
+def test_register_tape_goes_on_after_a_failed_location(mocked_api, tmp_path, caplog):
+    import tarfile
+
+    mocked_api.post(archives_url).respond(201, json={})
+    tar = tmp_path / "export.tar"
+    with tarfile.open(tar, "w") as t:
+        for name in ("res_1", "res_2"):
+            path = tmp_path / f"{name}.txt"
+            path.write_text(name)
+            t.add(path, arcname=path.name)
+            mocked_api.get(resource_url + f"{name}/").respond(
+                json={"name": name, "locations": []}
+            )
+    mocked_api.post(resource_url + "res_1/locations/").respond(
+        400, json={"key": ["bad key"]}
+    )
+    added = mocked_api.post(resource_url + "res_2/locations/").respond(201, json={})
+    assert run_main("archive", "register", "tape", "tape01", "1", str(tar)) == 1
+    assert added.called
+    assert "✗ res_1.txt -> unable to add location" in caplog.text
+    assert "registry error: key: bad key" in caplog.text
+
+
+def test_prune_reports_a_registry_error_that_isnt_json(
+    mocked_api, tmp_archive, tmp_path, caplog
+):
+    from test import place_resource
+
+    path = place_resource(tmp_archive, "res_1", "res_1")
+    mocked_api.get(archives_url + "arch/").respond(
+        json={"name": "arch", "scheme": "neurobank", "root": str(tmp_archive.path)}
+    )
+    location = {
+        "scheme": "neurobank",
+        "root": str(tmp_archive.path),
+        "resource_name": "res_1",
+        "key": "res_1",
+    }
+    mocked_api.get(resource_url + "res_1/locations/").respond(
+        json=[
+            {**location, "archive_name": "arch"},
+            {**location, "archive_name": "other", "root": "/elsewhere"},
+        ]
+    )
+    mocked_api.delete(resource_url + "res_1/locations/arch/").respond(
+        500, text="Server Error"
+    )
+    listing = tmp_path / "prune.txt"
+    listing.write_text("res_1\n")
+    assert run_main("archive", "prune", "arch", str(listing)) == 1
+    assert "✗ unable to remove from registry: Server Error" in caplog.text
+    assert path.exists()
 
 
 @pytest.mark.parametrize("with_archive", [False, True])

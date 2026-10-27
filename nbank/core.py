@@ -368,11 +368,12 @@ def describe(registry_url: str, id: str) -> dict | None:
 def describe_many(registry_url: str, *ids: str) -> Iterator[dict]:
     """Yields the registry record of each resource in ids that's registered."""
     from nbank.registry import get_resource_bulk
-    from nbank.util import query_registry_bulk, registry_session
+    from nbank.util import query_registry_bulk_batched, registry_session
 
-    url, query = get_resource_bulk(registry_url, ids)
     with registry_session(registry_url) as session:
-        yield from query_registry_bulk(session, url, query)
+        yield from query_registry_bulk_batched(
+            session, partial(get_resource_bulk, registry_url), ids
+        )
 
 
 def find_resources(

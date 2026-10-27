@@ -254,3 +254,36 @@ def test_update_core_fields():
 #         base_url, "/an/absolute/path/a/user/might/look/up"
 #     )
 #     .assertEqual(locations, [])
+
+
+def status_error(status, **response):
+    import httpx
+
+    request = httpx.Request("GET", base_url)
+    return httpx.HTTPStatusError(
+        "error",
+        request=request,
+        response=httpx.Response(status, request=request, **response),
+    )
+
+
+@pytest.mark.parametrize(
+    "status, response, expected",
+    [
+        (
+            400,
+            {"json": {"name": ["taken"], "sha1": ["bad"]}},
+            ["name: taken", "sha1: bad"],
+        ),
+        (403, {"json": {"detail": "Invalid password."}}, ["Invalid password."]),
+        (403, {"text": "Forbidden"}, ["403 Forbidden"]),
+        (415, {"text": ""}, ["415 Unsupported Media Type"]),
+        (500, {"text": "<html>Server Error</html>"}, ["500 Internal Server Error"]),
+        (502, {"json": ["not", "an", "object"]}, ["502 Bad Gateway"]),
+    ],
+)
+def test_log_error(caplog, status, response, expected):
+    registry.log_error(status_error(status, **response))
+    assert [r.getMessage() for r in caplog.records] == [
+        f"   registry error: {message}" for message in expected
+    ]

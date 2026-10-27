@@ -523,7 +523,7 @@ def check_superseded(args):
         ids.extend(common.stripped_lines(sys.stdin))
     ids = list(dict.fromkeys(ids))
     if not ids:
-        log.error("nbank check superseded: error: no identifiers given")
+        log.error("error: no identifiers given")
         return 1
     with util.registry_session(args.registry_url, auth=args.auth) as session:
         records = common.records(session, args.registry_url, ids)

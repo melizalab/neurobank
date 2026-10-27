@@ -275,18 +275,21 @@ def error_detail(response) -> str:
 
 
 def log_error(err):
-    """Logs the registry's message for 400, 403, and 415 errors; re-raises others."""
-    if err.response.status_code == 400:
-        for message in error_messages(err.response):
-            log.error("   registry error: %s", message)
-    elif err.response.status_code == 403:
-        data = err.response.json()
-        for _k, v in data.items():
-            log.error("   registry error: %s", v)
-    elif err.response.status_code == 415:
-        log.error("    registry error: %s", err.response.reason_phrase)
+    """Logs the registry's message for an error response: each field's messages for
+    a 400 (validation error), and otherwise its detail, or its status."""
+    response = err.response
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if response.status_code == 400 and isinstance(body, dict):
+        messages = field_messages(body)
+    elif isinstance(body, dict) and body:
+        messages = [str(value) for value in body.values()]
     else:
-        raise err
+        messages = [f"{response.status_code} {response.reason_phrase}"]
+    for message in messages:
+        log.error("   registry error: %s", message)
 
 
 def local_schemes() -> tuple[str]:

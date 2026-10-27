@@ -3,7 +3,6 @@
 # * SPDX-License-Identifier: GPL-2.0-only
 """nbank archive subcommands: init, list, register tape and prune."""
 
-import datetime
 import logging
 import tarfile
 from pathlib import Path, PurePosixPath
@@ -11,20 +10,12 @@ from urllib.parse import urlunparse
 
 import httpx
 
-from nbank import (
-    __version__,
-    archive,
-    registry,
-    transfer,
-    util,
-)
+from nbank import archive, registry, transfer, util
 
 log = logging.getLogger("nbank")
 
 
 def init_archive(args):
-    log.debug("version: %s", __version__)
-    log.debug("run time: %s", datetime.datetime.now())
     args.directory = args.directory.resolve()
     if args.name is None:
         args.name = args.directory.name
@@ -169,8 +160,10 @@ def register_tape(args):
                         archive_name,
                     )
                 except httpx.HTTPStatusError as e:
+                    # the archive is registered now, so go on with the others
+                    log.error("  ✗ %s -> unable to add location", tarinfo.name)
                     registry.log_error(e)
-                    return 1
+                    n_failed += 1
     return 1 if n_failed else None
 
 
@@ -192,14 +185,14 @@ def prune_archive(args):
         url, _ = registry.get_archive(args.registry_url, args.archive_name)
         result = util.query_registry(session, url)
         if result is None:
-            log.error("No such archive '%s' in the registry", args.archive_name)
+            log.error("error: no archive '%s' in the registry", args.archive_name)
             return 1
         if result["scheme"] not in archive.Resource.schemes:
-            log.error("'%s' is not a neurobank archive ", args.archive_name)
+            log.error("error: '%s' is not a neurobank archive", args.archive_name)
             return 1
         if not Path(result["root"]).is_dir():
             log.error(
-                "The archive '%s' is not on this host (%s) ",
+                "error: the archive '%s' is not on this host (%s)",
                 args.archive_name,
                 result["root"],
             )
@@ -223,8 +216,6 @@ def prune_archive(args):
             elif len(locations) < 2:
                 log.info("  ✗ this archive is the only location for this resource")
             else:
-                # this can throw FileNotFound but that shouldn't happen unless
-                # something is really wrong
                 resource = util.parse_location(locations[args.archive_name])
                 if not isinstance(resource, archive.Resource):
                     log.error("  ✗ resource is not actually present in archive")
@@ -241,8 +232,9 @@ def prune_archive(args):
                 if not args.dry_run:
                     r = session.send(req)
                     if r.status_code != httpx.codes.NO_CONTENT:
-                        log.info(
-                            "  ✗ unable to remove from registry: %s", r.json()["detail"]
+                        log.error(
+                            "  ✗ unable to remove from registry: %s",
+                            registry.error_detail(r),
                         )
                         n_failed += 1
                         continue

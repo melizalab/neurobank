@@ -812,7 +812,7 @@ def test_prune_unknown_resource_and_archive(cli, archive, tmp_path, unique, capl
     assert cli("archive", "prune", archive.name, str(listing(tmp_path, missing))) == 1
     assert f"{missing}: not in registry" in caplog.text
     assert cli("archive", "prune", unique("arch"), str(listing(tmp_path, missing))) == 1
-    assert "No such archive" in caplog.text
+    assert "error: no archive" in caplog.text
 
 
 def test_register_tape(

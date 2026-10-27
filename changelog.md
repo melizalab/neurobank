@@ -4,6 +4,11 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Breaking
 
+- `registry.log_error` logs every error response and no longer re-raises those
+  that aren't 400, 403 or 415: it logs the response's detail, or its status
+  (e.g. `500 Internal Server Error`). Code that relied on it to stop on a server
+  error has to check the status itself. A command that meets such an error
+  reports it instead of ending with a traceback.
 - `archive.get_config` is `archive.ArchiveConfig.load`. It and `archive.create`
   return an `archive.ArchiveConfig`, a frozen dataclass (`path`, `registry`, and
   `policy`, an `archive.Policy` with an `archive.Access`), instead of the dict
@@ -183,6 +188,14 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Fixed
 
+- `nbank archive register tape` goes on to the other resources when one's
+  location can't be added, and exits with status 1 at the end; it stopped
+  there, leaving the archive registered with only some of its resources.
+- `nbank archive prune` reports a registry error whose response isn't JSON
+  instead of crashing. Its errors, and those of `fetch`, `search` and `check
+  superseded`, start with `error:` like the other commands'.
+- `core.describe_many` asks the registry for 500 resources at a time, so a long
+  list doesn't make one huge request, and asks nothing for no ids.
 - A `-k` argument without exactly one `=` is a usage error naming the option,
   instead of a traceback. `ParseKeyVal` no longer changes the parser's default
   dict, which carried values from one parse to the next.

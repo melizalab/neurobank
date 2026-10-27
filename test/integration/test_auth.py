@@ -6,7 +6,7 @@ import logging
 import httpx
 import pytest
 
-from nbank import core
+from nbank import core, util
 from nbank import registry as reg
 
 
@@ -136,8 +136,12 @@ def test_log_error_malformed_request(registry, client, caplog):
 
 
 def test_log_error_streamed(registry, caplog):
-    with pytest.raises(httpx.HTTPStatusError) as err:
-        list(core.describe_many(registry.url))
+    url, query = reg.get_resource_bulk(registry.url, [])
+    with (
+        util.registry_session(registry.url) as session,
+        pytest.raises(httpx.HTTPStatusError) as err,
+    ):
+        list(util.query_registry_bulk(session, url, query))
     with caplog.at_level(logging.ERROR, logger="nbank"):
         reg.log_error(err.value)
     assert [r.getMessage() for r in caplog.records] == [
