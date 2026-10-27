@@ -1718,7 +1718,8 @@ def test_verify_refuses_a_directory(mocked_api, tmp_path, capsys):
 
 
 def test_rename_to_filename_never_replaces(tmp_path):
-    path = tmp_path / "res_1.TXT"
+    # names that differ only in case are the same file on macOS and Windows
+    path = tmp_path / "res_1.dat"
     path.write_text("one")
     (tmp_path / "res_1.txt").write_text("other")
     finding = check.Finding(check.Status.OK, "res_1", path)

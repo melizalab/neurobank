@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from nbank import script
+from nbank import archive, script
 from nbank.script.parser import userpwd
 
 
@@ -34,6 +34,8 @@ def test_check_archive_command(monkeypatch):
         return 1
 
     monkeypatch.setattr(script.checks, "check_archive", fake_check_archive)
+    # the command is replaced, so it can run on any host
+    monkeypatch.setattr(archive, "_posix", True)
     try:
         status = script.main(
             [
@@ -171,6 +173,8 @@ def test_alt_base_default_is_read_when_run(monkeypatch, command):
         "copy": "nbank.script.transfers.copy_resources",
     }[command]
     monkeypatch.setattr(func, lambda args: seen.append(args))
+    # the command is replaced, so it can run on any host
+    monkeypatch.setattr(archive, "_posix", True)
     log = logging.getLogger("nbank")
     handlers, level = list(log.handlers), log.level
     try:
