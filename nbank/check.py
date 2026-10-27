@@ -6,7 +6,7 @@
 import enum
 import os
 import stat
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from itertools import chain
@@ -14,7 +14,7 @@ from pathlib import Path
 
 from httpx import Client
 
-from nbank import archive, registry, transfer, util
+from nbank import archive, readers, registry, transfer, util
 
 
 class Status(enum.Enum):
@@ -44,6 +44,8 @@ class Status(enum.Enum):
     NO_STAGING = "MISSING the staging directory"
     NO_LOCATION = "has NO locations"
     EMPTY_ARCHIVE = "has no resources"
+    INVALID_FOR_DTYPE = "NOT a valid file of its dtype"
+    READER_FAILED = "metadata reader FAILED to load"
 
 
 @dataclass(frozen=True)
@@ -187,12 +189,82 @@ def _age(path: Path) -> str:
     return "less than a minute"
 
 
+class DtypeReaders:
+    """Checks files against the metadata readers of their dtypes, loading each reader
+    the first time it's needed.
+
+    extensions, {dtype: extension or None}, has every dtype the registry knows. A file
+    its reader rejects is tried with the readers of the other dtypes that have its
+    extension (ignoring case), which are suggested if they accept it. checked and unchecked count the
+    files of each dtype that were, and weren't (no reader), checked.
+    """
+
+    def __init__(self, extensions: Mapping[str, str | None]):
+        self.extensions = {
+            dtype: ext.lstrip(".").lower() for dtype, ext in extensions.items() if ext
+        }
+        self.checked: Counter[str] = Counter()
+        self.unchecked: Counter[str] = Counter()
+        self._readers: dict[str, readers.Reader | None] = {}
+
+    def _reader(self, dtype: str) -> tuple[readers.Reader | None, Finding | None]:
+        """Returns dtype's reader (or None), and a READER_FAILED finding the first time
+        it can't be loaded."""
+        if dtype in self._readers:
+            return self._readers[dtype], None
+        try:
+            reader = readers.find_reader(dtype)
+        except RuntimeError as err:
+            self._readers[dtype] = None
+            return None, Finding(Status.READER_FAILED, None, detail=str(err))
+        self._readers[dtype] = reader
+        return reader, None
+
+    def _accepts(self, dtype: str, path: Path) -> bool:
+        reader, _ = self._reader(dtype)
+        if reader is None:
+            return False
+        try:
+            readers.read_file_metadata(reader, dtype, path)
+        except ValueError:
+            return False
+        return True
+
+    def check(self, name: str, path: Path, dtype: str) -> Iterator[Finding]:
+        """Yields INVALID_FOR_DTYPE if dtype's reader rejects the file at path, and
+        READER_FAILED if the reader can't be loaded."""
+        reader, failed = self._reader(dtype)
+        if failed is not None:
+            yield failed
+        if reader is None:
+            self.unchecked[dtype] += 1
+            return
+        self.checked[dtype] += 1
+        try:
+            readers.read_file_metadata(reader, dtype, path)
+        except ValueError as err:
+            detail = str(err)
+        else:
+            return
+        suffix = path.suffix.lstrip(".").lower()
+        others = sorted(
+            other
+            for other, ext in self.extensions.items()
+            if other != dtype and ext == suffix and self._accepts(other, path)
+        )
+        if others:
+            detail += f"; might be {' or '.join(others)}"
+        yield Finding(Status.INVALID_FOR_DTYPE, name, path, detail)
+
+
 def check_archive_contents(
     archive_path: Path,
     expected: Mapping[str, str | None],
     *,
     check_hash: bool = True,
     keys: Mapping[str, str | None] | None = None,
+    dtypes: Mapping[str, str] | None = None,
+    dtype_readers: DtypeReaders | None = None,
 ) -> Iterator[Finding]:
     """Compares the files in a local archive with expected, {name: sha1 or None}.
 
@@ -200,8 +272,10 @@ def check_archive_contents(
     archive; a resource can have more than one. check_hash=False skips reading files.
     keys, {name: key or None}, gives the key of each resource's location in the
     archive, which should be the name of its file (NO_KEY, WRONG_KEY); without it,
-    keys aren't checked. Doesn't contact the registry. Raises archive.ArchiveHostError
-    on Windows.
+    keys aren't checked. With dtypes, {name: dtype}, and dtype_readers, files whose
+    contents match (or have no hash) are checked with their dtype's reader, unless
+    check_hash is False (INVALID_FOR_DTYPE, READER_FAILED). Doesn't contact the
+    registry. Raises archive.ArchiveHostError on Windows.
     """
     archive.require_posix("check an archive")
     remaining = dict(expected)
@@ -235,6 +309,14 @@ def check_archive_contents(
         else:
             status = Status.OK
         yield Finding(status, name, path)
+        if (
+            check_hash
+            and dtypes is not None
+            and dtype_readers is not None
+            and name in dtypes
+            and status in (Status.OK, Status.NOT_HASHED)
+        ):
+            yield from dtype_readers.check(name, path, dtypes[name])
         # a misplaced file, a link or a directory isn't where a key could point
         if keys is None or status in (
             Status.SYMLINK,
@@ -437,6 +519,7 @@ def check_archive_permissions(
 
 
 __all__ = [
+    "DtypeReaders",
     "Finding",
     "Status",
     "check_archive_contents",

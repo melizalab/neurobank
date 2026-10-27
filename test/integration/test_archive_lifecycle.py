@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from nbank import archive as nbank_archive
-from nbank import check, core, script, transfer
+from nbank import check, core, readers, script, transfer
 from nbank import registry as nbank_registry
 
 
@@ -175,6 +175,86 @@ def test_check_rename_skips_dtype_without_extension(
     assert f" - {path} : not renamed, as its dtype has no extension" in caplog.text
     assert "Files renamed: 0" in caplog.text
     assert path.exists()
+
+
+@pytest.fixture
+def json_dtype(monkeypatch, txt_dtype, client, registry, unique):
+    """Returns a function that installs readers for txt_dtype, which needs JSON, and
+    for another dtype with the extension txt, which takes anything; its other
+    attribute is the other dtype's name."""
+    from test.test_check import json_reader
+    from test.test_readers import FakeEntryPoint
+
+    other = unique("dtype")
+    url, body = nbank_registry.add_datatype(registry.url, other, "text/plain")
+    client.post(url, json={**body, "extension": "txt"}).raise_for_status()
+    eps = [FakeEntryPoint(txt_dtype, json_reader), FakeEntryPoint(other, lambda p: {})]
+
+    def install():
+        monkeypatch.setattr(
+            readers,
+            "entry_points",
+            lambda group: eps if group == readers.ENTRY_POINT_GROUP else [],
+        )
+
+    install.other = other
+    return install
+
+
+def test_check_dtype(cli, archive, txt_dtype, deposit_file, json_dtype, caplog):
+    # deposited before the readers are installed, so not checked then
+    valid = deposit_file(archive, txt_dtype, contents="{}")
+    invalid = deposit_file(archive, txt_dtype)
+    json_dtype()
+    assert cli("check", "archive", str(archive.path)) == 1
+    assert (
+        f" - {invalid} : {stored_path(archive, invalid)} - NOT a valid file of its "
+        f"dtype (not a valid {txt_dtype} file: not JSON"
+    ) in caplog.text
+    assert f"; might be {json_dtype.other})" in caplog.text
+    assert valid not in caplog.text
+    assert (
+        "files checked with their dtype's metadata reader: 2; "
+        "with no reader installed for their dtype: 0"
+    ) in caplog.text
+    assert "location key errors: 0; invalid for dtype: 1" in caplog.text
+
+    caplog.clear()
+    assert cli("check", "archive", "--no-hash", str(archive.path)) == 0
+    assert "not checked against their dtypes' metadata readers (--no-hash)" in (
+        caplog.text
+    )
+
+
+@pytest.mark.parametrize("key", ["old", None])
+def test_check_fix_skips_invalid_for_dtype(
+    cli,
+    client,
+    registry,
+    archive,
+    txt_dtype,
+    deposit_file,
+    json_dtype,
+    location_key,
+    caplog,
+    key,
+):
+    # renaming it or setting its key would hide that its dtype is wrong
+    name, path, odd = misnamed(client, registry, archive, txt_dtype, deposit_file, key)
+    json_dtype()
+    assert cli("check", "archive", "--fix", "--rename", str(archive.path)) == 1
+    assert f" - {odd} : not renamed, as it isn't a valid file of its dtype" in (
+        caplog.text
+    )
+    assert "Files renamed: 0" in caplog.text
+    assert "Location keys set: 0" in caplog.text
+    if key is None:
+        assert (
+            f" - {name} : {odd} - location has NO key - not fixed, as it isn't a "
+            "valid file of its dtype"
+        ) in caplog.text
+    assert odd.exists() and not path.exists()
+    assert location_key(name, archive.name) == (odd.name if key else None)
 
 
 def test_check_fix_swapped_keys(

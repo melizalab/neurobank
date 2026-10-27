@@ -6,7 +6,7 @@ import time
 import pytest
 import respx
 
-from nbank import archive, check, util
+from nbank import archive, check, readers, util
 from nbank.check import Status
 from test import (
     mock_archive_locations,
@@ -163,6 +163,138 @@ def test_check_contents_duplicate(tmp_archive, tmp_path):
     findings = list(check.check_archive_contents(tmp_archive.path, {"res_1": sha1}))
     assert sorted(f.path for f in findings) == sorted([path, other])
     assert all(f.status == Status.DUPLICATE for f in findings)
+
+
+# checking files with their dtypes' metadata readers
+
+
+def json_reader(path):
+    try:
+        json.loads(path.read_text())
+    except ValueError as err:
+        raise ValueError(f"not JSON: {err}") from None
+    return {}
+
+
+@pytest.fixture
+def dtype_readers(monkeypatch):
+    from test.test_readers import FakeEntryPoint
+
+    eps = [
+        FakeEntryPoint("json-data", json_reader),
+        FakeEntryPoint("text", lambda path: {}),
+        FakeEntryPoint("broken", ImportError("no module named 'producer'")),
+    ]
+    monkeypatch.setattr(
+        readers,
+        "entry_points",
+        lambda group: eps if group == readers.ENTRY_POINT_GROUP else [],
+    )
+    return check.DtypeReaders(
+        {"json-data": "txt", "text": ".txt", "broken": "txt", "audio": "wav", "x": None}
+    )
+
+
+def check_dtypes(cfg, expected, dtypes, dtype_readers, **kwargs):
+    return list(
+        check.check_archive_contents(
+            cfg.path, expected, dtypes=dtypes, dtype_readers=dtype_readers, **kwargs
+        )
+    )
+
+
+def test_check_contents_valid_for_dtype(tmp_archive, tmp_path, dtype_readers):
+    path, sha1 = store(tmp_archive, tmp_path, "res_1", "{}")
+    findings = check_dtypes(
+        tmp_archive, {"res_1": sha1}, {"res_1": "json-data"}, dtype_readers
+    )
+    assert findings == [check.Finding(Status.OK, "res_1", path)]
+    assert dtype_readers.checked == {"json-data": 1}
+
+
+def test_check_contents_invalid_for_dtype(tmp_archive, tmp_path, dtype_readers):
+    path, _ = store(tmp_archive, tmp_path, "res_1")
+    findings = check_dtypes(
+        tmp_archive, {"res_1": None}, {"res_1": "json-data"}, dtype_readers
+    )
+    assert [f.status for f in findings] == [
+        Status.NOT_HASHED,
+        Status.INVALID_FOR_DTYPE,
+    ]
+    invalid = findings[1]
+    assert (invalid.resource, invalid.path) == ("res_1", path)
+    assert not invalid.ok
+    # text has the file's extension and accepts it; broken has it but can't load
+    assert invalid.detail.startswith("not a valid json-data file: not JSON")
+    assert invalid.detail.endswith("; might be text")
+
+
+def test_check_contents_invalid_for_dtype_suggestion_ignores_case(
+    tmp_archive, tmp_path, dtype_readers
+):
+    path, _ = store(tmp_archive, tmp_path, "res_1")
+    path.rename(path.with_suffix(".TXT"))
+    findings = check_dtypes(
+        tmp_archive, {"res_1": None}, {"res_1": "json-data"}, dtype_readers
+    )
+    assert findings[1].detail.endswith("; might be text")
+
+
+def test_check_contents_invalid_for_dtype_no_suggestion(
+    tmp_archive, tmp_path, dtype_readers
+):
+    path, _ = store(tmp_archive, tmp_path, "res_1")
+    path.rename(path.with_suffix(".dat"))
+    findings = check_dtypes(
+        tmp_archive, {"res_1": None}, {"res_1": "json-data"}, dtype_readers
+    )
+    assert findings[1].status == Status.INVALID_FOR_DTYPE
+    assert "might be" not in findings[1].detail
+
+
+def test_check_contents_dtype_without_reader(tmp_archive, tmp_path, dtype_readers):
+    store(tmp_archive, tmp_path, "res_1")
+    findings = check_dtypes(
+        tmp_archive, {"res_1": None}, {"res_1": "audio"}, dtype_readers
+    )
+    assert statuses(findings) == {"res_1": Status.NOT_HASHED}
+    assert dtype_readers.unchecked == {"audio": 1}
+
+
+def test_check_contents_reader_fails_to_load(tmp_archive, tmp_path, dtype_readers):
+    store(tmp_archive, tmp_path, "res_1")
+    store(tmp_archive, tmp_path, "res_2")
+    findings = check_dtypes(
+        tmp_archive,
+        {"res_1": None, "res_2": None},
+        {"res_1": "broken", "res_2": "broken"},
+        dtype_readers,
+    )
+    [failed] = [f for f in findings if f.status == Status.READER_FAILED]
+    assert "can't load the metadata reader for 'broken'" in failed.detail
+    assert not failed.ok
+    assert dtype_readers.unchecked == {"broken": 2}
+
+
+def test_check_contents_dtype_not_checked(
+    tmp_archive, tmp_path, dtype_readers, monkeypatch
+):
+    # not without hashing, nor when the contents don't match
+    path, sha1 = store(tmp_archive, tmp_path, "res_1")
+    dtypes = {"res_1": "json-data"}
+    findings = check_dtypes(
+        tmp_archive, {"res_1": sha1}, dtypes, dtype_readers, check_hash=False
+    )
+    assert [f.status for f in findings] == [Status.HASH_SKIPPED]
+    findings = check_dtypes(
+        tmp_archive, {"res_1": None}, dtypes, dtype_readers, check_hash=False
+    )
+    assert [f.status for f in findings] == [Status.NOT_HASHED]
+    path.chmod(0o640)
+    path.write_text("changed")
+    findings = check_dtypes(tmp_archive, {"res_1": sha1}, dtypes, dtype_readers)
+    assert [f.status for f in findings] == [Status.HASH_MISMATCH]
+    assert dtype_readers.checked.total() == 0
 
 
 def test_registry_locations_in_archive(mocked_api):

@@ -100,6 +100,13 @@ Requires django-neurobank 1.0 (registry API 2.x).
   `filename`. `check.check_archive_contents` takes the keys as `keys=`.
   `--fix --rename` renames those files to the registry's `filename` and sets
   their keys.
+- `nbank check archive` runs the metadata reader of each file's dtype, if one
+  is installed, and reports a file it rejects as not valid for its dtype (an
+  error), suggesting any other dtype with the file's extension whose reader
+  accepts it. `--fix` and `--rename` leave such files' keys and names alone.
+  `--no-hash` skips the readers. `check.check_archive_contents` takes the
+  dtypes and a `check.DtypeReaders` as `dtypes=` and `dtype_readers=`. Needs
+  the registry's `locations/` to give each resource's dtype.
 - Documentation on Read the Docs (https://neurobank.readthedocs.io): guides to
   archives, depositing, searching, accessing and managing resources, and
   references for the CLI and the Python API. The README is now a short tour.

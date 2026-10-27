@@ -1388,6 +1388,16 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
         for name, location in located.items()
     }
     keys = {name: key for name, (key, _) in registered.items()}
+    dtypes = {name: location["dtype"] for name, location in located.items()}
+    dtype_readers = None
+    if not args.no_hash and readers.installed_readers():
+        url, params = registry.get_datatypes(registry_url)
+        dtype_readers = check.DtypeReaders(
+            {
+                d["name"]: d.get("extension")
+                for d in util.query_registry_paginated(session, url, params)
+            }
+        )
     log.info("checking ownership and permissions:")
     perm_counts = Counter()
     unable_to_check = False
@@ -1422,11 +1432,34 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     incomplete = []  # left over from transfers; may be deleted after the main pass
     wrong_keys = []  # set after the main pass with --fix
     other_names = []  # (resource, finding, filename) for files named otherwise
+    invalid = set()  # resources whose files their dtype's reader rejects; not fixed
     for finding in check.check_archive_contents(
-        archive_path, expected, check_hash=not args.no_hash, keys=keys
+        archive_path,
+        expected,
+        check_hash=not args.no_hash,
+        keys=keys,
+        dtypes=dtypes,
+        dtype_readers=dtype_readers,
     ):
         if finding.status in (check.Status.NO_KEY, check.Status.WRONG_KEY):
             wrong_keys.append(finding)
+            continue
+        if finding.status == check.Status.INVALID_FOR_DTYPE:
+            invalid.add(finding.resource)
+            counts[finding.status] += 1
+            n_errors += 1
+            log.error(
+                " - %s : %s - %s (%s)",
+                finding.resource,
+                finding.path,
+                finding.status.value,
+                finding.detail,
+            )
+            continue
+        if finding.status == check.Status.READER_FAILED:
+            counts[finding.status] += 1
+            n_errors += 1
+            log.error(" - %s: %s", finding.status.value, finding.detail)
             continue
         resource = finding.resource
         if resource is not None and resource in registered and finding.path is not None:
@@ -1460,6 +1493,12 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
         log.info("renaming files to the registry's filename:")
         renamed = {}
         for resource, finding, filename in other_names:
+            if resource in invalid:
+                log.info(
+                    " - %s : not renamed, as it isn't a valid file of its dtype",
+                    finding.path,
+                )
+                continue
             try:
                 path = _rename_to_filename(finding, filename)
             except OSError as err:
@@ -1476,13 +1515,16 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     if wrong_keys:
         log.info("checking location keys:")
     if args.fix:
-        refused = dict(_set_keys(session, registry_url, archive_name, wrong_keys))
+        to_set = [f for f in wrong_keys if f.resource not in invalid]
+        refused = dict(_set_keys(session, registry_url, archive_name, to_set))
     for finding in wrong_keys:
         assert finding.path is not None  # NO_KEY and WRONG_KEY findings are files
         msg = f" - {finding.resource} : {finding.path} - {finding.status.value}"
         if finding.detail:
             msg += f" ({finding.detail})"
-        if args.fix:
+        if args.fix and finding.resource in invalid:
+            log.error("%s - not fixed, as it isn't a valid file of its dtype", msg)
+        elif args.fix:
             error = refused.get(finding.resource)
             if error is None:
                 n_keys_set += 1
@@ -1549,8 +1591,19 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
                 continue
         counts[finding.status] += 1
         n_errors += 1
+    if args.no_hash:
+        log.info("files not checked against their dtypes' metadata readers (--no-hash)")
+    elif dtype_readers is None:
+        log.info("no metadata readers installed, so no files checked against them")
+    else:
+        log.info(
+            "files checked with their dtype's metadata reader: %d; "
+            "with no reader installed for their dtype: %d",
+            dtype_readers.checked.total(),
+            dtype_readers.unchecked.total(),
+        )
     log.info(
-        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d; permission errors: %d; registered elsewhere: %d; location key errors: %d",
+        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d; permission errors: %d; registered elsewhere: %d; location key errors: %d; invalid for dtype: %d",
         len(expected),
         counts[check.Status.MISSING_FROM_ARCHIVE],
         counts[check.Status.MISSING_FROM_REGISTRY],
@@ -1566,6 +1619,7 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
         + counts[check.Status.UNVERIFIED_ELSEWHERE]
         + counts[check.Status.CHANGED_ELSEWHERE],
         key_counts.total(),
+        counts[check.Status.INVALID_FOR_DTYPE],
     )
     if args.fix:
         log.info("Permission errors fixed: %d", n_fixed)

@@ -38,7 +38,8 @@ def mock_archive_locations(
     mocked_api, archive_name, root, resources, scheme="neurobank"
 ):
     """Mocks the registry's locations/ stream for an archive. resources is
-    {name: (sha1, key)}; each resource's filename is name.txt. Returns the route."""
+    {name: (sha1, key)}; each resource's filename is name.txt, and its dtype txt.
+    Returns the route."""
     import json
 
     from nbank import util
@@ -53,6 +54,7 @@ def mock_archive_locations(
             "key": key,
             "filename": f"{name}.txt",
             "sha1": sha1,
+            "dtype": "txt",
         }
         for name, (sha1, key) in resources.items()
     ]

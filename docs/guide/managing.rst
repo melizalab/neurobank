@@ -19,6 +19,16 @@ is informational, not an error. An archive given by its path is checked against
 the registry given with ``-r`` (not ``NBANK_REGISTRY``), or else the one in its
 ``nbank.json``, which is warned about if it names a different registry.
 
+If a metadata reader is installed for a resource's dtype (see :doc:`depositing`),
+the check also runs it on the file, and reports a file it rejects as not a valid
+file of its dtype, which usually means the resource was deposited with the wrong
+dtype. If a reader for another dtype with the file's extension accepts the file,
+that dtype is suggested. Files of dtypes with no reader installed aren't
+checked, and the summary counts them. To correct a resource's dtype, change it
+with ``nbank modify --dtype``, check the file against the new dtype's reader
+with ``nbank verify --metadata``, and then run ``nbank check archive --fix
+--rename`` to give the file the new dtype's extension.
+
 -  ``--fix`` sets location keys to the names of the files, repairs ownership and
    permissions (changing ownership requires root), creates a missing
    ``staging`` directory, and in an interactive terminal, offers to delete
@@ -29,8 +39,10 @@ the registry given with ``-r`` (not ``NBANK_REGISTRY``), or else the one in its
    part of the id or the hash, so this changes no resource. Files whose
    contents don't match, duplicates, and files of dtypes without an extension
    aren't renamed, and an existing file is never replaced.
--  ``--no-hash`` doesn't verify file hashes, which is much faster for large
-   archives.
+-  Neither ``--fix`` nor ``--rename`` changes the key or the name of a file
+   that isn't valid for its dtype, as that would hide the wrong dtype.
+-  ``--no-hash`` doesn't read the files, so it neither verifies their hashes
+   nor runs their readers, which is much faster for large archives.
 -  ``-v`` shows the results for all resources, not just errors.
 
 ``nbank check registry`` reports resources without locations and archives with
