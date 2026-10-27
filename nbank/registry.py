@@ -39,9 +39,8 @@ def default_registry() -> str | None:
 
 
 def parse_resource_url(url: str) -> tuple[str, str]:
-    ""
-
-    "Parse a full resource identifier into base url and id."
+    """Returns (base url, id) for a full resource URL. Raises ValueError if url
+    isn't one."""
     import re
     from urllib.parse import urlparse, urlunparse
 
@@ -291,6 +290,7 @@ def log_error(err):
 
 
 def local_schemes() -> tuple[str]:
+    """Returns the schemes of archives that are directories on a host."""
     return _local_schemes
 
 

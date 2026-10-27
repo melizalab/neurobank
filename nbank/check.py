@@ -22,6 +22,8 @@ log = logging.getLogger("nbank")
 
 
 class Status(enum.Enum):
+    """What a check found; the value is how it's reported."""
+
     OK = "OK"
     NOT_HASHED = "OK (no hash to verify)"
     HASH_SKIPPED = "OK (hash not checked)"
