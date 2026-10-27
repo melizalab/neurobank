@@ -465,6 +465,35 @@ def test_download_from_another_host_has_no_credentials(mocked_api, tmp_path):
     assert "Authorization" not in download.calls.last.request.headers
 
 
+def basic(credentials: str) -> str:
+    import base64
+
+    return "Basic " + base64.b64encode(credentials.encode()).decode()
+
+
+def test_netrc_credentials_go_to_each_host(mocked_api, tmp_path):
+    netrc = tmp_path / ".netrc"
+    netrc.write_text(
+        "machine meliza.org login user password pw\n"
+        "machine elsewhere.org login other password secret\n"
+    )
+    netrc.chmod(0o600)
+    query = mocked_api.get(info_url).respond(200, json={})
+    download = mocked_api.get("https://elsewhere.org/files/res_1/").respond(
+        200, content=b"contents"
+    )
+    unknown = mocked_api.get("https://unknown.org/files/res_1/").respond(200)
+    with util.registry_session(
+        registry_url, auth=httpx.NetRCAuth(str(netrc))
+    ) as session:
+        session.get(info_url)
+        session.get("https://elsewhere.org/files/res_1/")
+        session.get("https://unknown.org/files/res_1/")
+    assert query.calls.last.request.headers["Authorization"] == basic("user:pw")
+    assert download.calls.last.request.headers["Authorization"] == basic("other:secret")
+    assert "Authorization" not in unknown.calls.last.request.headers
+
+
 def test_session_auth_needs_the_registry_url():
     with pytest.raises(ValueError, match="registry_url"):
         with util.registry_session(auth=("user", "pw")):

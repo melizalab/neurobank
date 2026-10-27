@@ -63,8 +63,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
   registry with its own client gets a 400 from it; the `query_registry`
   functions still work with any client, as reads need no version. Its `auth`
   is sent only to the registry's host (scheme, host and port), never to hosts
-  that locations name, and needs `registry_url`; `check_version=False` skips
-  the version check.
+  that locations name, and needs `registry_url`; netrc credentials (the
+  default) go to each host that has an entry. `check_version=False` skips the
+  version check.
 - `nbank search` and `core.search` leave out superseded resources;
   `--only-superseded` (`superseded=True`) finds only them, and
   `--with-superseded` (`superseded=None`) both. `core.find_by_hash` still finds a file's resource if

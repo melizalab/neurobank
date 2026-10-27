@@ -10,7 +10,16 @@ from contextlib import contextmanager
 from pathlib import Path, PurePath, PurePosixPath
 from typing import Any, ClassVar
 
-from httpx import URL, USE_CLIENT_DEFAULT, Auth, BasicAuth, Client, Response, codes
+from httpx import (
+    URL,
+    USE_CLIENT_DEFAULT,
+    Auth,
+    BasicAuth,
+    Client,
+    NetRCAuth,
+    Response,
+    codes,
+)
 
 # imported so that their resource classes register their location schemes
 from nbank import archive, registry, tape_archive  # noqa: F401
@@ -72,11 +81,12 @@ def registry_session(
     """Yields an HTTP client that asks for API_VERSION in every request.
 
     auth (an httpx Auth or a (user, password) tuple) is used only for requests to
-    registry_url's host, and needs registry_url. If registry_url is given and
+    registry_url's host, and needs registry_url. A NetRCAuth is used for every
+    host, as it holds each host's own credentials. If registry_url is given and
     check_version is true, first checks that the registry supports API_VERSION (see
     check_registry_version).
     """
-    if auth is not None:
+    if auth is not None and not isinstance(auth, NetRCAuth):
         if registry_url is None:
             raise ValueError("auth needs the registry_url it's for")
         auth = _RegistryAuth(auth, registry_url)
