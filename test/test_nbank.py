@@ -12,7 +12,7 @@ import httpx
 import pytest
 import respx
 
-from nbank import archive, canonical_zip, check, core, registry, script, util
+from nbank import archive, canonical_zip, check, console, core, registry, script, util
 from test import mock_archive_locations, skip_unless_posix
 from test.test_registry import (
     archives_url,
@@ -1144,7 +1144,7 @@ class FakeTerminal(io.StringIO):
 
 def test_progress_not_a_terminal():
     stream = io.StringIO()
-    progress = script.Progress(stream)
+    progress = console.Progress(stream)
     progress.start("res_1.wav", 100)
     progress("res_1.wav", 50)
     progress.clear()
@@ -1161,7 +1161,7 @@ class FakeClock:
 @pytest.fixture
 def clock(monkeypatch):
     fake = FakeClock()
-    monkeypatch.setattr(script.time, "monotonic", fake)
+    monkeypatch.setattr(console.time, "monotonic", fake)
     return fake
 
 
@@ -1171,7 +1171,7 @@ def shown(stream):
 
 def test_progress_line(clock):
     stream = FakeTerminal()
-    progress = script.Progress(stream)
+    progress = console.Progress(stream)
     progress.start("res_1.wav", 4_000_000_000)
     for clock.now, nbytes in (
         (0.0, 0),  # the first report is shown
@@ -1189,7 +1189,7 @@ def test_progress_line(clock):
 
 def test_progress_rate_shows_stalls(clock):
     stream = FakeTerminal()
-    progress = script.Progress(stream)
+    progress = console.Progress(stream)
     progress.start("res_1.wav", None)
     for clock.now, nbytes in ((0.0, 0), (1.0, 1_000_000_000)):
         progress("res_1.wav", nbytes)
@@ -1205,7 +1205,7 @@ def test_progress_rate_shows_stalls(clock):
 
 def test_progress_directory_entries(clock):
     stream = FakeTerminal()
-    progress = script.Progress(stream)
+    progress = console.Progress(stream)
     progress.start("res_2", None)
     progress("sub/a", 500)
     clock.now = 2.0
@@ -1215,7 +1215,7 @@ def test_progress_directory_entries(clock):
 
 @pytest.mark.parametrize("terminal", [True, False])
 def test_progress_summary(clock, terminal):
-    progress = script.Progress(FakeTerminal() if terminal else io.StringIO())
+    progress = console.Progress(FakeTerminal() if terminal else io.StringIO())
     progress.start("res_2", None)
     progress("sub/a", 1_000_000_000)
     progress("sub/b", 500_000_000)
@@ -1231,7 +1231,7 @@ def test_progress_clears_line_before_log_messages():
     log.addHandler(handler)
     stream = FakeTerminal()
     try:
-        with script.Progress(stream) as progress:
+        with console.Progress(stream) as progress:
             progress.start("res_1.wav", None)
             progress("res_1.wav", 1000)
             log.error("a message")
@@ -1723,6 +1723,6 @@ def test_rename_to_filename_never_replaces(tmp_path):
     (tmp_path / "res_1.txt").write_text("other")
     finding = check.Finding(check.Status.OK, "res_1", path)
     with pytest.raises(FileExistsError):
-        script._rename_to_filename(finding, "res_1.txt")
+        check.rename_to_filename(finding, "res_1.txt")
     assert path.read_text() == "one"
     assert (tmp_path / "res_1.txt").read_text() == "other"

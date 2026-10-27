@@ -4,6 +4,7 @@
 """Integrity checks for archives and the registry."""
 
 import enum
+import logging
 import os
 import stat
 from collections import Counter, defaultdict
@@ -16,6 +17,8 @@ from pathlib import Path
 from httpx import Client
 
 from nbank import archive, readers, registry, transfer, util
+
+log = logging.getLogger("nbank")
 
 
 class Status(enum.Enum):
@@ -516,6 +519,79 @@ def check_archive_permissions(
             remaining = {f.status for f in _check_path(cfg, path, name, uid, gid)}
             findings = [replace(f, fixed=f.status not in remaining) for f in findings]
         yield from findings
+
+
+# files that can be renamed: those whose contents were found to be (or not checked
+# against) the resource's
+_renamable = (Status.OK, Status.NOT_HASHED, Status.HASH_SKIPPED)
+
+
+def rename_to_filename(finding: Finding, filename: str) -> Path | None:
+    """Renames the file of a finding to filename, the registry's name for it.
+
+    Returns the new path, or None if the file isn't renamed because its status isn't
+    one of _renamable (it's reported already) or the dtype has no extension (logged).
+    Raises FileExistsError if a file has that name, and OSError if the rename fails.
+    """
+    path = finding.path
+    assert path is not None  # a file found for a registered resource
+    if finding.status not in _renamable:
+        return None
+    if not Path(filename).suffix:
+        log.info(" - %s : not renamed, as its dtype has no extension", path)
+        return None
+    target = path.with_name(filename)
+    # a change of case only names the same file on a case-insensitive filesystem
+    if target.exists() and not target.samefile(path):
+        raise FileExistsError(f"'{target}' already exists")
+    path.rename(target)
+    log.info(" - %s -> %s", path, filename)
+    return target
+
+
+def keys_after_renames(
+    wrong_keys: list[Finding],
+    renamed: Mapping[str, Path],
+    keys: Mapping[str, str | None],
+) -> list[Finding]:
+    """Returns the key findings once files are renamed: renamed is {resource: new path},
+    and keys {resource: the key of its location}. A renamed file's key is wrong unless
+    the registry already has the new name."""
+    out = [f for f in wrong_keys if f.resource not in renamed]
+    for name, path in renamed.items():
+        key = keys.get(name)
+        if key is None:
+            out.append(Finding(Status.NO_KEY, name, path))
+        elif key != path.name:
+            out.append(Finding(Status.WRONG_KEY, name, path, f"the key is '{key}'"))
+    return out
+
+
+def set_keys(
+    session, registry_url, archive_name, findings
+) -> Iterator[tuple[str, str]]:
+    """Sets the key of each finding's location to the name of its file. Yields
+    (resource, the registry's error) for each key the registry refuses."""
+    refused = [
+        f
+        for f in findings
+        if transfer.update_location_key(
+            session, registry_url, f.resource, archive_name, f.path.name
+        )
+    ]
+    # a refused key may be held by another location being fixed (two keys swapped,
+    # say), so the refused locations' keys, which are wrong anyway, are cleared before
+    # they're set again
+    for f in refused:
+        transfer.update_location_key(
+            session, registry_url, f.resource, archive_name, None
+        )
+    for f in refused:
+        error = transfer.update_location_key(
+            session, registry_url, f.resource, archive_name, f.path.name
+        )
+        if error is not None:
+            yield f.resource, error
 
 
 __all__ = [

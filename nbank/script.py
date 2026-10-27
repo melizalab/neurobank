@@ -13,9 +13,7 @@ import logging
 import os
 import sys
 import tarfile
-import time
-from collections import Counter, deque
-from collections.abc import Iterator, Mapping
+from collections import Counter
 from functools import partial
 from netrc import NetrcParseError
 from pathlib import Path, PurePosixPath
@@ -23,7 +21,17 @@ from urllib.parse import urlunparse
 
 import httpx
 
-from nbank import __version__, archive, check, core, readers, registry, transfer, util
+from nbank import (
+    __version__,
+    archive,
+    check,
+    console,
+    core,
+    readers,
+    registry,
+    transfer,
+    util,
+)
 from nbank.types import LocalResource
 
 log = logging.getLogger("nbank")  # root logger
@@ -998,19 +1006,6 @@ def _link_error(err: OSError) -> str:
     return str(err)
 
 
-def hash_search_param(value: str) -> dict:
-    """Returns the query parameter to search the registry for a full or partial hash.
-
-    A full sha1 is an exact match, which the registry can look up quickly; part
-    of a hash needs the slower substring filter.
-    """
-    import re
-
-    if re.fullmatch(r"[0-9a-fA-F]{40}", value):
-        return {"sha1": value}
-    return {"sha1_contains": value}
-
-
 def search_resources(args):
     # parse commandline args to query dict
     argmap = [
@@ -1025,7 +1020,7 @@ def search_resources(args):
         if getattr(args, argname) is not None
     }
     if args.hash is not None:
-        params.update(hash_search_param(args.hash))
+        params.update(registry.hash_search_param(args.hash))
     if args.experimenter is not None:
         params["experimenter"] = args.experimenter
     if args.animal is not None:
@@ -1306,15 +1301,6 @@ def _registered_name(session, registry_url: str, archive_path: Path) -> str | No
     return info["name"]
 
 
-def _log_summary(*counts: str, failed: int) -> None:
-    """Logs the counts of a transfer, then the number that failed, as one line."""
-    text = "Resources " + "; ".join([*counts, f"failed: {failed}"])
-    if failed:
-        log.error("%s (marked with ✗ above)", text)
-    else:
-        log.info("%s", text)
-
-
 def _check_archive_by_name(args, name: str) -> int:
     """Checks the archive with this name in the registry. It must be a neurobank archive
     on this host."""
@@ -1504,7 +1490,7 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
                 )
                 continue
             try:
-                path = _rename_to_filename(finding, filename)
+                path = check.rename_to_filename(finding, filename)
             except OSError as err:
                 log.error(" - %s : unable to rename: %s", finding.path, err)
                 n_errors += 1
@@ -1513,14 +1499,14 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
                 renamed[resource] = path
         n_renamed = len(renamed)
         other_names = [entry for entry in other_names if entry[0] not in renamed]
-        wrong_keys = _keys_after_renames(wrong_keys, renamed, keys)
+        wrong_keys = check.keys_after_renames(wrong_keys, renamed, keys)
     n_keys_set = 0
     key_counts = Counter()
     if wrong_keys:
         log.info("checking location keys:")
     if args.fix:
         to_set = [f for f in wrong_keys if f.resource not in invalid]
-        refused = dict(_set_keys(session, registry_url, archive_name, to_set))
+        refused = dict(check.set_keys(session, registry_url, archive_name, to_set))
     for finding in wrong_keys:
         assert finding.path is not None  # NO_KEY and WRONG_KEY findings are files
         msg = f" - {finding.resource} : {finding.path} - {finding.status.value}"
@@ -1556,14 +1542,14 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     if args.verbose:
         for _, finding, filename in other_names:
             log.info(" - %s (filename: %s)", finding.path, filename)
-    prompting = args.fix and _interactive()
+    prompting = args.fix and console.interactive()
     if args.fix and (unregistered or incomplete) and not prompting:
         log.info("not an interactive terminal, so not asking how to resolve problems")
     n_deleted = 0
     for finding in incomplete:
         assert finding.path is not None  # INCOMPLETE findings are files
         log.error(" - %s - %s (%s)", finding.path, finding.status.value, finding.detail)
-        if prompting and _ask("   [d]elete, [s]kip? ", "ds") == "d":
+        if prompting and console.ask("   [d]elete, [s]kip? ", "ds") == "d":
             try:
                 archive.remove(finding.path)
             except OSError as err:
@@ -1636,97 +1622,6 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
     return n_errors == 0 and not unable_to_check
 
 
-# files that can be renamed: those whose contents were found to be (or not checked
-# against) the resource's
-_renamable = (check.Status.OK, check.Status.NOT_HASHED, check.Status.HASH_SKIPPED)
-
-
-def _rename_to_filename(finding: check.Finding, filename: str) -> Path | None:
-    """Renames the file of a finding to filename, the registry's name for it.
-
-    Returns the new path, or None if the file isn't renamed because its status isn't
-    one of _renamable (it's reported already) or the dtype has no extension (logged).
-    Raises FileExistsError if a file has that name, and OSError if the rename fails.
-    """
-    path = finding.path
-    assert path is not None  # a file found for a registered resource
-    if finding.status not in _renamable:
-        return None
-    if not Path(filename).suffix:
-        log.info(" - %s : not renamed, as its dtype has no extension", path)
-        return None
-    target = path.with_name(filename)
-    # a change of case only names the same file on a case-insensitive filesystem
-    if target.exists() and not target.samefile(path):
-        raise FileExistsError(f"'{target}' already exists")
-    path.rename(target)
-    log.info(" - %s -> %s", path, filename)
-    return target
-
-
-def _keys_after_renames(
-    wrong_keys: list[check.Finding],
-    renamed: Mapping[str, Path],
-    keys: Mapping[str, str | None],
-) -> list[check.Finding]:
-    """Returns the key findings once files are renamed: renamed is {resource: new path},
-    and keys {resource: the key of its location}. A renamed file's key is wrong unless
-    the registry already has the new name."""
-    out = [f for f in wrong_keys if f.resource not in renamed]
-    for name, path in renamed.items():
-        key = keys.get(name)
-        if key is None:
-            out.append(check.Finding(check.Status.NO_KEY, name, path))
-        elif key != path.name:
-            out.append(
-                check.Finding(check.Status.WRONG_KEY, name, path, f"the key is '{key}'")
-            )
-    return out
-
-
-def _set_keys(
-    session, registry_url, archive_name, findings
-) -> Iterator[tuple[str, str]]:
-    """Sets the key of each finding's location to the name of its file. Yields
-    (resource, the registry's error) for each key the registry refuses."""
-    refused = [
-        f
-        for f in findings
-        if transfer.update_location_key(
-            session, registry_url, f.resource, archive_name, f.path.name
-        )
-    ]
-    # a refused key may be held by another location being fixed (two keys swapped,
-    # say), so the refused locations' keys, which are wrong anyway, are cleared before
-    # they're set again
-    for f in refused:
-        transfer.update_location_key(
-            session, registry_url, f.resource, archive_name, None
-        )
-    for f in refused:
-        error = transfer.update_location_key(
-            session, registry_url, f.resource, archive_name, f.path.name
-        )
-        if error is not None:
-            yield f.resource, error
-
-
-def _interactive() -> bool:
-    """True if the user can be asked questions."""
-    return sys.stdin.isatty()
-
-
-def _ask(prompt: str, choices: str) -> str:
-    """Asks the user to pick one of choices (single letters). Returns "" on EOF."""
-    while True:
-        try:
-            answer = input(prompt).strip().lower()
-        except EOFError:
-            return ""
-        if len(answer) == 1 and answer in choices:
-            return answer
-
-
 def _resolve_elsewhere(session, registry_url, archive_name, finding) -> bool:
     """Offers to delete a file registered elsewhere, or to add its location.
 
@@ -1755,7 +1650,7 @@ def _resolve_elsewhere(session, registry_url, archive_name, finding) -> bool:
         )
     options.append(("s", "[s]kip"))
     choices = "".join(key for key, _ in options)
-    answer = _ask(f"   {', '.join(text for _, text in options)}? ", choices)
+    answer = console.ask(f"   {', '.join(text for _, text in options)}? ", choices)
     if answer == "d":
         try:
             archive.remove(path)
@@ -2041,103 +1936,6 @@ def prune_archive(args):
     return 1 if n_failed else None
 
 
-def _human_size(nbytes: float) -> str:
-    """Returns a byte count in decimal units, e.g. '1.2 GB'."""
-    for unit in ("B", "kB", "MB", "GB"):
-        if nbytes < 1000:
-            return f"{nbytes:.0f} {unit}" if unit == "B" else f"{nbytes:.1f} {unit}"
-        nbytes /= 1000
-    return f"{nbytes:.1f} TB"
-
-
-class Progress:
-    """Reports progress reading a resource on one line of stderr, if it's a terminal.
-
-    Call start() for each resource and pass the object as a progress callback. The rate
-    shown is over the last `window` seconds. summary() gives the size and average rate
-    whether or not stderr is a terminal. As a context manager, clears its line before
-    nbank log messages.
-    """
-
-    interval = 0.2
-    window = 5.0
-
-    def __init__(self, stream=None):
-        self.stream = stream if stream is not None else sys.stderr
-        self.enabled = self.stream.isatty()
-        self._width = 0
-        self.start("")
-
-    def start(self, label: str, total: int | None = None) -> None:
-        """Starts reporting on a resource called label, total bytes long if known."""
-        self.label = label
-        self.total = total
-        self._path = None
-        self._read: dict[str, int] = {}
-        self._started = time.monotonic()
-
-    @property
-    def nbytes(self) -> int:
-        """Returns the number of bytes of the resource read so far."""
-        return sum(self._read.values())
-
-    def summary(self) -> str:
-        """Returns the size of the resource read so far and its average rate."""
-        nbytes = self.nbytes
-        elapsed = time.monotonic() - self._started
-        if elapsed <= 0:
-            return _human_size(nbytes)
-        return f"{_human_size(nbytes)}, {_human_size(nbytes / elapsed)}/s"
-
-    def __call__(self, path: str, nbytes: int) -> None:
-        self._read[path] = nbytes
-        if not self.enabled:
-            return
-        now = time.monotonic()
-        if path != self._path:
-            self._path = path
-            self._samples = deque()
-        if self._samples and now - self._samples[-1][0] < self.interval:
-            return
-        self._samples.append((now, nbytes))
-        # keep the newest sample that's at least a window old, as the baseline
-        while len(self._samples) > 1 and now - self._samples[1][0] >= self.window:
-            self._samples.popleft()
-        whole = path == self.label
-        text = f"  {self.label if whole else f'{self.label}/{path}'}  "
-        text += _human_size(nbytes)
-        if whole and self.total:
-            text += f" / {_human_size(self.total)} ({100 * nbytes / self.total:.0f}%)"
-        then, then_bytes = self._samples[0]
-        if now > then:
-            text += f"  {_human_size((nbytes - then_bytes) / (now - then))}/s"
-        self.clear()
-        self.stream.write(text)
-        self.stream.flush()
-        self._width = len(text)
-
-    def clear(self) -> None:
-        """Erases the progress line, if there is one."""
-        if self._width:
-            self.stream.write("\r" + " " * self._width + "\r")
-            self.stream.flush()
-            self._width = 0
-
-    def _before_log(self, record) -> bool:
-        self.clear()
-        return True
-
-    def __enter__(self):
-        for handler in log.handlers:
-            handler.addFilter(self._before_log)
-        return self
-
-    def __exit__(self, *exc):
-        self.clear()
-        for handler in log.handlers:
-            handler.removeFilter(self._before_log)
-
-
 def _tar_lookup(session, registry_url, unregistered: list | None = None):
     """Returns a lookup function for transfer.iter_tar_resources.
 
@@ -2188,7 +1986,7 @@ def check_tar(args):
             )
         lookup = _tar_lookup(session, args.registry_url, unregistered)
         try:
-            with transfer.open_tar(args.tar) as tarf, Progress() as progress:
+            with transfer.open_tar(args.tar) as tarf, console.Progress() as progress:
                 for res in transfer.iter_tar_resources(tarf, lookup):
                     seen.add(res.record["name"])
                     if (
@@ -2354,7 +2152,7 @@ def import_tar(args):
 
         read_error = False
         try:
-            with transfer.open_tar(args.tar) as tarf, Progress() as progress:
+            with transfer.open_tar(args.tar) as tarf, console.Progress() as progress:
                 for res in transfer.iter_tar_resources(tarf, lookup):
                     n_failed += not import_one(res, progress)
                     if wanted is not None:
@@ -2376,12 +2174,12 @@ def import_tar(args):
     if args.restore:
         counts.append(
             f"{'to restore' if args.dry_run else 'restored'}: {n_restored} "
-            f"({_human_size(restored_total)})"
+            f"({console.human_size(restored_total)})"
         )
-    _log_summary(
+    console.log_summary(
         *counts,
         f"{'checked' if args.dry_run else 'imported'}: {n_imported} "
-        f"({_human_size(total)})",
+        f"({console.human_size(total)})",
         f"already in destination: {n_already}",
         failed=n_failed,
     )
@@ -2464,9 +2262,9 @@ def export_resources(args):
     n_requested = len(sources)
 
     def summarize():
-        _log_summary(
+        console.log_summary(
             f"requested: {n_requested}",
-            f"exported: {n_written} ({_human_size(total)})",
+            f"exported: {n_written} ({console.human_size(total)})",
             failed=n_failed,
         )
 
@@ -2487,7 +2285,7 @@ def export_resources(args):
     try:
         with (
             transfer.open_export(args.out, compress=args.compress) as writer,
-            Progress() as progress,
+            console.Progress() as progress,
         ):
             for source in sources:
                 path = source.path
@@ -2603,7 +2401,7 @@ def copy_resources(args):
                 log.error("  ✗ %s -> %s", source.id, source.error)
                 n_failed += 1
         dest = None if args.dry_run else archive_cfg
-        with Progress() as progress:
+        with console.Progress() as progress:
             for source in sources:
                 path = source.path
                 if path is None:
@@ -2651,11 +2449,11 @@ def copy_resources(args):
     if args.restore:
         counts.append(
             f"{'to restore' if args.dry_run else 'restored'}: {n_restored} "
-            f"({_human_size(restored_total)})"
+            f"({console.human_size(restored_total)})"
         )
-    _log_summary(
+    console.log_summary(
         *counts,
-        f"{'checked' if args.dry_run else 'copied'}: {n_copied} ({_human_size(total)})",
+        f"{'checked' if args.dry_run else 'copied'}: {n_copied} ({console.human_size(total)})",
         f"already in destination: {len(already)}",
         failed=n_failed,
     )

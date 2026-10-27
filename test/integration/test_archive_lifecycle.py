@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from nbank import archive as nbank_archive
-from nbank import check, core, readers, script, transfer
+from nbank import check, console, core, readers, script, transfer
 from nbank import registry as nbank_registry
 
 
@@ -579,7 +579,7 @@ def answers(monkeypatch):
             except StopIteration:
                 raise EOFError from None
 
-        monkeypatch.setattr(script, "_interactive", lambda: True)
+        monkeypatch.setattr(console, "interactive", lambda: True)
         monkeypatch.setattr("builtins.input", fake_input)
         return prompts
 
@@ -686,7 +686,7 @@ def test_check_fix_not_interactive(cli, copied, monkeypatch, caplog):
     def no_input(prompt):
         raise AssertionError("should not prompt")
 
-    monkeypatch.setattr(script, "_interactive", lambda: False)
+    monkeypatch.setattr(console, "interactive", lambda: False)
     monkeypatch.setattr("builtins.input", no_input)
     assert cli("check", "archive", "--fix", str(copied.archive.path)) == 1
     assert "not an interactive terminal" in caplog.text
@@ -728,7 +728,7 @@ def test_check_fix_incomplete_transfer(
 def test_check_fix_incomplete_transfer_not_interactive(
     cli, archive, leftover, monkeypatch
 ):
-    monkeypatch.setattr(script, "_interactive", lambda: False)
+    monkeypatch.setattr(console, "interactive", lambda: False)
     assert cli("check", "archive", "--fix", str(archive.path)) == 1
     assert leftover.exists()
 

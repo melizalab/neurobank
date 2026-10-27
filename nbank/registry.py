@@ -16,6 +16,7 @@ URLs with the POST method; and `update_` URLs with the PATCH method.
 """
 
 import logging
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -90,6 +91,17 @@ def find_archive_by_path(base_url: str, path: str | Path) -> tuple[str, dict]:
 def find_resource(base_url: str, /, **params) -> tuple[str, dict]:
     """Constructs URL to find resources that match params"""
     return (url_join(base_url, "resources/"), params)
+
+
+def hash_search_param(value: str) -> dict:
+    """Returns the query parameter to search the registry for a full or partial hash.
+
+    A full sha1 is an exact match, which the registry can look up quickly; part
+    of a hash needs the slower substring filter.
+    """
+    if re.fullmatch(r"[0-9a-fA-F]{40}", value):
+        return {"sha1": value}
+    return {"sha1_contains": value}
 
 
 def find_locations(base_url: str, /, **params) -> tuple[str, dict]:
