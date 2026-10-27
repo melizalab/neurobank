@@ -204,6 +204,59 @@ def add_check_options(pp):
     )
 
 
+_keyval_help = " VALUE is read as JSON if it parses, otherwise as a string)"
+
+
+def add_keyval_arg(pp, flag: str, dest: str, help: str):
+    """Adds an option taking KEY=VALUE metadata fields, which can be repeated."""
+    pp.add_argument(
+        flag,
+        help=help + ";" + _keyval_help,
+        action=ParseKeyVal,
+        default=dict(),
+        metavar="KEY=VALUE",
+        dest=dest,
+    )
+
+
+def add_dry_run_arg(pp, help: str):
+    """Adds -y/--dry-run to a subcommand parser."""
+    pp.add_argument("-y", "--dry-run", help=help, action="store_true")
+
+
+def add_stdin_arg(pp, what: str = "identifiers from stdin, one per line"):
+    """Adds -@, to read more of a subcommand's arguments from stdin."""
+    pp.add_argument(
+        "-@", dest="read_stdin", action="store_true", help=f"read additional {what}"
+    )
+
+
+def add_from_file_arg(pp, what: str = "identifiers"):
+    """Adds -f/--from-file, to read the ids of the resources from a file."""
+    pp.add_argument(
+        "-f",
+        "--from-file",
+        type=Path,
+        help=f"read {what} from FILE, one per line ('-' for standard input)",
+        metavar="FILE",
+    )
+
+
+def add_source_archive_arg(pp, help: str = "only read copies in this archive"):
+    """Adds -a/--archive, the name of an archive, to a subcommand parser."""
+    pp.add_argument("-a", "--archive", help=help)
+
+
+def add_restore_arg(pp):
+    """Adds --restore to a subcommand parser that copies into an archive."""
+    pp.add_argument(
+        "--restore",
+        help="restore resources the registry lists in the destination archive whose "
+        "files are missing from it",
+        action="store_true",
+    )
+
+
 def make_parser() -> argparse.ArgumentParser:
     """Returns the parser for the nbank command line."""
     p = argparse.ArgumentParser(
@@ -230,6 +283,9 @@ def make_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--debug", help="show verbose log messages", action="store_true")
 
+    # each subcommand sets func, and as needed registry_in_archive (it can use the
+    # registry in an archive's nbank.json) and posix_archive (it writes or checks
+    # archives, which can't be done on Windows)
     sub = p.add_subparsers(title="subcommands")
 
     pp = sub.add_parser("registry", help="registry information")
@@ -241,7 +297,7 @@ def make_parser() -> argparse.ArgumentParser:
     pp.set_defaults(func=registry_info)
 
     pp = sub.add_parser("deposit", help="deposit resource(s)")
-    pp.set_defaults(func=store_resources)
+    pp.set_defaults(func=store_resources, registry_in_archive=True, posix_archive=True)
     pp.add_argument("directory", type=Path, help="path of the archive ")
     pp.add_argument(
         "-d", "--dtype", help="specify the datatype for the deposited resources"
@@ -258,21 +314,16 @@ def make_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="give each resource a random id instead of its file name",
     )
-    pp.add_argument(
-        "-y",
-        "--dry-run",
-        action="store_true",
-        help="run all pre-flight checks, including asking the registry whether it "
+    add_dry_run_arg(
+        pp,
+        "run all pre-flight checks, including asking the registry whether it "
         "would accept each resource, but don't register or move any files",
     )
-    pp.add_argument(
+    add_keyval_arg(
+        pp,
         "-k",
-        help="specify metadata field (use multiple -k for multiple values;"
-        " VALUE is read as JSON if it parses, otherwise as a string)",
-        action=ParseKeyVal,
-        default=dict(),
-        metavar="KEY=VALUE",
-        dest="metadata",
+        "metadata",
+        "specify metadata field (use multiple -k for multiple values",
     )
     pp.add_argument(
         "-j",
@@ -298,18 +349,13 @@ def make_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="where the given metadata differs from a file's, use the given values",
     )
-    pp.add_argument(
-        "-@",
-        dest="read_stdin",
-        action="store_true",
-        help="read additional file names from stdin",
-    )
+    add_stdin_arg(pp, "file names from stdin")
     pp.add_argument(
         "file", nargs="+", type=Path, help="path of file(s) to add to the repository"
     )
 
     pp = sub.add_parser("locate", help="locate local resource(s)")
-    pp.set_defaults(func=locate_resources)
+    pp.set_defaults(func=locate_resources, registry_in_archive=True)
     pp.add_argument(
         "-L",
         "--link",
@@ -347,23 +393,17 @@ def make_parser() -> argparse.ArgumentParser:
         help="filter results by the scheme of any of their locations "
         "(e.g., neurobank, tape, https)",
     )
-    pp.add_argument(
+    add_keyval_arg(
+        pp,
         "-k",
-        help="filter by metadata field (use multiple -k for multiple values;"
-        " VALUE is read as JSON if it parses, otherwise as a string)",
-        action=ParseKeyVal,
-        default=dict(),
-        metavar="KEY=VALUE",
-        dest="metadata",
+        "metadata",
+        "filter by metadata field (use multiple -k for multiple values",
     )
-    pp.add_argument(
+    add_keyval_arg(
+        pp,
         "-K",
-        help="exclude by metadata field (use multiple -K for multiple values;"
-        " VALUE is read as JSON if it parses, otherwise as a string)",
-        action=ParseKeyVal,
-        default=dict(),
-        metavar="KEY=VALUE",
-        dest="metadata_neq",
+        "metadata_neq",
+        "exclude by metadata field (use multiple -K for multiple values",
     )
     add_core_field_args(pp, "search")
     group = pp.add_mutually_exclusive_group()
@@ -405,15 +445,12 @@ def make_parser() -> argparse.ArgumentParser:
         "modify", help="update values in resource metadata of resource(s)"
     )
     pp.set_defaults(func=set_resource_metadata)
-    pp.add_argument(
+    add_keyval_arg(
+        pp,
         "-k",
-        help="set metadata key=value, replacing any previous "
-        "value for this key (use multiple -k for multiple fields;"
-        " VALUE is read as JSON if it parses, otherwise as a string)",
-        action=ParseKeyVal,
-        default=dict(),
-        metavar="KEY=VALUE",
-        dest="metadata",
+        "metadata",
+        "set metadata key=value, replacing any previous value for this key (use "
+        "multiple -k for multiple fields",
     )
     pp.add_argument(
         "-K",
@@ -450,12 +487,7 @@ def make_parser() -> argparse.ArgumentParser:
         help="check each file against its registered hash, trying other locations "
         "if it doesn't match",
     )
-    pp.add_argument(
-        "-@",
-        dest="read_stdin",
-        action="store_true",
-        help="read additional identifiers from stdin, one per line",
-    )
+    add_stdin_arg(pp)
     pp.add_argument(
         "--tar",
         type=Path,
@@ -478,18 +510,8 @@ def make_parser() -> argparse.ArgumentParser:
         "zip file, or directory",
     )
     pp.set_defaults(func=export_resources)
-    pp.add_argument(
-        "-a",
-        "--archive",
-        help="only read copies in this archive",
-    )
-    pp.add_argument(
-        "-f",
-        "--from-file",
-        type=Path,
-        help="read identifiers from FILE, one per line ('-' for standard input)",
-        metavar="FILE",
-    )
+    add_source_archive_arg(pp)
+    add_from_file_arg(pp)
     pp.add_argument(
         "--compress",
         help="compress the members of a zip file (default is to store them as-is)",
@@ -514,32 +536,15 @@ def make_parser() -> argparse.ArgumentParser:
         "copy",
         help="copy resources from neurobank archives on this host into another one",
     )
-    pp.set_defaults(func=copy_resources)
-    pp.add_argument(
-        "-y",
-        "--dry-run",
-        help="check the resources against the registry without copying any files "
+    pp.set_defaults(func=copy_resources, registry_in_archive=True, posix_archive=True)
+    add_dry_run_arg(
+        pp,
+        "check the resources against the registry without copying any files "
         "or changing the registry",
-        action="store_true",
     )
-    pp.add_argument(
-        "--restore",
-        help="restore resources the registry lists in the destination archive whose "
-        "files are missing from it",
-        action="store_true",
-    )
-    pp.add_argument(
-        "-a",
-        "--archive",
-        help="only read copies in this archive",
-    )
-    pp.add_argument(
-        "-f",
-        "--from-file",
-        type=Path,
-        help="read identifiers from FILE, one per line ('-' for standard input)",
-        metavar="FILE",
-    )
+    add_restore_arg(pp)
+    add_source_archive_arg(pp)
+    add_from_file_arg(pp)
     add_alt_base_arg(pp)
     pp.add_argument("dest", type=Path, help="path of the destination neurobank archive")
     pp.add_argument("ids", nargs="*", help="identifier(s) of the resource(s) to copy")
@@ -559,7 +564,7 @@ def make_parser() -> argparse.ArgumentParser:
     ppsub = pp.add_subparsers(title="subcommands")
 
     pp = ppsub.add_parser("init", help="create a neurobank archive and register it")
-    pp.set_defaults(func=init_archive)
+    pp.set_defaults(func=init_archive, posix_archive=True)
     pp.add_argument(
         "directory",
         type=Path,
@@ -609,13 +614,8 @@ def make_parser() -> argparse.ArgumentParser:
         help="register a tar file written to tape as an archive, and the resources "
         "in it. Refuses an archive that is already registered",
     )
-    pp.set_defaults(func=register_tape)
-    pp.add_argument(
-        "-y",
-        "--dry-run",
-        help="don't make any changes to the registry",
-        action="store_true",
-    )
+    pp.set_defaults(func=register_tape, posix_archive=True)
+    add_dry_run_arg(pp, "don't make any changes to the registry")
     pp.add_argument("--archive-name", "-n", help="name of the archive")
     pp.add_argument(
         "tape_name", type=str, help="name of the tape where the tar file was written"
@@ -631,13 +631,8 @@ def make_parser() -> argparse.ArgumentParser:
         "prune",
         help="remove files from a neurobank archive that are stored somewhere else",
     )
-    pp.set_defaults(func=prune_archive)
-    pp.add_argument(
-        "-y",
-        "--dry-run",
-        help="don't delete any files or make any changes to the registry",
-        action="store_true",
-    )
+    pp.set_defaults(func=prune_archive, posix_archive=True)
+    add_dry_run_arg(pp, "don't delete any files or make any changes to the registry")
     pp.add_argument("archive_name", type=str, help="name of the archive to prune")
     pp.add_argument("resources", type=Path, help="file with list of resources to prune")
 
@@ -645,34 +640,20 @@ def make_parser() -> argparse.ArgumentParser:
         "import-tar",
         help="import resources from a tar file to a neurobank archive",
     )
-    pp.set_defaults(func=import_tar)
-    pp.add_argument(
-        "-y",
-        "--dry-run",
-        help="check the resources against the registry without copying any files "
+    pp.set_defaults(func=import_tar, registry_in_archive=True, posix_archive=True)
+    add_dry_run_arg(
+        pp,
+        "check the resources against the registry without copying any files "
         "or changing the registry",
-        action="store_true",
     )
-    pp.add_argument(
-        "--restore",
-        help="restore resources the registry lists in the destination archive whose "
-        "files are missing from it",
-        action="store_true",
-    )
+    add_restore_arg(pp)
     pp.add_argument(
         "tar",
         type=Path,
         help="tar file with the resources to import: a file, a tape device, or "
         "'-' for standard input",
     )
-    pp.add_argument(
-        "-f",
-        "--from-file",
-        type=Path,
-        help="read identifiers of the resources to import from FILE, one per line "
-        "('-' for standard input)",
-        metavar="FILE",
-    )
+    add_from_file_arg(pp, "identifiers of the resources to import")
     pp.add_argument("dest", type=Path, help="path of the destination neurobank archive")
     pp.add_argument(
         "ids",
@@ -694,7 +675,7 @@ def make_parser() -> argparse.ArgumentParser:
         help="check an archive's contents against the registry, and its "
         "ownership and permissions against its policy",
     )
-    pp.set_defaults(func=check_archive)
+    pp.set_defaults(func=check_archive, registry_in_archive=True, posix_archive=True)
     add_check_options(pp)
     pp.add_argument(
         "archive",
@@ -706,7 +687,7 @@ def make_parser() -> argparse.ArgumentParser:
         "all",
         help="check the registry, then every neurobank archive on this host",
     )
-    pp.set_defaults(func=check_all)
+    pp.set_defaults(func=check_all, posix_archive=True)
     add_check_options(pp)
 
     pp = ppsub.add_parser(
@@ -714,12 +695,7 @@ def make_parser() -> argparse.ArgumentParser:
         help="check that resources aren't superseded, e.g. the inputs to an analysis",
     )
     pp.set_defaults(func=check_superseded)
-    pp.add_argument(
-        "-@",
-        dest="read_stdin",
-        action="store_true",
-        help="read additional identifiers from stdin, one per line",
-    )
+    add_stdin_arg(pp)
     pp.add_argument("ids", nargs="*", help="identifier(s) of the resources")
 
     pp = ppsub.add_parser(
@@ -727,10 +703,9 @@ def make_parser() -> argparse.ArgumentParser:
         help="check the resources in a tar file (or tape) against the registry",
     )
     pp.set_defaults(func=check_tar)
-    pp.add_argument(
-        "-a",
-        "--archive",
-        help="also check that every resource the registry places in this archive "
+    add_source_archive_arg(
+        pp,
+        "also check that every resource the registry places in this archive "
         "is in the tar file",
     )
     pp.add_argument(
@@ -774,22 +749,16 @@ def main(argv=None):
         log.error("error: --rename needs --fix")
         return 1
 
-    if not archive._posix and args.func in _archive_commands:
+    if not archive._posix and getattr(args, "posix_archive", False):
         log.error(
             "error: archives are written and checked on a POSIX host (Linux or "
             "macOS), not on Windows"
         )
         return 1
 
-    # most commands require a registry, so check it here once; these can use the one
+    # most commands require a registry, so check it here once; some can use the one
     # in an archive's nbank.json
-    if args.registry_url is None and args.func not in (
-        store_resources,
-        locate_resources,
-        copy_resources,
-        import_tar,
-        check_archive,
-    ):
+    if args.registry_url is None and not getattr(args, "registry_in_archive", False):
         log.error(
             "error: supply a registry url with '-r' or %s environment variable",
             registry._env_registry,
@@ -2538,21 +2507,6 @@ def check_file_metadata(path: Path, record: dict, found_readers: dict) -> bool:
         return False
     print(f"{path}: metadata OK")
     return True
-
-
-# commands that write or check archives, which can't be done on Windows
-_archive_commands = frozenset(
-    {
-        init_archive,
-        store_resources,
-        copy_resources,
-        import_tar,
-        prune_archive,
-        register_tape,
-        check_archive,
-        check_all,
-    }
-)
 
 
 # Variables:
