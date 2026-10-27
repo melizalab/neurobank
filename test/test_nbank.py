@@ -597,7 +597,7 @@ def test_store_resources_continues_past_errors(monkeypatch, capsys, caplog):
         zip_directories=False,
         json_out=True,
     )
-    assert script.store_resources(args) == 1
+    assert script.resources.store_resources(args) == 1
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert lines == [
         {"source": "bad", "error": "does not exist"},
@@ -631,7 +631,7 @@ def test_store_resources_reports_clean_error(monkeypatch, caplog):
         json_out=False,
     )
     with caplog.at_level(logging.ERROR, logger="nbank"):
-        assert script.store_resources(args) == 1
+        assert script.resources.store_resources(args) == 1
     assert "is not readable" in caplog.text
 
 
@@ -660,7 +660,7 @@ def test_store_resources_passes_dry_run(monkeypatch):
         zip_directories=False,
         json_out=False,
     )
-    script.store_resources(args)
+    script.resources.store_resources(args)
     assert captured["dry_run"] is True
 
 
@@ -1011,7 +1011,7 @@ def test_exit_status_interrupted(monkeypatch):
     def interrupt(args):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(script, "get_resource_info", interrupt)
+    monkeypatch.setattr(script.resources, "get_resource_info", interrupt)
     assert run_main("info", "res_1") == 130
 
 

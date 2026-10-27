@@ -139,7 +139,7 @@ def test_console_written_as_utf8():
         "import io, sys\n"
         "from nbank import script\n"
         "sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding='cp1252')\n"
-        "script.utf8_console()\n"
+        "script.output.utf8_console()\n"
         "print('Zebrafinch \\u2192 \\u5c0f')\n"
         "sys.stdout.flush()\n"
         "sys.__stdout__.buffer.write(sys.stdout.buffer.getvalue())\n"

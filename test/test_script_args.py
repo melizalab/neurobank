@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from nbank import script
-from nbank.script import userpwd
+from nbank.script.parser import userpwd
 
 
 def test_userpwd():
@@ -33,7 +33,7 @@ def test_check_archive_command(monkeypatch):
         received.append(args)
         return 1
 
-    monkeypatch.setattr(script, "check_archive", fake_check_archive)
+    monkeypatch.setattr(script.checks, "check_archive", fake_check_archive)
     try:
         status = script.main(
             [
@@ -60,7 +60,7 @@ def test_check_archive_command(monkeypatch):
 
 
 def parse_value(value):
-    return script.ParseKeyVal.parse_value(None, value)
+    return script.parser.ParseKeyVal.parse_value(None, value)
 
 
 @pytest.mark.parametrize(
@@ -139,7 +139,7 @@ def test_search_keeps_underscored_values_as_strings(monkeypatch):
         captured.update(params)
         return iter(())
 
-    monkeypatch.setattr(script.core, "search", fake_search)
+    monkeypatch.setattr(script.resources.core, "search", fake_search)
     script.main(["-r", "https://localhost/", "search", "-k", "name=20140603_1_1"])
     assert captured == {"metadata__name": "20140603_1_1", "superseded": False}
 
@@ -149,7 +149,9 @@ def test_registry_default_is_read_when_run(monkeypatch):
     # the parser doesn't hold the value, so documentation built from it can't show it
     assert script.make_parser().parse_args(["registry", "info"]).registry_url is None
     seen = []
-    monkeypatch.setattr(script, "registry_info", lambda args: seen.append(args))
+    monkeypatch.setattr(
+        script.resources, "registry_info", lambda args: seen.append(args)
+    )
     script.main(["registry", "info"])
     assert seen[0].registry_url == "https://example.org/neurobank/"
 
@@ -163,12 +165,12 @@ def test_alt_base_default_is_read_when_run(monkeypatch, command):
     assert script.make_parser().parse_args(argv).alt_base is None
     seen = []
     func = {
-        "locate": "locate_resources",
-        "fetch": "fetch_resources",
-        "export": "export_resources",
-        "copy": "copy_resources",
+        "locate": "nbank.script.resources.locate_resources",
+        "fetch": "nbank.script.resources.fetch_resources",
+        "export": "nbank.script.transfers.export_resources",
+        "copy": "nbank.script.transfers.copy_resources",
     }[command]
-    monkeypatch.setattr(script, func, lambda args: seen.append(args))
+    monkeypatch.setattr(func, lambda args: seen.append(args))
     log = logging.getLogger("nbank")
     handlers, level = list(log.handlers), log.level
     try:
@@ -188,7 +190,7 @@ def flood(args):
     for i in range(int(sys.argv[1])):
         print(i)
 
-script.search_resources = flood
+script.resources.search_resources = flood
 sys.exit(script.main(["-r", "https://localhost/", "search", "x"]))
 """
 

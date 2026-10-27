@@ -19,7 +19,8 @@ from typing import TextIO
 import httpx
 
 from nbank import __version__, archive, core, registry, util
-from nbank.script import setup_log, userpwd, utf8_console
+from nbank.script.output import setup_log, utf8_console
+from nbank.script.parser import userpwd
 from nbank.types import LocalResource
 
 log = logging.getLogger("nbank")  # root logger
