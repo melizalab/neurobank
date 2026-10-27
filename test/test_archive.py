@@ -240,6 +240,23 @@ def test_location_key_not_found(stored_wav, key):
     )
 
 
+@pytest.mark.skipif(running_as_root, reason="root can read anything")
+def test_location_in_unreadable_directory_not_found(stored_wav, caplog):
+    # as for a user not in the archive's group
+    skip_unless_posix()
+    caplog.set_level(logging.DEBUG, logger="nbank")
+    path, location = stored_wav
+    path.parent.chmod(0o000)
+    try:
+        resource = archive.Resource.from_location(
+            {**location, "key": "res_1.wav"}, LocationContext()
+        )
+    finally:
+        path.parent.chmod(0o755)
+    assert resource is None
+    assert "missing or not accessible on this host" in caplog.text
+
+
 def test_location_key_alt_base(stored_wav, archive_layout, tmp_path):
     path, location = stored_wav
     # the archive is mounted under another directory on this host

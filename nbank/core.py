@@ -517,8 +517,9 @@ def _find_resource(
                 log.debug("%s: found in a local archive at %s", id, path)
                 return path
     raise FileNotFoundError(
-        f"{id} is registered, but isn't in an archive on this host or the cache"
-        + (", and couldn't be downloaded" if download else "")
+        f"{id} is registered, but isn't in the cache, and its archives are missing"
+        " or not accessible on this host"
+        + (", and it couldn't be downloaded" if download else "")
     )
 
 

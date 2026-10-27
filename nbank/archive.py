@@ -343,7 +343,7 @@ class Resource:
     contains the archive, e.g. alt_base='/scratch' maps '/home/data/starlings' to
     '/scratch/starlings', for copies of archives on other hosts.
 
-    Raises FileNotFoundError if the file doesn't exist.
+    Raises FileNotFoundError if the file doesn't exist or this user can't reach it.
     """
 
     schemes: ClassVar[tuple[str, ...]] = ("neurobank",)
@@ -358,8 +358,12 @@ class Resource:
         if not key or Path(key).name != key:
             raise FileNotFoundError(f"'{key}' isn't the name of a file")
         self.path = base / _resource_subdir / id_stub(id) / key
-        if not self.path.exists():
-            raise FileNotFoundError(f"resource '{self.path}' does not exist")
+        # False if this user can't read the directories, on every Python version
+        if not os.path.exists(self.path):
+            raise FileNotFoundError(
+                f"'{self.path}' doesn't exist, or its archive is missing or not "
+                "accessible on this host"
+            )
 
     @classmethod
     def from_location(cls, location, context: LocationContext) -> "Resource | None":
@@ -377,7 +381,8 @@ class Resource:
             return cls(
                 location["root"], location["resource_name"], key, context.alt_base
             )
-        except FileNotFoundError:
+        except FileNotFoundError as err:
+            log.debug("%s: %s", location["resource_name"], err)
             return None
 
     def __str__(self):

@@ -191,6 +191,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
   copy on this host), and reports registry errors instead of a traceback.
 - `util.query_registry` and `query_registry_bulk` use the session's credentials;
   they sent requests without them unless given `auth`.
+- A copy in an archive whose directories this user can't read is treated as not
+  on this host; before Python 3.14, `locate`, `fetch` and
+  `core.find_resources` stopped with a PermissionError.
 
 ## 0.13.0
 
