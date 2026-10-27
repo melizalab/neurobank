@@ -53,12 +53,13 @@ the target directory already contains an ``nbank.json``, ``README.md``, or
 ``.gitignore`` file, or if the registry already has an archive with the same
 name.
 
-An archive is registered at its real path, with any symbolic links resolved,
-and the commands that change or check it (``deposit``, ``copy``, ``archive
-import-tar`` and ``check archive``) find it there. A host that mounts the
-archive's filesystem somewhere else, such as an NFS share of archives, needs a
-bind mount at the registered path rather than a symbolic link to the mount.
-``nbank check all`` reports a registered root that goes through a link.
+An archive is registered at its real path, with any symbolic links resolved, and
+the commands that change or check it (``deposit``, ``copy``, ``archive
+import-tar`` and ``check archive``) will look for it there. Thus, in order to
+run any of these commands, a host that mounts the archive's filesystem somewhere
+else, such as an NFS share of archives, needs a bind mount at the registered
+path rather than a symbolic link to the mount. ``nbank check all`` reports a
+registered root that goes through a link.
 
 By default, the archive is owned by you and your primary group, and its umask is
 002. Use ``-g`` to give the archive a different group, and ``-u`` to set a

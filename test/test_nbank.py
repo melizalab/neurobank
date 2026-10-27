@@ -1494,6 +1494,29 @@ def test_check_tar_read_error(mocked_api, failing_tar, caplog, with_archive):
         )
 
 
+def test_fetch_from_tar_read_error(mocked_api, failing_tar, tmp_path, capsys, caplog):
+    members = [("res_1", b"one"), ("res_2", b"x" * 50_000), ("res_3", b"three")]
+    mocked_api.post(bulk_url + "resources/").respond(
+        stream=(
+            json.dumps({"name": name, "sha1": None, "filename": name}).encode() + b"\n"
+            for name, _ in members
+        )
+    )
+    # fails partway through res_2
+    path = failing_tar(members, 3 * 10240)
+    dest = tmp_path / "out"
+    dest.mkdir()
+    ids = [name for name, _ in members]
+    assert run_main("fetch", "--tar", str(path), "-d", str(dest), *ids) == 1
+    assert capsys.readouterr().out.splitlines() == [
+        f"res_1               \t-> {dest / 'res_1'} (no registered hash to check)",
+        "res_2               \t-> (unable to read; stopping)",
+        "res_3               \t-> (not reached, as reading stopped)",
+    ]
+    assert "unable to read" in caplog.text
+    assert [p.name for p in dest.iterdir()] == ["res_1"]
+
+
 def test_check_tar_truncated(mocked_api, tmp_path, caplog):
     from test.test_transfer import tar_bytes
 

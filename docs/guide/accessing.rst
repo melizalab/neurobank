@@ -97,6 +97,24 @@ Files go to the current directory, or ``-d DEST``. If the registry has a default
 against its registered hash (trying the resource's other locations if it doesn't
 match), and ``-@`` reads identifiers from standard input.
 
+``--tar TAR`` reads the resources from a tar file instead, such as one written
+by ``nbank export`` or read from a tape (a tape device, or ``-`` for standard
+input):
+
+.. code:: bash
+
+   nbank fetch --tar /dev/nst0 -d DEST id-1 [id-2 ...]
+
+A member is one of the resources if its name, without its directories and
+extension, is the resource's id, so members can be at the top level or under the
+directories they were stored in. The tar file is read once, in order, and
+reading stops when every resource has been found. Each file is checked against
+its registered hash as it's read; one that doesn't match is kept beside where it
+would have gone, with ``.mismatch`` added to its name, for you to inspect or
+delete, rather than reading it from tape again.
+Identifiers that aren't in the tar file are reported. To store the resources in
+an archive instead, use ``nbank archive import-tar`` (see :doc:`managing`).
+
 Verifying copies
 ----------------
 

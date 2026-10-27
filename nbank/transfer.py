@@ -240,12 +240,43 @@ def receive_file(
     resource can't be stored, ArchiveHostError on Windows unless cfg is None, and
     passes TarReadError on.
     """
-    report = _progress_for(progress, name)
     if cfg is None:
+        report = _progress_for(progress, name)
         digest = util.hash_stream(source, progress=report)
         return Received(None, digest, _check_hash(digest, sha1))
     nbank_archive.require_posix("store a resource in an archive")
-    target = _destination(cfg, id, name)
+    return write_file(
+        _destination(cfg, id, name),
+        source,
+        sha1,
+        progress=progress,
+        name=name,
+        before_move=nbank_archive.permission_fixer(cfg),
+    )
+
+
+def write_file(
+    target: Path,
+    source: Readable,
+    sha1: str | None,
+    *,
+    replace: bool = False,
+    progress: Progress | None = None,
+    name: str | None = None,
+    before_move: Callable[[Path], object] | None = None,
+    keep_mismatched: Path | None = None,
+) -> Received:
+    """Writes the data read from source to target, checking its hash.
+
+    The data is staged beside target and moved into place only if it matches sha1,
+    the registered hash (or sha1 is None). Data that doesn't match is moved to
+    keep_mismatched (never replacing anything) if given, and otherwise not kept. An
+    existing target is replaced only if replace is set. progress is called with name
+    (by default target's) and the bytes read so far, and before_move with the staged
+    file. Raises TransferError if the file can't be written or doesn't match, and
+    passes TarReadError on.
+    """
+    report = _progress_for(progress, name or target.name)
     partial = target.parent / _partial_name(target.name)
     created = False
     try:
@@ -260,9 +291,25 @@ def receive_file(
             digest = util.hash_stream(source, copy_to=fp, progress=report)
             fp.flush()
             os.fsync(fp.fileno())
-        verified = _check_hash(digest, sha1)
-        nbank_archive.permission_fixer(cfg)(partial)
-        _move_into_place(partial, target)
+        try:
+            verified = _check_hash(digest, sha1)
+        except TransferError as err:
+            if keep_mismatched is None:
+                raise
+            try:
+                _move_into_place(partial, keep_mismatched)
+            except TransferError:
+                raise TransferError(
+                    f"{err}; not kept, as '{keep_mismatched}' exists"
+                ) from None
+            created = False
+            raise TransferError(f"{err}; kept as '{keep_mismatched}'") from None
+        if before_move is not None:
+            before_move(partial)
+        if replace:
+            partial.replace(target)
+        else:
+            _move_into_place(partial, target)
         created = False
         return Received(target, digest, verified)
     except TarReadError:

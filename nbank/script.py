@@ -447,6 +447,15 @@ def make_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="read additional identifiers from stdin, one per line",
     )
+    pp.add_argument(
+        "--tar",
+        type=Path,
+        metavar="TAR",
+        help="read the resources from a tar file, a tape device, or '-' for standard "
+        "input, instead of their locations. A member is a resource if its name, "
+        "without directories or extension, is the id. Each is checked against its "
+        "registered hash",
+    )
     add_alt_base_arg(pp)
     pp.add_argument(
         "ids",
@@ -1057,12 +1066,17 @@ def set_resource_metadata(args):
 
 def fetch_resources(args):
     dest = args.dest or Path()
+    if args.read_stdin and str(args.tar) == "-":
+        log.error("nbank fetch: error: -@ and --tar - both read standard input")
+        return 1
     to_fetch = set(args.ids)
     if args.read_stdin:
         to_fetch.update(name for line in sys.stdin if (name := line.strip()))
     if not to_fetch:
         log.error("nbank fetch: error: no identifiers given")
         return 1
+    if args.tar is not None:
+        return _fetch_from_tar(args, dest, to_fetch)
     url, query = registry.get_locations_bulk(args.registry_url, sorted(to_fetch))
     with (
         util.registry_session(args.registry_url, auth=args.auth) as session,
@@ -1097,6 +1111,78 @@ def fetch_resources(args):
     for resource_id in to_fetch:
         print(f"{resource_id:<20}\t-> (no locations found)")
     return 1 if n_failed else None
+
+
+def _fetch_from_tar(args, dest: Path, to_fetch: set[str]) -> int | None:
+    """Writes the resources in to_fetch from the tar file args.tar into dest, named
+    as fetch names them, reading the tar file once. Returns 1 if any fail."""
+    records = {}
+    with util.registry_session(args.registry_url, auth=args.auth) as session:
+        names = sorted(to_fetch)
+        for i in range(0, len(names), util.bulk_batch_size):
+            url, query = registry.get_resource_bulk(
+                args.registry_url, names[i : i + util.bulk_batch_size]
+            )
+            for record in util.query_registry_bulk(session, url, query):
+                records[record["name"]] = record
+    n_failed = 0
+    for id in sorted(to_fetch - records.keys()):
+        print(f"{id:<20}\t-> (not in the registry)")
+        n_failed += 1
+    remaining = set(records)
+
+    def lookup(id, member):
+        # the first copy of each resource asked for
+        return records[id] if id in remaining else None
+
+    read_error = False
+    try:
+        with transfer.open_tar(args.tar) as tarf:
+            for res in transfer.iter_tar_resources(tarf, lookup):
+                id = res.record["name"]
+                remaining.discard(id)
+                target = dest / res.record["filename"]
+                if args.extension:
+                    target = target.with_suffix(f".{args.extension}")
+                if target.exists() and not args.force:
+                    result = f"(target file {target} already exists)"
+                    n_failed += 1
+                else:
+                    try:
+                        # reading from tape is slow, so keep data that doesn't
+                        # match for the user to judge
+                        received = transfer.write_file(
+                            target,
+                            res.data,
+                            res.record["sha1"],
+                            replace=args.force,
+                            keep_mismatched=target.with_name(f"{target.name}.mismatch"),
+                        )
+                    except transfer.TarReadError:
+                        print(f"{id:<20}\t-> (unable to read; stopping)")
+                        n_failed += 1
+                        raise
+                    except transfer.TransferError as err:
+                        result = f"({err})"
+                        n_failed += 1
+                    else:
+                        result = str(received.path)
+                        if not received.verified:
+                            result += " (no registered hash to check)"
+                print(f"{id:<20}\t-> {result}")
+                if not remaining:
+                    # everything asked for is found; don't read the rest
+                    break
+    except (OSError, tarfile.TarError) as err:
+        log.error("error: unable to read %s: %s", args.tar, err)
+        read_error = True
+    for id in sorted(remaining):
+        reason = (
+            "not reached, as reading stopped" if read_error else "not in the tar file"
+        )
+        print(f"{id:<20}\t-> ({reason})")
+        n_failed += 1
+    return 1 if n_failed or read_error else None
 
 
 def list_datatypes(args):

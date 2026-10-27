@@ -815,6 +815,103 @@ def test_register_tape_dry_run(
     assert client.get(url).status_code == 404
 
 
+def fetched(capsys) -> dict[str, str]:
+    """{id: result} from the lines nbank fetch printed."""
+    lines = capsys.readouterr().out.splitlines()
+    return dict((part.strip() for part in line.split("\t-> ")) for line in lines)
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_fetch_from_tar(
+    cli, archive, txt_dtype, deposit_file, unique, tmp_path, capsys, nested
+):
+    # members at the top level, as export writes them, or where they were stored
+    names = [deposit_file(archive, txt_dtype, hash=True) for _ in range(2)]
+    paths = [stored_path(archive, name) for name in names]
+    tar = tmp_path / "archive.tar"
+    with tarfile.open(tar, "w") as tf:
+        for path in paths:
+            arcname = path.relative_to(archive.path) if nested else path.name
+            tf.add(path, arcname=str(arcname))
+    dest = tmp_path / "out"
+    dest.mkdir()
+    missing = unique("missing")
+    assert cli("fetch", "--tar", str(tar), "-d", str(dest), *names, missing) == 1
+    assert fetched(capsys) == {
+        missing: "(not in the registry)",
+        **{
+            name: str(dest / path.name) for name, path in zip(names, paths, strict=True)
+        },
+    }
+    for path in paths:
+        assert (dest / path.name).read_bytes() == path.read_bytes()
+
+
+def test_fetch_from_tar_not_in_tar(
+    cli, archive, txt_dtype, deposit_file, tmp_path, capsys
+):
+    present, absent = (deposit_file(archive, txt_dtype) for _ in range(2))
+    tar = make_tar(tmp_path / "archive.tar", stored_path(archive, present))
+    assert cli("fetch", "--tar", str(tar), "-d", str(tmp_path), present, absent) == 1
+    assert fetched(capsys)[absent] == "(not in the tar file)"
+    assert (tmp_path / f"{present}.txt").exists()
+
+
+def test_fetch_from_tar_checks_hashes(
+    cli, archive, txt_dtype, deposit_file, tmp_path, capsys
+):
+    name = deposit_file(archive, txt_dtype, hash=True)
+    changed = tmp_path / "src" / f"{name}.txt"
+    changed.parent.mkdir()
+    changed.write_text("changed")
+    tar = make_tar(tmp_path / "archive.tar", changed)
+    dest = tmp_path / "out"
+    dest.mkdir()
+    args = ["fetch", "--tar", str(tar), "-d", str(dest), name]
+    assert cli(*args) == 1
+    kept = dest / f"{name}.txt.mismatch"
+    result = fetched(capsys)[name]
+    assert "contents don't match the registered hash" in result
+    assert f"kept as '{kept}'" in result
+    assert list(dest.iterdir()) == [kept]
+    assert kept.read_text() == "changed"
+    # a mismatched copy from before isn't replaced
+    assert cli(*args[:1], "-f", *args[1:]) == 1
+    assert f"not kept, as '{kept}' exists" in fetched(capsys)[name]
+    assert list(dest.iterdir()) == [kept]
+
+
+def test_fetch_from_tar_existing_file(
+    cli, archive, txt_dtype, deposit_file, tmp_path, capsys
+):
+    name = deposit_file(archive, txt_dtype, hash=True)
+    tar = make_tar(tmp_path / "archive.tar", stored_path(archive, name))
+    target = tmp_path / "out" / f"{name}.txt"
+    target.parent.mkdir()
+    target.write_text("already here")
+    args = ["fetch", "--tar", str(tar), "-d", str(target.parent), name]
+    assert cli(*args) == 1
+    assert fetched(capsys)[name] == f"(target file {target} already exists)"
+    assert target.read_text() == "already here"
+
+    assert cli(*args[:1], "-f", *args[1:]) == 0
+    assert fetched(capsys)[name] == str(target)
+    assert target.read_bytes() == stored_path(archive, name).read_bytes()
+    assert list(target.parent.iterdir()) == [target]
+
+
+def test_fetch_from_tar_extension(cli, archive, txt_dtype, deposit_file, tmp_path):
+    name = deposit_file(archive, txt_dtype)
+    tar = make_tar(tmp_path / "archive.tar", stored_path(archive, name))
+    assert cli("fetch", "--tar", str(tar), "-d", str(tmp_path), "-e", "dat", name) == 0
+    assert (tmp_path / f"{name}.dat").exists()
+
+
+def test_fetch_from_tar_on_stdin_with_ids_on_stdin(cli, caplog):
+    assert cli("fetch", "--tar", "-", "-@") == 1
+    assert "-@ and --tar - both read standard input" in caplog.text
+
+
 def test_import_tar(
     cli,
     registry,

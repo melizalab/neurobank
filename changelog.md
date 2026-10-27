@@ -80,6 +80,11 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### New
 
+- `nbank fetch --tar TAR` gets resources out of a tar file, a tape device, or
+  standard input, without importing them into an archive (#65). A member is a
+  resource if its name without directories or extension is the id, wherever
+  it is in the tar file; each is checked against its registered hash, and one
+  that doesn't match is kept with `.mismatch` added to its name.
 - New locations in neurobank archives record the stored file's name as their
   key: deposit, `copy`, `archive import-tar`, and adding a location with `check
   archive --fix`. `archive register tape` records each resource's tar member as
