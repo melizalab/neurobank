@@ -47,6 +47,10 @@ To copy resources into another archive, run ``nbank copy <path_of_archive> id-1
 against its registered hash as it's stored, and the new copy is added to the
 resource's locations in the registry. Resources the registry already lists in
 the destination are skipped, so the same list can be run again after a failure.
+To replace files that have gone missing from the destination although the
+registry still lists them there (``nbank check archive`` reports them), add
+``--restore``: each is copied from another archive, checked against its hash,
+and its location's key is set; the summary counts them separately.
 Use ``-f`` to read identifiers from a file, ``-a`` to read only from one
 archive, and ``-y`` to check the resources without copying them. To move
 resources, copy them and then remove them from the old archive with ``nbank
@@ -112,6 +116,8 @@ against its registered hash before it's stored. To check a tape without
 importing anything, add ``-y``. To import only some of the resources, list their
 identifiers after the archive path, or put them in a file and pass it with
 ``-f``. This mode works much faster when working from a seekable file.
+``--restore`` restores files missing from the archive that the registry still
+lists there, as for ``nbank copy``.
 
 Data on tapes should be checked every year or two using ``nbank check tar``.
 Add ``--archive <name_of_archive>`` to also confirm that every resource the

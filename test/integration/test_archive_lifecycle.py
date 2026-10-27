@@ -1152,6 +1152,124 @@ def test_copy_refuses_a_directory(
     assert core.describe(registry.url, name)["locations"] == [a.name]
 
 
+@pytest.fixture
+def lost(client, registry, two_archives, dtype, deposit_file, replicate):
+    """A resource in both archives whose file is missing from the second, which the
+    registry still lists with no key."""
+    a, b = two_archives
+    name = deposit_file(a, dtype, hash=True)
+    replicate(name, a, b)
+    nbank_archive.remove(stored_path(b, name))
+    set_key(client, registry, name, b, None)
+    return name
+
+
+def assert_restored(cli, registry, two_archives, location_key, name):
+    a, b = two_archives
+    assert stored_path(b, name).read_bytes() == stored_path(a, name).read_bytes()
+    assert sorted(core.describe(registry.url, name)["locations"]) == sorted(
+        [a.name, b.name]
+    )
+    assert location_key(name, b.name) == stored_path(b, name).name
+    assert cli("check", "archive", str(b.path)) == 0
+
+
+def test_copy_restore(cli, registry, two_archives, lost, location_key, caplog):
+    _, b = two_archives
+    size = len(lost)
+    # without --restore, the registry's word is taken
+    assert cli("copy", str(b.path), lost) == 0
+    assert "already in destination: 1" in caplog.text
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, lost)
+
+    caplog.clear()
+    assert cli("copy", "-y", "--restore", str(b.path), lost) == 0
+    assert f"to restore: 1 ({size} B); checked: 0 (0 B)" in caplog.text
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, lost)
+    assert location_key(lost, b.name) is None
+
+    caplog.clear()
+    assert cli("copy", "--restore", str(b.path), lost) == 0
+    assert f"{lost} -> {stored_path(b, lost)} (restored)" in caplog.text
+    assert (
+        f"restored: 1 ({size} B); copied: 0 (0 B); already in destination: 0"
+    ) in caplog.text
+    assert_restored(cli, registry, two_archives, location_key, lost)
+
+    caplog.clear()
+    assert cli("copy", "--restore", str(b.path), lost) == 0
+    assert "restored: 0 (0 B); copied: 0 (0 B); already in destination: 1" in (
+        caplog.text
+    )
+
+
+def test_copy_restore_not_from_destination(cli, archive, dtype, deposit_file, caplog):
+    # the destination's own location isn't a source, as its file is missing
+    name = deposit_file(archive, dtype)
+    nbank_archive.remove(stored_path(archive, name))
+    assert cli("copy", "--restore", str(archive.path), name) == 1
+    assert f"{name} -> no copy on this host" in caplog.text
+
+
+def test_copy_restore_key_refused(
+    cli, two_archives, lost, tmp_path, monkeypatch, caplog
+):
+    a, b = two_archives
+    home = tmp_path / "no_netrc"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    assert cli("copy", "--restore", str(b.path), lost) == 1
+    assert "was restored, but the registry refused its key" in caplog.text
+    # the file is where the registry says it is, so it's kept
+    assert stored_path(b, lost).read_bytes() == stored_path(a, lost).read_bytes()
+
+
+def test_import_tar_restore(
+    cli, registry, two_archives, lost, location_key, tmp_path, caplog
+):
+    a, b = two_archives
+    size = len(lost)
+    tar = make_tar(tmp_path / "archive.tar", stored_path(a, lost))
+    assert cli("archive", "import-tar", str(tar), str(b.path)) == 0
+    assert "already in destination: 1" in caplog.text
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, lost)
+
+    caplog.clear()
+    assert cli("archive", "import-tar", "-y", "--restore", str(tar), str(b.path)) == 0
+    assert f"to restore: 1 ({size} B); checked: 0 (0 B)" in caplog.text
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, lost)
+
+    caplog.clear()
+    assert cli("archive", "import-tar", "--restore", str(tar), str(b.path)) == 0
+    assert f"-> {stored_path(b, lost)} (restored)" in caplog.text
+    assert (
+        f"restored: 1 ({size} B); imported: 0 (0 B); already in destination: 0"
+    ) in caplog.text
+    assert_restored(cli, registry, two_archives, location_key, lost)
+
+    caplog.clear()
+    assert cli("archive", "import-tar", "--restore", str(tar), str(b.path)) == 0
+    assert "restored: 0 (0 B); imported: 0 (0 B); already in destination: 1" in (
+        caplog.text
+    )
+
+
+def test_import_tar_restore_checks_hashes(
+    cli, two_archives, lost, location_key, tmp_path, caplog
+):
+    a, b = two_archives
+    tar = changed_tar(a, lost, tmp_path)
+    assert cli("archive", "import-tar", "--restore", str(tar), str(b.path)) == 1
+    assert "don't match the registered hash" in caplog.text
+    with pytest.raises(FileNotFoundError):
+        stored_path(b, lost)
+    assert location_key(lost, b.name) is None
+
+
 def test_import_tar_read_error(
     cli, registry, two_archives, dtype, deposit_file, unique, failing_tar, caplog
 ):

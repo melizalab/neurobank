@@ -514,6 +514,12 @@ def make_parser() -> argparse.ArgumentParser:
         action="store_true",
     )
     pp.add_argument(
+        "--restore",
+        help="restore resources the registry lists in the destination archive whose "
+        "files are missing from it",
+        action="store_true",
+    )
+    pp.add_argument(
         "-a",
         "--archive",
         help="only read copies in this archive",
@@ -636,6 +642,12 @@ def make_parser() -> argparse.ArgumentParser:
         "--dry-run",
         help="check the resources against the registry without copying any files "
         "or changing the registry",
+        action="store_true",
+    )
+    pp.add_argument(
+        "--restore",
+        help="restore resources the registry lists in the destination archive whose "
+        "files are missing from it",
         action="store_true",
     )
     pp.add_argument(
@@ -2207,8 +2219,10 @@ def import_tar(args):
     Each registered resource is checked against its hash as it's stored, then added as a
     location. With identifiers (or --from-file), imports only those resources and stops
     reading once they're found. With --dry-run, only reads and checks. Unregistered
-    files and resources already in the destination are skipped. Returns 1 if anything
-    fails to import, a requested resource isn't found, or the tar file can't be read.
+    files and resources already in the destination are skipped; with --restore,
+    resources the registry lists there whose files are missing are stored again.
+    Returns 1 if anything fails to import, a requested resource isn't found, or the tar
+    file can't be read.
     """
     n_failed = 0
     wanted = None
@@ -2224,7 +2238,7 @@ def import_tar(args):
     registry_url = archive_cfg.registry
     archive_path = archive_cfg.path  # this will resolve the path
     log.info("registry: %s", registry_url)
-    n_imported = n_already = total = 0
+    n_imported = n_restored = n_already = total = restored_total = 0
     with util.registry_session(registry_url, auth=args.auth) as session:
         archive_name = _registered_name(session, registry_url, archive_path)
         if archive_name is None:
@@ -2246,20 +2260,31 @@ def import_tar(args):
 
         def import_one(res, progress) -> bool:
             """Imports a resource from the tar file. Returns False if it fails."""
-            nonlocal n_imported, n_already, total
+            nonlocal n_imported, n_restored, n_already, total, restored_total
             id = res.record["name"]
+            restoring = False
             if archive_name in res.record["locations"]:
-                log.info(
-                    "  ✗ %s -> '%s' is already in the destination archive", res.name, id
-                )
-                n_already += 1
-                return True
+                if not args.restore or transfer.is_stored(archive_cfg, id):
+                    log.info(
+                        "  ✗ %s -> '%s' is already in the destination archive",
+                        res.name,
+                        id,
+                    )
+                    n_already += 1
+                    return True
+                restoring = True
             progress.start(res.name, res.size)
             try:
                 received = transfer.receive_file(
                     dest, id, res.name, res.data, res.record["sha1"], progress=progress
                 )
-                if received.path is not None:
+                if received.path is None:
+                    pass
+                elif restoring:
+                    transfer.set_location_key(
+                        session, registry_url, id, archive_name, received.path
+                    )
+                else:
                     transfer.add_location(
                         session, registry_url, id, archive_name, received.path
                     )
@@ -2269,10 +2294,16 @@ def import_tar(args):
             except transfer.TransferError as err:
                 log.error("  ✗ %s -> %s", res.name, err)
                 return False
-            n_imported += 1
-            total += progress.nbytes
+            if restoring:
+                n_restored += 1
+                restored_total += progress.nbytes
+            else:
+                n_imported += 1
+                total += progress.nbytes
             result = received.path if dest is not None else "OK"
             note = "" if received.verified else " (no registered hash to check)"
+            if restoring:
+                note = " (restored)" + note
             log.info("  - %s -> %s%s  (%s)", res.name, result, note, progress.summary())
             return True
 
@@ -2297,6 +2328,11 @@ def import_tar(args):
         log.error("  ✗ %s -> %s", id, reason)
         n_failed += 1
     counts = [] if n_requested is None else [f"requested: {n_requested}"]
+    if args.restore:
+        counts.append(
+            f"{'to restore' if args.dry_run else 'restored'}: {n_restored} "
+            f"({_human_size(restored_total)})"
+        )
     _log_summary(
         *counts,
         f"{'checked' if args.dry_run else 'imported'}: {n_imported} "
@@ -2477,8 +2513,9 @@ def copy_resources(args):
     """Copy resources from the archives on this host into another archive.
 
     Each is checked against its hash as it's stored, then added as a location. Resources
-    already in the destination are skipped. With --dry-run, only reads and checks.
-    Returns 1 if anything fails.
+    already in the destination are skipped; with --restore, resources the registry
+    lists there whose files are missing are stored again. With --dry-run, only reads
+    and checks. Returns 1 if anything fails.
     """
     ids = _requested_ids(args)
     if ids is None:
@@ -2489,7 +2526,7 @@ def copy_resources(args):
     registry_url = archive_cfg.registry
     archive_path = archive_cfg.path
     log.info("registry: %s", registry_url)
-    n_failed = n_copied = total = 0
+    n_failed = n_copied = n_restored = total = restored_total = 0
     with util.registry_session(registry_url, auth=args.auth) as session:
         dest_name = _registered_name(session, registry_url, archive_path)
         if dest_name is None:
@@ -2501,6 +2538,10 @@ def copy_resources(args):
         if args.dry_run:
             log.info("DRY RUN: checking resources without copying them")
         already = transfer.located_in(session, registry_url, ids, dest_name)
+        missing = set()
+        if args.restore:
+            missing = {id for id in already if not transfer.is_stored(archive_cfg, id)}
+            already -= missing
         for id in ids:
             if id in already:
                 log.info("  - %s -> already in the destination archive", id)
@@ -2528,9 +2569,16 @@ def copy_resources(args):
                 except OSError:
                     size = None
                 progress.start(path.name, size)
+                restoring = source.id in missing
                 try:
                     received = transfer.receive_source(dest, source, progress)
-                    if received.path is not None:
+                    if received.path is None:
+                        pass
+                    elif restoring:
+                        transfer.set_location_key(
+                            session, registry_url, source.id, dest_name, received.path
+                        )
+                    else:
                         transfer.add_location(
                             session, registry_url, source.id, dest_name, received.path
                         )
@@ -2538,10 +2586,16 @@ def copy_resources(args):
                     log.error("  ✗ %s -> %s", source.id, err)
                     n_failed += 1
                     continue
-                n_copied += 1
-                total += progress.nbytes
+                if restoring:
+                    n_restored += 1
+                    restored_total += progress.nbytes
+                else:
+                    n_copied += 1
+                    total += progress.nbytes
                 result = received.path if dest is not None else "OK"
                 note = "" if received.verified else " (no registered hash to check)"
+                if restoring:
+                    note = " (restored)" + note
                 log.info(
                     "  - %s -> %s%s  (%s)",
                     source.id,
@@ -2549,8 +2603,14 @@ def copy_resources(args):
                     note,
                     progress.summary(),
                 )
+    counts = [f"requested: {len(ids)}"]
+    if args.restore:
+        counts.append(
+            f"{'to restore' if args.dry_run else 'restored'}: {n_restored} "
+            f"({_human_size(restored_total)})"
+        )
     _log_summary(
-        f"requested: {len(ids)}",
+        *counts,
         f"{'checked' if args.dry_run else 'copied'}: {n_copied} ({_human_size(total)})",
         f"already in destination: {len(already)}",
         failed=n_failed,

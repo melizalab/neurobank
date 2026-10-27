@@ -780,6 +780,15 @@ def located_in(
     return found
 
 
+def is_stored(cfg: nbank_archive.ArchiveConfig, id: str) -> bool:
+    """True if a file is stored in the archive for id, whatever its extension."""
+    try:
+        nbank_archive.resource_path(cfg, id, resolve_ext=True)
+    except FileNotFoundError:
+        return False
+    return True
+
+
 def receive_source(
     cfg: nbank_archive.ArchiveConfig | None,
     source: Source,
@@ -844,6 +853,34 @@ def add_location(
         except ValueError:
             detail = r.text
         raise TransferError(f"the registry refused the location ({detail})")
+
+
+def set_location_key(
+    session: Client, registry_url: str, id: str, archive_name: str, path: Path
+) -> None:
+    """Sets the key of id's location in archive_name to the name of the copy stored at
+    path, for a copy restored where the registry already lists one.
+
+    The copy is kept either way. Raises TransferError if the registry refuses or can't
+    be reached.
+    """
+    url, body = registry.update_location(registry_url, id, archive_name, path.name)
+    try:
+        r = session.patch(url, json=body)
+    except httpx.RequestError as err:
+        raise TransferError(
+            f"unable to contact the registry ({err}); '{path}' was restored but its "
+            "location's key may not be set, so run `nbank check archive --fix` on "
+            "this archive"
+        ) from err
+    if r.status_code != httpx.codes.OK:
+        try:
+            detail = "; ".join(registry.error_messages(r))
+        except ValueError:
+            detail = r.text
+        raise TransferError(
+            f"'{path}' was restored, but the registry refused its key ({detail})"
+        )
 
 
 __all__: list[str] = []

@@ -85,6 +85,11 @@ Requires django-neurobank 1.0 (registry API 2.x).
   resource if its name without directories or extension is the id, wherever
   it is in the tar file; each is checked against its registered hash, and one
   that doesn't match is kept with `.mismatch` added to its name.
+- `nbank copy --restore` and `nbank archive import-tar --restore` restore a
+  resource the registry lists in the destination archive whose file is missing
+  there: it's stored again (checked against its hash) and its location's key is
+  set, and the summary counts these separately (#65). Without `--restore`,
+  such resources are still skipped as already in the destination.
 - New locations in neurobank archives record the stored file's name as their
   key: deposit, `copy`, `archive import-tar`, and adding a location with `check
   archive --fix`. `archive register tape` records each resource's tar member as
