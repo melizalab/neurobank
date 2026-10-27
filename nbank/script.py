@@ -1334,125 +1334,179 @@ def _check_registered_archive(session, registry_url, info, args) -> bool:
 
 def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bool:
     """Runs and logs the archive checks. Returns True if there are no errors."""
-    archive_path = archive_cfg.path
-    log.info(
-        "retrieving resources that should be in %s from the registry...",
-        archive_name,
-    )
-    located = check.registry_locations_in_archive(session, registry_url, archive_name)
-    expected = {name: location["sha1"] for name, location in located.items()}
-    log.info(" - resources in the registry: %d", len(expected))
-    registered = {
-        name: (location["key"], location["filename"])
-        for name, location in located.items()
-    }
-    keys = {name: key for name, (key, _) in registered.items()}
-    dtypes = {name: location["dtype"] for name, location in located.items()}
-    dtype_readers = None
-    if not args.no_hash and readers.installed_readers():
-        url, params = registry.get_datatypes(registry_url)
-        dtype_readers = check.DtypeReaders(
-            {
-                d["name"]: d.get("extension")
-                for d in util.query_registry_paginated(session, url, params)
-            }
+    run = _ArchiveCheck(session, registry_url, archive_name, archive_cfg, args)
+    run.check_permissions()
+    run.check_contents()
+    if args.fix and args.rename and run.other_names:
+        run.rename_files()
+    run.check_keys()
+    run.log_other_names()
+    prompting = args.fix and console.interactive()
+    if args.fix and (run.unregistered or run.incomplete) and not prompting:
+        log.info("not an interactive terminal, so not asking how to resolve problems")
+    run.resolve_incomplete(prompting)
+    run.resolve_unregistered(prompting)
+    run.log_summary()
+    return run.n_errors == 0 and not run.unable_to_check
+
+
+class _ArchiveCheck:
+    """The phases of checking a neurobank archive, which log as they go.
+
+    The registry's records for the archive are read on creation. Errors are counted
+    in n_errors, and findings in counts by status, for the summary.
+    """
+
+    def __init__(self, session, registry_url, archive_name, archive_cfg, args):
+        self.session = session
+        self.registry_url = registry_url
+        self.archive_name = archive_name
+        self.archive_cfg = archive_cfg
+        self.args = args
+        log.info(
+            "retrieving resources that should be in %s from the registry...",
+            archive_name,
         )
-    log.info("checking ownership and permissions:")
-    perm_counts = Counter()
-    unable_to_check = False
-    try:
-        for finding in check.check_archive_permissions(archive_cfg, fix=args.fix):
-            perm_counts[finding.status, finding.fixed] += 1
-            if not args.verbose:
+        self.located = check.registry_locations_in_archive(
+            session, registry_url, archive_name
+        )
+        log.info(" - resources in the registry: %d", len(self.located))
+        self.keys = {name: loc["key"] for name, loc in self.located.items()}
+        self.dtype_readers = None
+        if not args.no_hash and readers.installed_readers():
+            url, params = registry.get_datatypes(registry_url)
+            self.dtype_readers = check.DtypeReaders(
+                {
+                    d["name"]: d.get("extension")
+                    for d in util.query_registry_paginated(session, url, params)
+                }
+            )
+        self.counts = Counter()
+        self.n_errors = 0
+        self.unable_to_check = False
+        self.perm_counts = Counter()
+        self.n_perms_fixed = 0
+        self.unregistered = []  # looked up in the registry after the main pass
+        self.incomplete = []  # left over from transfers; may be deleted after it
+        self.wrong_keys = []  # set after the main pass with --fix
+        self.other_names = []  # (resource, finding, filename) for files named otherwise
+        self.invalid = set()  # resources whose files their dtype's reader rejects
+        self.key_counts = Counter()
+        self.n_renamed = self.n_keys_set = self.n_deleted = self.n_resolved = 0
+
+    def check_permissions(self) -> None:
+        """Checks (and with --fix, fixes) the ownership and permissions of the files."""
+        args = self.args
+        log.info("checking ownership and permissions:")
+        try:
+            for finding in check.check_archive_permissions(
+                self.archive_cfg, fix=args.fix
+            ):
+                self.perm_counts[finding.status, finding.fixed] += 1
+                if not args.verbose:
+                    continue
+                msg = f" - {finding.path} - {finding.status.value} ({finding.detail})"
+                if finding.fixed:
+                    log.info("%s - fixed", msg)
+                else:
+                    log.error("%s", msg)
+        except ValueError as err:
+            log.error(" - unable to check: %s", err)
+            self.unable_to_check = True
+        if not args.verbose:
+            for (status, fixed), count in self.perm_counts.items():
+                if fixed:
+                    log.info(
+                        " - %s: fixed %d files or directories", status.value, count
+                    )
+                else:
+                    log.error(
+                        " - %s: %d files or directories (use -v to list)",
+                        status.value,
+                        count,
+                    )
+        self.n_perms_fixed = sum(
+            n for (_, fixed), n in self.perm_counts.items() if fixed
+        )
+        self.n_errors += self.perm_counts.total() - self.n_perms_fixed
+
+    def check_contents(self) -> None:
+        """Checks the files against the registry, logging most problems and keeping
+        the rest (keys, names, incomplete and unregistered files) for later phases."""
+        args = self.args
+        log.info("verifying resources:")
+        for finding in check.check_archive_contents(
+            self.archive_cfg.path,
+            {name: loc["sha1"] for name, loc in self.located.items()},
+            check_hash=not args.no_hash,
+            keys=self.keys,
+            dtypes={name: loc["dtype"] for name, loc in self.located.items()},
+            dtype_readers=self.dtype_readers,
+        ):
+            if finding.status in (check.Status.NO_KEY, check.Status.WRONG_KEY):
+                self.wrong_keys.append(finding)
                 continue
-            msg = f" - {finding.path} - {finding.status.value} ({finding.detail})"
-            if finding.fixed:
-                log.info("%s - fixed", msg)
-            else:
-                log.error("%s", msg)
-    except ValueError as err:
-        log.error(" - unable to check: %s", err)
-        unable_to_check = True
-    if not args.verbose:
-        for (status, fixed), count in perm_counts.items():
-            if fixed:
-                log.info(" - %s: fixed %d files or directories", status.value, count)
-            else:
+            if finding.status == check.Status.INVALID_FOR_DTYPE:
+                self.invalid.add(finding.resource)
+                self.counts[finding.status] += 1
+                self.n_errors += 1
                 log.error(
-                    " - %s: %d files or directories (use -v to list)",
-                    status.value,
-                    count,
+                    " - %s : %s - %s (%s)",
+                    finding.resource,
+                    finding.path,
+                    finding.status.value,
+                    finding.detail,
                 )
-    n_fixed = sum(n for (_, fixed), n in perm_counts.items() if fixed)
-    log.info("verifying resources:")
-    counts = Counter()
-    n_errors = 0
-    unregistered = []  # looked up in the registry after the main pass
-    incomplete = []  # left over from transfers; may be deleted after the main pass
-    wrong_keys = []  # set after the main pass with --fix
-    other_names = []  # (resource, finding, filename) for files named otherwise
-    invalid = set()  # resources whose files their dtype's reader rejects; not fixed
-    for finding in check.check_archive_contents(
-        archive_path,
-        expected,
-        check_hash=not args.no_hash,
-        keys=keys,
-        dtypes=dtypes,
-        dtype_readers=dtype_readers,
-    ):
-        if finding.status in (check.Status.NO_KEY, check.Status.WRONG_KEY):
-            wrong_keys.append(finding)
-            continue
-        if finding.status == check.Status.INVALID_FOR_DTYPE:
-            invalid.add(finding.resource)
-            counts[finding.status] += 1
-            n_errors += 1
-            log.error(
-                " - %s : %s - %s (%s)",
-                finding.resource,
-                finding.path,
-                finding.status.value,
-                finding.detail,
-            )
-            continue
-        if finding.status == check.Status.READER_FAILED:
-            counts[finding.status] += 1
-            n_errors += 1
-            log.error(" - %s: %s", finding.status.value, finding.detail)
-            continue
-        resource = finding.resource
-        if resource is not None and resource in registered and finding.path is not None:
-            filename = registered[resource][1]
-            if finding.path.name != filename:
-                other_names.append((resource, finding, filename))
-        if finding.status == check.Status.MISSING_FROM_REGISTRY:
-            unregistered.append(finding)
-            continue
-        if finding.status == check.Status.INCOMPLETE:
-            incomplete.append(finding)
-            continue
-        counts[finding.status] += 1
-        n_errors += not finding.ok
-        if finding.status == check.Status.MISSING_FROM_ARCHIVE:
-            log.error(" - %s: MISSING from the archive", finding.resource)
-        elif finding.resource is None:
-            log.error(
-                " - %s - %s (%s)", finding.path, finding.status.value, finding.detail
-            )
-        elif not finding.ok:
-            log.error(
-                " - %s : %s - %s", finding.resource, finding.path, finding.status.value
-            )
-        elif args.verbose:
-            log.info(
-                " - %s : %s - %s", finding.resource, finding.path, finding.status.value
-            )
-    n_renamed = 0
-    if args.fix and args.rename and other_names:
+                continue
+            if finding.status == check.Status.READER_FAILED:
+                self.counts[finding.status] += 1
+                self.n_errors += 1
+                log.error(" - %s: %s", finding.status.value, finding.detail)
+                continue
+            resource = finding.resource
+            if resource in self.located and finding.path is not None:
+                filename = self.located[resource]["filename"]
+                if finding.path.name != filename:
+                    self.other_names.append((resource, finding, filename))
+            if finding.status == check.Status.MISSING_FROM_REGISTRY:
+                self.unregistered.append(finding)
+                continue
+            if finding.status == check.Status.INCOMPLETE:
+                self.incomplete.append(finding)
+                continue
+            self.counts[finding.status] += 1
+            self.n_errors += not finding.ok
+            if finding.status == check.Status.MISSING_FROM_ARCHIVE:
+                log.error(" - %s: MISSING from the archive", finding.resource)
+            elif finding.resource is None:
+                log.error(
+                    " - %s - %s (%s)",
+                    finding.path,
+                    finding.status.value,
+                    finding.detail,
+                )
+            elif not finding.ok:
+                log.error(
+                    " - %s : %s - %s",
+                    finding.resource,
+                    finding.path,
+                    finding.status.value,
+                )
+            elif args.verbose:
+                log.info(
+                    " - %s : %s - %s",
+                    finding.resource,
+                    finding.path,
+                    finding.status.value,
+                )
+
+    def rename_files(self) -> None:
+        """Renames files to the registry's filename, except invalid ones, and updates
+        the key findings to match."""
         log.info("renaming files to the registry's filename:")
         renamed = {}
-        for resource, finding, filename in other_names:
-            if resource in invalid:
+        for resource, finding, filename in self.other_names:
+            if resource in self.invalid:
                 log.info(
                     " - %s : not renamed, as it isn't a valid file of its dtype",
                     finding.path,
@@ -1462,133 +1516,155 @@ def _check_archive(session, registry_url, archive_name, archive_cfg, args) -> bo
                 path = check.rename_to_filename(finding, filename)
             except OSError as err:
                 log.error(" - %s : unable to rename: %s", finding.path, err)
-                n_errors += 1
+                self.n_errors += 1
                 continue
             if path is not None:
                 renamed[resource] = path
-        n_renamed = len(renamed)
-        other_names = [entry for entry in other_names if entry[0] not in renamed]
-        wrong_keys = check.keys_after_renames(wrong_keys, renamed, keys)
-    n_keys_set = 0
-    key_counts = Counter()
-    if wrong_keys:
-        log.info("checking location keys:")
-    if args.fix:
-        to_set = [f for f in wrong_keys if f.resource not in invalid]
-        refused = dict(check.set_keys(session, registry_url, archive_name, to_set))
-    for finding in wrong_keys:
-        assert finding.path is not None  # NO_KEY and WRONG_KEY findings are files
-        msg = f" - {finding.resource} : {finding.path} - {finding.status.value}"
-        if finding.detail:
-            msg += f" ({finding.detail})"
-        if args.fix and finding.resource in invalid:
-            log.error("%s - not fixed, as it isn't a valid file of its dtype", msg)
-        elif args.fix:
-            error = refused.get(finding.resource)
-            if error is None:
-                n_keys_set += 1
-                if args.verbose:
-                    log.info("%s - fixed", msg)
-                continue
-            log.error(
-                " - %s : unable to set the key to '%s': %s",
-                finding.resource,
-                finding.path.name,
-                error,
+        self.n_renamed = len(renamed)
+        self.other_names = [e for e in self.other_names if e[0] not in renamed]
+        self.wrong_keys = check.keys_after_renames(self.wrong_keys, renamed, self.keys)
+
+    def check_keys(self) -> None:
+        """Reports location keys that don't match the file names, and with --fix sets
+        them, except for invalid files."""
+        args = self.args
+        if self.wrong_keys:
+            log.info("checking location keys:")
+        if args.fix:
+            to_set = [f for f in self.wrong_keys if f.resource not in self.invalid]
+            refused = dict(
+                check.set_keys(
+                    self.session, self.registry_url, self.archive_name, to_set
+                )
             )
-        elif args.verbose:
-            log.error("%s", msg)
-        key_counts[finding.status] += 1
-        n_errors += 1
-    if not args.verbose:
-        for status, count in key_counts.items():
-            log.error(" - %s: %d resources (use -v to list)", status.value, count)
-    log.info(
-        "files named other than the registry's filename: %d%s",
-        len(other_names),
-        "" if args.verbose or not other_names else " (use -v to list)",
-    )
-    if args.verbose:
-        for _, finding, filename in other_names:
-            log.info(" - %s (filename: %s)", finding.path, filename)
-    prompting = args.fix and console.interactive()
-    if args.fix and (unregistered or incomplete) and not prompting:
-        log.info("not an interactive terminal, so not asking how to resolve problems")
-    n_deleted = 0
-    for finding in incomplete:
-        assert finding.path is not None  # INCOMPLETE findings are files
-        log.error(" - %s - %s (%s)", finding.path, finding.status.value, finding.detail)
-        if prompting and console.ask("   [d]elete, [s]kip? ", "ds") == "d":
-            try:
-                archive.remove(finding.path)
-            except OSError as err:
-                log.error("   unable to delete %s: %s", finding.path, err)
-            else:
-                log.info("   - deleted %s", finding.path)
-                n_deleted += 1
-                continue
-        counts[finding.status] += 1
-        n_errors += 1
-    n_resolved = 0
-    if unregistered:
-        log.info("looking up files that aren't in this archive's registry records:")
-    for finding in check.recheck_unregistered(session, registry_url, unregistered):
-        if finding.status == check.Status.MISSING_FROM_REGISTRY:
-            log.error(
-                " - %s: MISSING from the registry under %s",
-                finding.path,
-                archive_name,
-            )
-        else:
-            log.error(
-                " - %s: %s (%s)", finding.path, finding.status.value, finding.detail
-            )
-            if prompting and _resolve_elsewhere(
-                session, registry_url, archive_name, finding
-            ):
-                n_resolved += 1
-                continue
-        counts[finding.status] += 1
-        n_errors += 1
-    if args.no_hash:
-        log.info("files not checked against their dtypes' metadata readers (--no-hash)")
-    elif dtype_readers is None:
-        log.info("no metadata readers installed, so no files checked against them")
-    else:
+        for finding in self.wrong_keys:
+            assert finding.path is not None  # NO_KEY and WRONG_KEY findings are files
+            msg = f" - {finding.resource} : {finding.path} - {finding.status.value}"
+            if finding.detail:
+                msg += f" ({finding.detail})"
+            if args.fix and finding.resource in self.invalid:
+                log.error("%s - not fixed, as it isn't a valid file of its dtype", msg)
+            elif args.fix:
+                error = refused.get(finding.resource)
+                if error is None:
+                    self.n_keys_set += 1
+                    if args.verbose:
+                        log.info("%s - fixed", msg)
+                    continue
+                log.error(
+                    " - %s : unable to set the key to '%s': %s",
+                    finding.resource,
+                    finding.path.name,
+                    error,
+                )
+            elif args.verbose:
+                log.error("%s", msg)
+            self.key_counts[finding.status] += 1
+            self.n_errors += 1
+        if not args.verbose:
+            for status, count in self.key_counts.items():
+                log.error(" - %s: %d resources (use -v to list)", status.value, count)
+
+    def log_other_names(self) -> None:
+        """Reports the files named other than the registry's filename (not errors)."""
+        verbose = self.args.verbose
         log.info(
-            "files checked with their dtype's metadata reader: %d; "
-            "with no reader installed for their dtype: %d",
-            dtype_readers.checked.total(),
-            dtype_readers.unchecked.total(),
+            "files named other than the registry's filename: %d%s",
+            len(self.other_names),
+            "" if verbose or not self.other_names else " (use -v to list)",
         )
-    log.info(
-        "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d; permission errors: %d; registered elsewhere: %d; location key errors: %d; invalid for dtype: %d",
-        len(expected),
-        counts[check.Status.MISSING_FROM_ARCHIVE],
-        counts[check.Status.MISSING_FROM_REGISTRY],
-        counts[check.Status.UNREADABLE] + counts[check.Status.HASH_MISMATCH],
-        counts[check.Status.MISPLACED]
-        + counts[check.Status.DUPLICATE]
-        + counts[check.Status.UNEXPECTED]
-        + counts[check.Status.SYMLINK]
-        + counts[check.Status.DIRECTORY]
-        + counts[check.Status.INCOMPLETE],
-        perm_counts.total() - n_fixed,
-        counts[check.Status.REGISTERED_ELSEWHERE]
-        + counts[check.Status.UNVERIFIED_ELSEWHERE]
-        + counts[check.Status.CHANGED_ELSEWHERE],
-        key_counts.total(),
-        counts[check.Status.INVALID_FOR_DTYPE],
-    )
-    if args.fix:
-        log.info("Permission errors fixed: %d", n_fixed)
-        log.info("Location keys set: %d", n_keys_set)
-        if args.rename:
-            log.info("Files renamed: %d", n_renamed)
-        log.info("Files registered elsewhere resolved: %d", n_resolved)
-        log.info("Incomplete transfers and deposits deleted: %d", n_deleted)
-    n_errors += perm_counts.total() - n_fixed
-    return n_errors == 0 and not unable_to_check
+        if verbose:
+            for _, finding, filename in self.other_names:
+                log.info(" - %s (filename: %s)", finding.path, filename)
+
+    def resolve_incomplete(self, prompting: bool) -> None:
+        """Reports files left by incomplete transfers, offering to delete them."""
+        for finding in self.incomplete:
+            assert finding.path is not None  # INCOMPLETE findings are files
+            log.error(
+                " - %s - %s (%s)", finding.path, finding.status.value, finding.detail
+            )
+            if prompting and console.ask("   [d]elete, [s]kip? ", "ds") == "d":
+                try:
+                    archive.remove(finding.path)
+                except OSError as err:
+                    log.error("   unable to delete %s: %s", finding.path, err)
+                else:
+                    log.info("   - deleted %s", finding.path)
+                    self.n_deleted += 1
+                    continue
+            self.counts[finding.status] += 1
+            self.n_errors += 1
+
+    def resolve_unregistered(self, prompting: bool) -> None:
+        """Looks up the files that aren't in the archive's records in the rest of the
+        registry, offering to resolve those registered elsewhere."""
+        if self.unregistered:
+            log.info("looking up files that aren't in this archive's registry records:")
+        for finding in check.recheck_unregistered(
+            self.session, self.registry_url, self.unregistered
+        ):
+            if finding.status == check.Status.MISSING_FROM_REGISTRY:
+                log.error(
+                    " - %s: MISSING from the registry under %s",
+                    finding.path,
+                    self.archive_name,
+                )
+            else:
+                log.error(
+                    " - %s: %s (%s)", finding.path, finding.status.value, finding.detail
+                )
+                if prompting and _resolve_elsewhere(
+                    self.session, self.registry_url, self.archive_name, finding
+                ):
+                    self.n_resolved += 1
+                    continue
+            self.counts[finding.status] += 1
+            self.n_errors += 1
+
+    def log_summary(self) -> None:
+        """Logs the metadata reader counts, then the totals of each kind of problem."""
+        args = self.args
+        counts = self.counts
+        if args.no_hash:
+            log.info(
+                "files not checked against their dtypes' metadata readers (--no-hash)"
+            )
+        elif self.dtype_readers is None:
+            log.info("no metadata readers installed, so no files checked against them")
+        else:
+            log.info(
+                "files checked with their dtype's metadata reader: %d; "
+                "with no reader installed for their dtype: %d",
+                self.dtype_readers.checked.total(),
+                self.dtype_readers.unchecked.total(),
+            )
+        log.info(
+            "\nResources in registry: %d; missing from archive: %d; missing from registry: %d; read/verify errors: %d; other layout errors: %d; permission errors: %d; registered elsewhere: %d; location key errors: %d; invalid for dtype: %d",
+            len(self.located),
+            counts[check.Status.MISSING_FROM_ARCHIVE],
+            counts[check.Status.MISSING_FROM_REGISTRY],
+            counts[check.Status.UNREADABLE] + counts[check.Status.HASH_MISMATCH],
+            counts[check.Status.MISPLACED]
+            + counts[check.Status.DUPLICATE]
+            + counts[check.Status.UNEXPECTED]
+            + counts[check.Status.SYMLINK]
+            + counts[check.Status.DIRECTORY]
+            + counts[check.Status.INCOMPLETE],
+            self.perm_counts.total() - self.n_perms_fixed,
+            counts[check.Status.REGISTERED_ELSEWHERE]
+            + counts[check.Status.UNVERIFIED_ELSEWHERE]
+            + counts[check.Status.CHANGED_ELSEWHERE],
+            self.key_counts.total(),
+            counts[check.Status.INVALID_FOR_DTYPE],
+        )
+        if args.fix:
+            log.info("Permission errors fixed: %d", self.n_perms_fixed)
+            log.info("Location keys set: %d", self.n_keys_set)
+            if args.rename:
+                log.info("Files renamed: %d", self.n_renamed)
+            log.info("Files registered elsewhere resolved: %d", self.n_resolved)
+            log.info("Incomplete transfers and deposits deleted: %d", self.n_deleted)
 
 
 def _resolve_elsewhere(session, registry_url, archive_name, finding) -> bool:
