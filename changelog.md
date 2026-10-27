@@ -4,11 +4,11 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Breaking
 
-- `registry.log_error` logs every error response and no longer re-raises those
-  that aren't 400, 403 or 415: it logs the response's detail, or its status
-  (e.g. `500 Internal Server Error`). Code that relied on it to stop on a server
-  error has to check the status itself. A command that meets such an error
-  reports it instead of ending with a traceback.
+- `registry.log_error` logs every client error (4xx), not only 400, 403 and
+  415: the response's detail, or its status (e.g. `404 Not Found`). It still
+  re-raises server errors (5xx), so a script stops on them. `nbank` and
+  `nbank.admin` report a server error as `registry error: 500 Internal Server
+  Error` and exit with status 1, instead of ending with a traceback.
 - `archive.get_config` is `archive.ArchiveConfig.load`. It and `archive.create`
   return an `archive.ArchiveConfig`, a frozen dataclass (`path`, `registry`, and
   `policy`, an `archive.Policy` with an `archive.Access`), instead of the dict

@@ -92,6 +92,12 @@ def main(argv=None) -> int | None:
             log.error(
                 "                      Or, you may not have permission for this operation."
             )
+        elif e.response.is_server_error:
+            log.error(
+                "registry error: %s %s",
+                e.response.status_code,
+                e.response.reason_phrase,
+            )
         else:
             registry.log_error(e)
     except KeyboardInterrupt:

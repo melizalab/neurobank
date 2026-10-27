@@ -276,8 +276,12 @@ def error_detail(response) -> str:
 
 def log_error(err):
     """Logs the registry's message for an error response: each field's messages for
-    a 400 (validation error), and otherwise its detail, or its status."""
+    a 400 (validation error), and otherwise its detail, or its status. Re-raises a
+    server error (5xx), as the request or the registry is in a state that it's
+    better not to go on from."""
     response = err.response
+    if response.is_server_error:
+        raise err
     try:
         body = response.json()
     except ValueError:

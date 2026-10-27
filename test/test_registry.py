@@ -278,8 +278,7 @@ def status_error(status, **response):
         (403, {"json": {"detail": "Invalid password."}}, ["Invalid password."]),
         (403, {"text": "Forbidden"}, ["403 Forbidden"]),
         (415, {"text": ""}, ["415 Unsupported Media Type"]),
-        (500, {"text": "<html>Server Error</html>"}, ["500 Internal Server Error"]),
-        (502, {"json": ["not", "an", "object"]}, ["502 Bad Gateway"]),
+        (404, {"json": ["not", "an", "object"]}, ["404 Not Found"]),
     ],
 )
 def test_log_error(caplog, status, response, expected):
@@ -287,3 +286,12 @@ def test_log_error(caplog, status, response, expected):
     assert [r.getMessage() for r in caplog.records] == [
         f"   registry error: {message}" for message in expected
     ]
+
+
+@pytest.mark.parametrize("status", [500, 502])
+def test_log_error_reraises_server_errors(caplog, status):
+    import httpx
+
+    with pytest.raises(httpx.HTTPStatusError):
+        registry.log_error(status_error(status, text="<html>Server Error</html>"))
+    assert caplog.records == []

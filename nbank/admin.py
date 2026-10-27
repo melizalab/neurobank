@@ -365,5 +365,12 @@ if __name__ == "__main__":
     except httpx.RequestError:
         log.error("registry error: unable to contact server")
     except httpx.HTTPStatusError as err:
-        registry.log_error(err)
+        if err.response.is_server_error:
+            log.error(
+                "registry error: %s %s",
+                err.response.status_code,
+                err.response.reason_phrase,
+            )
+        else:
+            registry.log_error(err)
     raise SystemExit(status)
