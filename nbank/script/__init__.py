@@ -19,7 +19,9 @@ from nbank.script.parser import ParseKeyVal, make_parser
 log = logging.getLogger("nbank")
 
 
-def main(argv=None):
+def main(argv=None) -> int | None:
+    """Runs the nbank command line with argv (default: sys.argv[1:]) and returns
+    the exit status (None for success)."""
     p = parser.make_parser()
     args = p.parse_args(argv)
 

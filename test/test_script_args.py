@@ -134,6 +134,23 @@ def test_malformed_list_is_a_usage_error(capsys):
     )
 
 
+@pytest.mark.parametrize("value", ["tags", "a=b=c"])
+def test_keyval_without_one_equals_is_a_usage_error(capsys, value):
+    p = argparse.ArgumentParser()
+    p.add_argument("-m", "--meta", action=script.ParseKeyVal)
+    with pytest.raises(SystemExit) as exc:
+        p.parse_args(["--meta", value])
+    assert exc.value.code == 2
+    assert f"--meta {value}: needs key=value" in capsys.readouterr().err
+
+
+def test_keyval_leaves_the_default_unchanged():
+    p = argparse.ArgumentParser()
+    p.add_argument("-k", action=script.ParseKeyVal, default={}, dest="metadata")
+    assert p.parse_args(["-k", "a=1"]).metadata == {"a": 1}
+    assert p.parse_args([]).metadata == {}
+
+
 def test_search_keeps_underscored_values_as_strings(monkeypatch):
     captured = {}
 

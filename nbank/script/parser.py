@@ -47,6 +47,15 @@ def _reject_constant(name):
 
 
 class ParseKeyVal(argparse.Action):
+    """An argparse action that collects KEY=VALUE arguments into a dict, as
+    nbank's -k does.
+
+    Each value is read as JSON if it parses (numbers, true, false, null, lists and
+    objects; True, False and None are accepted as Python spells them), and
+    otherwise kept as a string. A key that is a field of the resource
+    (experimenter, animal) is refused, as those have options of their own.
+    """
+
     def parse_value(self, value):
         """Returns value parsed as JSON if it is JSON, and otherwise as a string.
 
@@ -63,21 +72,17 @@ class ParseKeyVal(argparse.Action):
             return value
 
     def __call__(self, parser, namespace, values, option_string=None):
-        kv = getattr(namespace, self.dest)
-        if kv is None:
-            kv = dict()
-        if not values.count("=") == 1:
-            raise ValueError(f"-k {values} argument badly formed; needs key=value")
-        else:
-            key, val = values.split("=")
-            if key in registry.core_fields:
-                parser.error(
-                    f"{option_string} {key}: {key} is not metadata; use --{key}"
-                )
-            try:
-                kv[key] = self.parse_value(val)
-            except ValueError as err:
-                parser.error(f"{option_string} {key}: {err}")
+        # a copy, so that the parser's default isn't changed
+        kv = dict(getattr(namespace, self.dest) or {})
+        if values.count("=") != 1:
+            parser.error(f"{option_string} {values}: needs key=value")
+        key, val = values.split("=")
+        if key in registry.core_fields:
+            parser.error(f"{option_string} {key}: {key} is not metadata; use --{key}")
+        try:
+            kv[key] = self.parse_value(val)
+        except ValueError as err:
+            parser.error(f"{option_string} {key}: {err}")
         setattr(namespace, self.dest, kv)
 
 

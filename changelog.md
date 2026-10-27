@@ -81,6 +81,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### New
 
+- `nbank.script.ParseKeyVal`, the argparse action behind `-k`, is public, for
+  programs that take metadata the way `nbank deposit` does. The API reference
+  has a page for `nbank.script`.
 - `nbank fetch --tar TAR` gets resources out of a tar file, a tape device, or
   standard input, without importing them into an archive (#65). A member is a
   resource if its name without directories or extension is the id, wherever
@@ -180,6 +183,9 @@ Requires django-neurobank 1.0 (registry API 2.x).
 
 ### Fixed
 
+- A `-k` argument without exactly one `=` is a usage error naming the option,
+  instead of a traceback. `ParseKeyVal` no longer changes the parser's default
+  dict, which carried values from one parse to the next.
 - `nbank registry info` reports an address that isn't a registry (no `info/`)
   as an error instead of crashing.
 - The `repr` of an http(s) resource no longer raises `AttributeError`.

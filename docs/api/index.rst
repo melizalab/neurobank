@@ -16,3 +16,4 @@ names are for neurobank's own use and may change.
    util
    cache
    check
+   script
