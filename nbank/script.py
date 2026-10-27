@@ -2101,6 +2101,75 @@ def check_tar(args):
     return 1 if counts["failed"] or missing or read_error else 0
 
 
+def _record_location(
+    session, registry_url, id, archive_name, received, restoring: bool
+) -> None:
+    """Adds archive_name as a location of a received resource, or if restoring, sets
+    its key. Does nothing in a dry run. Raises TransferError if the registry refuses."""
+    if received.path is None:
+        return
+    if restoring:
+        transfer.set_location_key(
+            session, registry_url, id, archive_name, received.path
+        )
+    else:
+        transfer.add_location(session, registry_url, id, archive_name, received.path)
+
+
+class _Stored:
+    """Counts the resources stored in an archive (or in a dry run, checked), and
+    restored, and logs each one."""
+
+    def __init__(self, dry_run: bool):
+        self.dry_run = dry_run
+        self.n_stored = self.n_restored = self.total = self.restored_total = 0
+
+    def add(self, label: str, received, restoring: bool, progress) -> None:
+        if restoring:
+            self.n_restored += 1
+            self.restored_total += progress.nbytes
+        else:
+            self.n_stored += 1
+            self.total += progress.nbytes
+        result = received.path if not self.dry_run else "OK"
+        note = "" if received.verified else " (no registered hash to check)"
+        if restoring:
+            note = " (restored)" + note
+        log.info("  - %s -> %s%s  (%s)", label, result, note, progress.summary())
+
+    def counts(self, verb: str, restore: bool) -> list[str]:
+        """Returns the counts for the summary; verb is what was done to those stored."""
+        counts = []
+        if restore:
+            counts.append(
+                f"{'to restore' if self.dry_run else 'restored'}: {self.n_restored} "
+                f"({console.human_size(self.restored_total)})"
+            )
+        counts.append(
+            f"{'checked' if self.dry_run else verb}: {self.n_stored} "
+            f"({console.human_size(self.total)})"
+        )
+        return counts
+
+
+def _file_size(path: Path) -> int | None:
+    """Returns the size of the file at path, or None if it can't be read."""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return None
+
+
+def _log_unfound(sources) -> int:
+    """Logs the sources with no copy to read. Returns how many there are."""
+    n = 0
+    for source in sources:
+        if not source.ok:
+            log.error("  ✗ %s -> %s", source.id, source.error)
+            n += 1
+    return n
+
+
 def import_tar(args):
     """Import resources from a tar file, tape, or stdin into a neurobank archive.
 
@@ -2126,7 +2195,8 @@ def import_tar(args):
     registry_url = archive_cfg.registry
     archive_path = archive_cfg.path  # this will resolve the path
     log.info("registry: %s", registry_url)
-    n_imported = n_restored = n_already = total = restored_total = 0
+    n_already = 0
+    stored = _Stored(args.dry_run)
     with util.registry_session(registry_url, auth=args.auth) as session:
         archive_name = _registered_name(session, registry_url, archive_path)
         if archive_name is None:
@@ -2148,7 +2218,7 @@ def import_tar(args):
 
         def import_one(res, progress) -> bool:
             """Imports a resource from the tar file. Returns False if it fails."""
-            nonlocal n_imported, n_restored, n_already, total, restored_total
+            nonlocal n_already
             id = res.record["name"]
             restoring = False
             if archive_name in res.record["locations"]:
@@ -2166,33 +2236,16 @@ def import_tar(args):
                 received = transfer.receive_file(
                     dest, id, res.name, res.data, res.record["sha1"], progress=progress
                 )
-                if received.path is None:
-                    pass
-                elif restoring:
-                    transfer.set_location_key(
-                        session, registry_url, id, archive_name, received.path
-                    )
-                else:
-                    transfer.add_location(
-                        session, registry_url, id, archive_name, received.path
-                    )
+                _record_location(
+                    session, registry_url, id, archive_name, received, restoring
+                )
             except transfer.TarReadError:
                 log.error("  ✗ %s -> unable to read; stopping", res.name)
                 raise
             except transfer.TransferError as err:
                 log.error("  ✗ %s -> %s", res.name, err)
                 return False
-            if restoring:
-                n_restored += 1
-                restored_total += progress.nbytes
-            else:
-                n_imported += 1
-                total += progress.nbytes
-            result = received.path if dest is not None else "OK"
-            note = "" if received.verified else " (no registered hash to check)"
-            if restoring:
-                note = " (restored)" + note
-            log.info("  - %s -> %s%s  (%s)", res.name, result, note, progress.summary())
+            stored.add(res.name, received, restoring, progress)
             return True
 
         read_error = False
@@ -2216,15 +2269,9 @@ def import_tar(args):
         log.error("  ✗ %s -> %s", id, reason)
         n_failed += 1
     counts = [] if n_requested is None else [f"requested: {n_requested}"]
-    if args.restore:
-        counts.append(
-            f"{'to restore' if args.dry_run else 'restored'}: {n_restored} "
-            f"({console.human_size(restored_total)})"
-        )
     console.log_summary(
         *counts,
-        f"{'checked' if args.dry_run else 'imported'}: {n_imported} "
-        f"({console.human_size(total)})",
+        *stored.counts("imported", args.restore),
         f"already in destination: {n_already}",
         failed=n_failed,
     )
@@ -2313,10 +2360,7 @@ def export_resources(args):
             failed=n_failed,
         )
 
-    for source in sources:
-        if not source.ok:
-            log.error("  ✗ %s -> %s", source.id, source.error)
-            n_failed += 1
+    n_failed += _log_unfound(sources)
     sources = [source for source in sources if source.ok]
     if not sources:
         summarize()
@@ -2335,11 +2379,7 @@ def export_resources(args):
             for source in sources:
                 path = source.path
                 assert path is not None  # sources without copies were left out
-                try:
-                    size = path.stat().st_size
-                except OSError:
-                    size = None
-                progress.start(path.name, size)
+                progress.start(path.name, _file_size(path))
                 try:
                     verified = transfer.write_resource(writer, source, progress)
                 except transfer.TransferError as err:
@@ -2413,7 +2453,7 @@ def copy_resources(args):
     registry_url = archive_cfg.registry
     archive_path = archive_cfg.path
     log.info("registry: %s", registry_url)
-    n_failed = n_copied = n_restored = total = restored_total = 0
+    stored = _Stored(args.dry_run)
     with util.registry_session(registry_url, auth=args.auth) as session:
         dest_name = _registered_name(session, registry_url, archive_path)
         if dest_name is None:
@@ -2441,64 +2481,28 @@ def copy_resources(args):
                 alt_base=args.alt_base,
             )
         )
-        for source in sources:
-            if not source.ok:
-                log.error("  ✗ %s -> %s", source.id, source.error)
-                n_failed += 1
+        n_failed = _log_unfound(sources)
         dest = None if args.dry_run else archive_cfg
         with console.Progress() as progress:
             for source in sources:
                 path = source.path
                 if path is None:
                     continue
-                try:
-                    size = path.stat().st_size
-                except OSError:
-                    size = None
-                progress.start(path.name, size)
+                progress.start(path.name, _file_size(path))
                 restoring = source.id in missing
                 try:
                     received = transfer.receive_source(dest, source, progress)
-                    if received.path is None:
-                        pass
-                    elif restoring:
-                        transfer.set_location_key(
-                            session, registry_url, source.id, dest_name, received.path
-                        )
-                    else:
-                        transfer.add_location(
-                            session, registry_url, source.id, dest_name, received.path
-                        )
+                    _record_location(
+                        session, registry_url, source.id, dest_name, received, restoring
+                    )
                 except transfer.TransferError as err:
                     log.error("  ✗ %s -> %s", source.id, err)
                     n_failed += 1
                     continue
-                if restoring:
-                    n_restored += 1
-                    restored_total += progress.nbytes
-                else:
-                    n_copied += 1
-                    total += progress.nbytes
-                result = received.path if dest is not None else "OK"
-                note = "" if received.verified else " (no registered hash to check)"
-                if restoring:
-                    note = " (restored)" + note
-                log.info(
-                    "  - %s -> %s%s  (%s)",
-                    source.id,
-                    result,
-                    note,
-                    progress.summary(),
-                )
-    counts = [f"requested: {len(ids)}"]
-    if args.restore:
-        counts.append(
-            f"{'to restore' if args.dry_run else 'restored'}: {n_restored} "
-            f"({console.human_size(restored_total)})"
-        )
+                stored.add(source.id, received, restoring, progress)
     console.log_summary(
-        *counts,
-        f"{'checked' if args.dry_run else 'copied'}: {n_copied} ({console.human_size(total)})",
+        f"requested: {len(ids)}",
+        *stored.counts("copied", args.restore),
         f"already in destination: {len(already)}",
         failed=n_failed,
     )
