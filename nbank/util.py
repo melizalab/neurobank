@@ -5,7 +5,7 @@
 
 import json
 import logging
-from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
+from collections.abc import Callable, Generator, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path, PurePath, PurePosixPath
 from typing import Any, ClassVar
@@ -341,6 +341,20 @@ def query_registry_bulk(
         r.raise_for_status()
         for line in r.iter_lines():
             yield json.loads(line)
+
+
+def query_registry_bulk_batched(
+    session: Client,
+    request: Callable[[list[str]], tuple[str, Mapping[str, Any]]],
+    names: Iterable[str],
+) -> Iterator[dict]:
+    """Yields the records from a bulk endpoint for names, asking for bulk_batch_size of
+    them per request. request(batch) returns the url and query for a batch of names, as
+    registry.get_resource_bulk does."""
+    names = list(names)
+    for i in range(0, len(names), bulk_batch_size):
+        url, query = request(names[i : i + bulk_batch_size])
+        yield from query_registry_bulk(session, url, query)
 
 
 def fetch_resource(

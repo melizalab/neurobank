@@ -21,6 +21,7 @@ import zipfile
 from collections.abc import Callable, Generator, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
 
@@ -104,13 +105,12 @@ def find_sources(
     """
     ids = list(dict.fromkeys(ids))
     params = {} if archive is None else {"archive": archive}
-    found = {}
-    for i in range(0, len(ids), util.bulk_batch_size):
-        url, query = registry.get_locations_bulk(
-            registry_url, ids[i : i + util.bulk_batch_size], **params
+    found = {
+        record["name"]: record
+        for record in util.query_registry_bulk_batched(
+            session, partial(registry.get_locations_bulk, registry_url, **params), ids
         )
-        for record in util.query_registry_bulk(session, url, query):
-            found[record["name"]] = record
+    }
     for id in ids:
         record = found.get(id)
         if record is not None:
@@ -770,14 +770,14 @@ def located_in(
     session: Client, registry_url: str, ids: Iterable[str], archive: str
 ) -> set[str]:
     """Returns the ids in ids that the registry has a location for in archive."""
-    ids = list(dict.fromkeys(ids))
-    found = set()
-    for i in range(0, len(ids), util.bulk_batch_size):
-        url, query = registry.get_locations_bulk(
-            registry_url, ids[i : i + util.bulk_batch_size], archive=archive
+    return {
+        r["name"]
+        for r in util.query_registry_bulk_batched(
+            session,
+            partial(registry.get_locations_bulk, registry_url, archive=archive),
+            dict.fromkeys(ids),
         )
-        found.update(r["name"] for r in util.query_registry_bulk(session, url, query))
-    return found
+    }
 
 
 def is_stored(cfg: nbank_archive.ArchiveConfig, id: str) -> bool:
@@ -848,11 +848,21 @@ def add_location(
         ) from err
     if r.status_code != httpx.codes.CREATED:
         nbank_archive.remove(path)
-        try:
-            detail = "; ".join(registry.error_messages(r))
-        except ValueError:
-            detail = r.text
-        raise TransferError(f"the registry refused the location ({detail})")
+        raise TransferError(
+            f"the registry refused the location ({registry.error_detail(r)})"
+        )
+
+
+def update_location_key(
+    session: Client, registry_url: str, id: str, archive_name: str, key: str | None
+) -> str | None:
+    """Sets (or, with None, clears) the key of id's location in archive_name. Returns
+    the registry's error if it refuses, or None."""
+    url, body = registry.update_location(registry_url, id, archive_name, key)
+    r = session.patch(url, json=body)
+    if r.status_code == httpx.codes.OK:
+        return None
+    return registry.error_detail(r)
 
 
 def set_location_key(
@@ -864,22 +874,17 @@ def set_location_key(
     The copy is kept either way. Raises TransferError if the registry refuses or can't
     be reached.
     """
-    url, body = registry.update_location(registry_url, id, archive_name, path.name)
     try:
-        r = session.patch(url, json=body)
+        error = update_location_key(session, registry_url, id, archive_name, path.name)
     except httpx.RequestError as err:
         raise TransferError(
             f"unable to contact the registry ({err}); '{path}' was restored but its "
             "location's key may not be set, so run `nbank check archive --fix` on "
             "this archive"
         ) from err
-    if r.status_code != httpx.codes.OK:
-        try:
-            detail = "; ".join(registry.error_messages(r))
-        except ValueError:
-            detail = r.text
+    if error is not None:
         raise TransferError(
-            f"'{path}' was restored, but the registry refused its key ({detail})"
+            f"'{path}' was restored, but the registry refused its key ({error})"
         )
 
 

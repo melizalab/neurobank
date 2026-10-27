@@ -9,6 +9,7 @@ and updating metadata.
 
 import logging
 from collections.abc import Iterable, Iterator, Mapping
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -400,7 +401,7 @@ def find_resources(
 
     from nbank.archive import resolve_extension
     from nbank.registry import get_locations_bulk
-    from nbank.util import bulk_batch_size, query_registry_bulk, registry_session
+    from nbank.util import query_registry_bulk_batched, registry_session
 
     to_find = list(dict.fromkeys(ids))
     if local_dir is not None:
@@ -420,20 +421,18 @@ def find_resources(
         concurrent.futures.ThreadPoolExecutor() as executor,
     ):
         futures = {}
-        for i in range(0, len(to_find), bulk_batch_size):
-            url, query = get_locations_bulk(
-                registry_url, to_find[i : i + bulk_batch_size]
+        for record in query_registry_bulk_batched(
+            session, partial(get_locations_bulk, registry_url), to_find
+        ):
+            future = executor.submit(
+                _find_resource,
+                session,
+                record,
+                alt_base=alt_base,
+                download=download,
+                verify=verify,
             )
-            for record in query_registry_bulk(session, url, query):
-                future = executor.submit(
-                    _find_resource,
-                    session,
-                    record,
-                    alt_base=alt_base,
-                    download=download,
-                    verify=verify,
-                )
-                futures[future] = record["name"]
+            futures[future] = record["name"]
         for future in concurrent.futures.as_completed(futures):
             id = futures[future]
             remaining.discard(id)

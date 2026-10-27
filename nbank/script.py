@@ -16,6 +16,7 @@ import tarfile
 import time
 from collections import Counter, deque
 from collections.abc import Iterator, Mapping
+from functools import partial
 from netrc import NetrcParseError
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlunparse
@@ -905,7 +906,7 @@ def init_archive(args):
 
 def store_resources(args):
     if args.read_stdin:
-        args.file.extend(Path(name) for line in sys.stdin if (name := line.strip()))
+        args.file.extend(Path(name) for name in _stripped_lines(sys.stdin))
     n_failed = 0
     try:
         for res in core.deposit(
@@ -1083,7 +1084,7 @@ def fetch_resources(args):
         return 1
     to_fetch = set(args.ids)
     if args.read_stdin:
-        to_fetch.update(name for line in sys.stdin if (name := line.strip()))
+        to_fetch.update(_stripped_lines(sys.stdin))
     if not to_fetch:
         log.error("nbank fetch: error: no identifiers given")
         return 1
@@ -1125,18 +1126,21 @@ def fetch_resources(args):
     return 1 if n_failed else None
 
 
+def _records(session, registry_url: str, ids) -> dict[str, dict]:
+    """Returns the registry records of the registered resources in ids, by id."""
+    return {
+        record["name"]: record
+        for record in util.query_registry_bulk_batched(
+            session, partial(registry.get_resource_bulk, registry_url), ids
+        )
+    }
+
+
 def _fetch_from_tar(args, dest: Path, to_fetch: set[str]) -> int | None:
     """Writes the resources in to_fetch from the tar file args.tar into dest, named
     as fetch names them, reading the tar file once. Returns 1 if any fail."""
-    records = {}
     with util.registry_session(args.registry_url, auth=args.auth) as session:
-        names = sorted(to_fetch)
-        for i in range(0, len(names), util.bulk_batch_size):
-            url, query = registry.get_resource_bulk(
-                args.registry_url, names[i : i + util.bulk_batch_size]
-            )
-            for record in util.query_registry_bulk(session, url, query):
-                records[record["name"]] = record
+        records = _records(session, args.registry_url, sorted(to_fetch))
     n_failed = 0
     for id in sorted(to_fetch - records.keys()):
         print(f"{id:<20}\t-> (not in the registry)")
@@ -1688,30 +1692,23 @@ def _set_keys(
     refused = [
         f
         for f in findings
-        if _set_key(session, registry_url, archive_name, f.resource, f.path.name)
+        if transfer.update_location_key(
+            session, registry_url, f.resource, archive_name, f.path.name
+        )
     ]
     # a refused key may be held by another location being fixed (two keys swapped,
     # say), so the refused locations' keys, which are wrong anyway, are cleared before
     # they're set again
     for f in refused:
-        _set_key(session, registry_url, archive_name, f.resource, None)
+        transfer.update_location_key(
+            session, registry_url, f.resource, archive_name, None
+        )
     for f in refused:
-        error = _set_key(session, registry_url, archive_name, f.resource, f.path.name)
+        error = transfer.update_location_key(
+            session, registry_url, f.resource, archive_name, f.path.name
+        )
         if error is not None:
             yield f.resource, error
-
-
-def _set_key(session, registry_url, archive_name, resource, key) -> str | None:
-    """Sets the key of a resource's location. Returns the registry's error if it
-    refuses, or None."""
-    url, body = registry.update_location(registry_url, resource, archive_name, key)
-    r = session.patch(url, json=body)
-    if r.status_code == httpx.codes.OK:
-        return None
-    try:
-        return "; ".join(registry.error_messages(r))
-    except ValueError:
-        return r.text
 
 
 def _interactive() -> bool:
@@ -1799,19 +1796,13 @@ def check_superseded(args):
     """
     ids = list(args.ids)
     if args.read_stdin:
-        ids.extend(name for line in sys.stdin if (name := line.strip()))
+        ids.extend(_stripped_lines(sys.stdin))
     ids = list(dict.fromkeys(ids))
     if not ids:
         log.error("nbank check superseded: error: no identifiers given")
         return 1
-    records = {}
     with util.registry_session(args.registry_url, auth=args.auth) as session:
-        for i in range(0, len(ids), util.bulk_batch_size):
-            url, query = registry.get_resource_bulk(
-                args.registry_url, ids[i : i + util.bulk_batch_size]
-            )
-            for record in util.query_registry_bulk(session, url, query):
-                records[record["name"]] = record
+        records = _records(session, args.registry_url, ids)
     n_superseded = n_missing = 0
     for id in ids:
         record = records.get(id)
@@ -2397,13 +2388,18 @@ def import_tar(args):
     return 1 if n_failed else None
 
 
+def _stripped_lines(lines) -> list[str]:
+    """Returns the lines that aren't blank, stripped of whitespace."""
+    return [name for line in lines if (name := line.strip())]
+
+
 def _read_ids(path: Path) -> list[str]:
     """Returns the identifiers in a file, one per line, or in stdin if path is '-'."""
     if str(path) == "-":
         text = sys.stdin.read()
     else:
         text = path.read_text()
-    return [line.strip() for line in text.splitlines() if line.strip()]
+    return _stripped_lines(text.splitlines())
 
 
 def _manifest_records(args, sources) -> dict | None:
@@ -2424,14 +2420,8 @@ def _manifest_records(args, sources) -> dict | None:
         log.error("error: '%s' already exists", existing)
         return None
     ids = [source.id for source in sources]
-    records = {}
     with util.registry_session(args.registry_url, auth=args.auth) as session:
-        for i in range(0, len(ids), util.bulk_batch_size):
-            url, query = registry.get_resource_bulk(
-                args.registry_url, ids[i : i + util.bulk_batch_size]
-            )
-            for record in util.query_registry_bulk(session, url, query):
-                records[record["name"]] = record
+        records = _records(session, args.registry_url, ids)
     return records
 
 

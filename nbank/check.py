@@ -9,6 +9,7 @@ import stat
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
+from functools import partial
 from itertools import chain
 from pathlib import Path
 
@@ -351,13 +352,12 @@ def recheck_unregistered(
             if f.status == Status.MISSING_FROM_REGISTRY and f.resource is not None
         }
     )
-    records = {}
-    for i in range(0, len(names), util.bulk_batch_size):
-        url, query = registry.get_resource_bulk(
-            registry_url, names[i : i + util.bulk_batch_size]
+    records = {
+        record["name"]: record
+        for record in util.query_registry_bulk_batched(
+            session, partial(registry.get_resource_bulk, registry_url), names
         )
-        for record in util.query_registry_bulk(session, url, query):
-            records[record["name"]] = record
+    }
     for finding in findings:
         record = records.get(finding.resource)
         if finding.status != Status.MISSING_FROM_REGISTRY or record is None:

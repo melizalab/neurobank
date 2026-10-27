@@ -254,6 +254,15 @@ def error_messages(response) -> list[str]:
     return field_messages(response.json())
 
 
+def error_detail(response) -> str:
+    """Returns the messages in an error response from the registry as one string, or
+    the response's text if it isn't a validation error."""
+    try:
+        return "; ".join(error_messages(response))
+    except ValueError:
+        return response.text
+
+
 def log_error(err):
     """Logs the registry's message for 400, 403, and 415 errors; re-raises others."""
     if err.response.status_code == 400:
