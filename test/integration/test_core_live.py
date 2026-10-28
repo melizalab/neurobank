@@ -383,9 +383,14 @@ def test_update_core_fields(core_fields, registry, register):
 
 
 def test_search_is_paginated(registry, client, register, dtype):
-    names = [register()["name"] for _ in range(12)]
+    # the page size is the registry's to set, so add resources until there are two pages
     url, _ = reg.find_resource(registry.url)
-    r = client.get(url, params={"dtype": dtype})
+    names = [register()["name"]]
+    while len(names) < 250:
+        names.append(register()["name"])
+        r = client.get(url, params={"dtype": dtype})
+        if "next" in r.links:
+            break
     assert "next" in r.links
     found = [r["name"] for r in core.search(registry.url, dtype=dtype)]
     assert len(found) == len(set(found))

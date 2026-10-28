@@ -400,9 +400,9 @@ def fetch_resource(
     mismatched = False
     for loc in locations:
         location = parse_location(loc, alt_base=alt_base, http_session=session)
-        log.debug("trying %s", location)
         if location is None or isinstance(location, NonFetchableResource):
             continue
+        log.debug("trying %s", location)
         try:
             path = location.fetch(target)
         except NotFetchableError:
