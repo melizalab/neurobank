@@ -1,218 +1,132 @@
 ## 1.0.0 (unreleased)
 
-Requires django-neurobank 1.0 (registry API 2.x).
+After using neurobank for over ten years, it's finally time for a 1.0 release.
+This release is synchronized with and requires django-neurobank 1.0 (registry
+API 2.x). A lot of unused or difficult to use features were removed, like
+directory resources, optional extensions, and registry-generated identifiers. We
+only ever used directories for collections of intracellular ABF files, which now
+get stored in zip files. There's tooling for reading zip file members directly
+without unpacking them, and additional tooling in melizalab-tools for packaging
+this kind of data and accessing it with neo.io functions. The CLI commands for
+copying and moving resources between tape and disk archives has been cleaned up
+and organized, and it should be easier now to to export datasets for deposit to
+dataverse instances and public archives like figshare and DANDI. Management of
+ownership and access control in neurobank archives has been improved, and the
+`nbank check` commands first introduced in 0.13 have been organized and expanded
+to deal with a wider range of problems. The documentation has also been
+organized and updated.
+
+Licensed under GPL v2 again (0.13 said BSD 3-Clause).
 
 ### Breaking
 
-- `registry.log_error` logs every client error (4xx), not only 400, 403 and
-  415: the response's detail, or its status (e.g. `404 Not Found`). It still
-  re-raises server errors (5xx), so a script stops on them. `nbank` and
-  `nbank.admin` report a server error as `registry error: 500 Internal Server
-  Error` and exit with status 1, instead of ending with a traceback.
+- Every request asks for registry API 2.0, and nbank checks once per registry
+  that it's 2.x (`util.RegistryVersionError` otherwise; `nbank registry info`
+  skips the check). Versions before 1.0 can still read from a 1.0 registry,
+  but it refuses their changes.
+- `util.registry_session()` is the registry's client: it asks for API 2.0 and
+  checks the version (`check_version=False` skips it). Its `auth` goes only to
+  the registry's host; netrc credentials go to each host that has an entry.
+- Files in neurobank archives are found by their location's key, the file's
+  name, without a glob (#60). A location without a key, or whose key names no
+  file, isn't found. django-neurobank 1.0's migration sets the keys; then run
+  `nbank check archive --fix --no-hash` on each archive.
+- Directory resources are gone (all are now zip files). A directory where a
+  resource should be is an error in `export`, `copy`, `archive import-tar`,
+  `check tar`, `check archive` (`DIRECTORY`), `archive register tape` and
+  `verify`. `transfer.receive_directory`, `util.DirectoryHasher` and
+  `util.hash_directory` are removed, `util.hash` and `archive.store_resource`
+  take only files, and the `allow_directories` policy is ignored.
+- The `keep_extensions` policy is gone: files always keep their extensions.
+- CLI commands are reorganized, without aliases: `nbank init` is `nbank archive
+  init`, `archive register-tar` is `archive register tape`, `registry-info` is
+  `registry info`, and `archive check` is gone (`check archive` also takes the
+  archive's name in the registry).
+- `nbank copy` and `archive import-tar` use the registry in the destination
+  archive's `nbank.json`, as `deposit` does.
+- `nbank search` and `core.search` leave out superseded resources
+  (`--only-superseded` or `superseded=True` for only them, `--with-superseded`
+  or `superseded=None` for both).
+- `nbank search -n/--archive` matches the archive's name exactly.
+- Automatic ids are made by nbank: `auto_id_type` is `"base36"` (8 characters,
+  the default) or `"uuid"`, and deposit tries another if one is taken.
+- `nbank deposit --dry-run` needs permission to deposit, as the registry checks
+  each resource.
 - `archive.get_config` is `archive.ArchiveConfig.load`. It and `archive.create`
-  return an `archive.ArchiveConfig`, a frozen dataclass (`path`, `registry`, and
-  `policy`, an `archive.Policy` with an `archive.Access`), instead of the dict
-  read from `nbank.json`: `cfg["path"]` is `cfg.path`, and
-  `cfg["policy"]["access"]["umask"]` is `cfg.policy.access.umask`. `nbank.json` is checked when it's read, and a
-  missing or wrongly typed setting raises `ValueError` naming it; keys nothing
-  reads (`project`, `owner`) are ignored. An archive whose `nbank.json` has no
-  `read_only_resources` is read-only, as new archives are: `check archive`
-  reports its writable resources, and `--fix` makes them read-only.
-- `nbank search -n/--archive` matches the archive's name exactly (the registry's
-  `archive` filter) instead of any archive whose name contains it.
-- CLI commands are reorganized, with no aliases for the old names: `nbank init`
-  is `nbank archive init`, and `nbank archive register-tar` is `nbank archive
-  register tape`, the first of a command per archive scheme. `nbank archive
-  check` is gone; use `nbank check archive`, which now also takes the archive's
-  name in the registry as well as its path. `nbank registry-info` is `nbank
-  registry info`.
-- `nbank copy` and `nbank archive import-tar` use the registry in the
-  destination archive's `nbank.json`, as `deposit` does, instead of `-r` or
-  `NBANK_REGISTRY`.
-- Every request asks for registry API 2.0 (`Accept: application/json;
-  version=2.0`), and nbank checks once per registry that `info/` reports API
-  2.x, raising `nbank.util.RegistryVersionError` (an error message in the CLI)
-  if it doesn't. `nbank registry info` skips the check, so it can show any
-  registry's version. Versions before 1.0 can still read from a django-neurobank
-  1.0 registry (`search`, `info`, `locate`, `fetch`, `verify`, `check`), finding
-  files without keys, but the registry refuses their changes.
-- `core.verify(registry_url, file, id)` returns whether file matches resource
-  id; `core.find_by_hash(registry_url, file)` yields the records with file's
-  hash, which is what `core.verify` without `id` did.
-- `core.get` and `core.find` are removed; use `core.find_resource(s)`, which
-  return paths, or `nbank locate` for every location of a resource.
-  `archive.iter_resources` is removed; use `check.check_archive_contents`.
-- Resources in neurobank archives are found by their location's key, the name
-  of the file, instead of by looking for any file named with the id. A location
-  without a key, or whose key names no file, isn't found on this host (#60).
-  django-neurobank 1.0 sets each existing location's key to the resource's file
-  name when it's migrated; then run `nbank check archive --fix --no-hash` on
-  each archive to correct the few files named otherwise.
-- The `keep_extensions` policy is gone: files always keep their extensions in
-  the archive. Archives' `nbank.json` can keep it; `false` is ignored with a
-  warning.
-- Directory resources are gone (all have been converted to zip files):
-  `transfer.receive_directory` is removed, and `export`, `copy`, `archive
-  import-tar` and `check tar` report a directory where a resource should be as
-  an error for that resource ("is a directory, which isn't a resource"), skipping
-  its contents in a tar file.
-- `util.DirectoryHasher` and `util.hash_directory` are removed, and `util.hash`
-  only hashes files. The `allow_directories` policy is gone (archives' `nbank.json`
-  can keep it; it's ignored), and `archive.store_resource` refuses directories.
-  `nbank check archive` reports a directory where a resource should be (status
-  `DIRECTORY`) without reading it, and `--fix` leaves it alone; `archive register
-  tape` refuses a directory with a registered id, and skips its contents; `nbank
-  verify` refuses a directory.
-- `nbank.util.registry_session()` yields an HTTP client for the registry that
-  asks for API 2.0 and checks the registry's version. Code that changes the
-  registry with its own client gets a 400 from it; the `query_registry`
-  functions still work with any client, as reads need no version. Its `auth`
-  is sent only to the registry's host (scheme, host and port), never to hosts
-  that locations name, and needs `registry_url`; netrc credentials (the
-  default) go to each host that has an entry. `check_version=False` skips the
-  version check.
-- `nbank search` and `core.search` leave out superseded resources;
-  `--only-superseded` (`superseded=True`) finds only them, and
-  `--with-superseded` (`superseded=None`) both. `core.find_by_hash` still finds a file's resource if
-  it's superseded.
-- `nbank deposit --dry-run` needs permission to deposit, as it asks the
-  registry to check each resource (see below).
-- Automatic ids (`deposit -A`, or the `auto_identifiers` policy) are made by
-  nbank rather than the registry: eight random base-36 characters, the form the
-  registry used, named `"base36"` in the policy's `auto_id_type` (also what
-  `null` means), or `"uuid"`. If the registry already has an id, deposit tries
-  another (up to three). Any other `auto_id_type` is an error, and dry runs give
-  the id that would be used.
+  return a frozen `ArchiveConfig` dataclass instead of a dict (`cfg.path`,
+  `cfg.policy.access.umask`), and `nbank.json` is validated when read. An
+  archive without `read_only_resources` is read-only.
+- `core.get`, `core.find` and `archive.iter_resources` are removed: use
+  `core.find_resource(s)`, `nbank locate`, or `check.check_archive_contents`.
+- `core.verify(registry_url, file, id)` checks a file against one resource;
+  `core.find_by_hash` does what `core.verify` without an id did.
+- `registry.log_error` logs every client error (4xx) and re-raises server
+  errors (5xx), which `nbank` and `nbank.admin` report as `registry error:
+  <status>`, exiting 1.
 
 ### New
 
-- `nbank.script.ParseKeyVal`, the argparse action behind `-k`, is public, for
-  programs that take metadata the way `nbank deposit` does. The API reference
-  has a page for `nbank.script`.
-- `nbank fetch --tar TAR` gets resources out of a tar file, a tape device, or
-  standard input, without importing them into an archive (#65). A member is a
-  resource if its name without directories or extension is the id, wherever
-  it is in the tar file; each is checked against its registered hash, and one
-  that doesn't match is kept with `.mismatch` added to its name.
-- `nbank copy --restore` and `nbank archive import-tar --restore` restore a
-  resource the registry lists in the destination archive whose file is missing
-  there: it's stored again (checked against its hash) and its location's key is
-  set, and the summary counts these separately (#65). Without `--restore`,
-  such resources are still skipped as already in the destination.
-- New locations in neurobank archives record the stored file's name as their
-  key: deposit, `copy`, `archive import-tar`, and adding a location with `check
-  archive --fix`. `archive register tape` records each resource's tar member as
-  the key of its tape location (#60).
-- `nbank check archive` (and `check all`) reports a resource whose location has
-  no key, or a key that isn't the name of its file, as an error, and `--fix`
-  sets it. It also counts the files named otherwise than the registry's
-  `filename`. `check.check_archive_contents` takes the keys as `keys=`.
-  `--fix --rename` renames those files to the registry's `filename` and sets
-  their keys.
-- `nbank check archive` runs the metadata reader of each file's dtype, if one
-  is installed, and reports a file it rejects as not valid for its dtype (an
-  error), suggesting any other dtype with the file's extension whose reader
-  accepts it. `--fix` and `--rename` leave such files' keys and names alone.
-  `--no-hash` skips the readers. `check.check_archive_contents` takes the
-  dtypes and a `check.DtypeReaders` as `dtypes=` and `dtype_readers=`. Needs
-  the registry's `locations/` to give each resource's dtype.
-- Documentation on Read the Docs (https://neurobank.readthedocs.io): guides to
-  archives, depositing, searching, accessing and managing resources, and
-  references for the CLI and the Python API. The README is now a short tour.
-- nbank and `nbank.admin` run on Windows as clients: commands that write or check
-  archives (`archive init`, `deposit`, `copy`, `archive import-tar`, `prune` and
-  `register tape`, `check archive` and `check all`, and `nbank.admin delete` and
-  `update-hash`) refuse there with a message, as do the library functions that
-  write or check archives (`archive.ArchiveHostError`). Output is written as
-  UTF-8, so names and notes print even when output is redirected. Credentials
-  are read from `~/_netrc` when there's no `~/.netrc`. `nbank locate -L` says
-  when Windows won't let you create symbolic links, and reports a link it can't
-  make rather than failing with a traceback. Downloads work there: URLs are
-  built with forward slashes, and the cache's directory for a host with a port
-  is named `host_port` on every platform, as Windows doesn't allow `:` in file
-  names.
-- `nbank locate`, `fetch`, `export` and `copy` take `--alt-base DIR` (or the
-  `NBANK_ALT_BASE` environment variable), to read archives mounted under `DIR`
-  instead of at their registered roots, as `find_resources(alt_base=)` does.
-- `nbank.admin supersede` marks resources as superseded, or not to be used.
-- `nbank registry info` shows who the registry sees you as, and what you can
-  change: a username and permissions, a superuser, or anonymous (#61).
-- `core.find_resources` and `find_resource` give the path of a file for each
-  resource that can be read on this host: from a directory of files named by id
-  (`local_dir`), an archive on this host, or a download into a local cache
-  (`NBANK_CACHE`, or `neurobank` in the user cache directory). Downloads are
-  stored under the cached name only when complete; `verify=True` checks hashes.
-  These come from `dlab.neurobank` in melizalab-tools.
-- `nbank deposit --dry-run` (`core.deposit(dry_run=True)`) asks the registry
-  whether it would accept each resource (`check/resources/`, in batches of
-  1000): a taken name or hash, one shared with another file in the deposit, or an
-  invalid dtype, experimenter, animal or metadata is an error for that file
-  (#11).
-- `nbank modify --dtype` (`core.update(dtype=)`) changes resources' datatype
-  (#62). `metadata` is optional in `core.update`.
-- `nbank fetch --verify` checks each file against its registered hash, trying the
-  resource's other locations if it doesn't match (`util.fetch_resource(sha1=)`),
-  and warns about resources with no hash; `-@` reads ids from stdin (#8).
-- `nbank check superseded` reports superseded and unregistered resources among
-  the given ids (or ids on stdin, with `-@`), and exits 1 if there are any.
-- `nbank verify --metadata` reads each file with its dtype's metadata reader and
-  checks what it reads against the registry; a disagreement, or a file the
-  reader can't read, exits 1.
-- `nbank dtype list` shows the package and version providing each installed
-  metadata reader.
-- `nbank deposit` warns when no dtype is given, as the files' metadata isn't
-  read; with `--debug`, it shows which reader handles the dtype and what it
-  read from each file.
+- Documentation at https://neurobank.readthedocs.io: guides, and references for
+  the API.
+- `core.find_resources` and `find_resource` (from melizalab-tools'
+  `dlab.neurobank`) give a readable path for each resource: in `local_dir`, an
+  archive on this host, or a cached download (`NBANK_CACHE`). `verify=True`
+  checks hashes.
+- `--alt-base DIR` (or `NBANK_ALT_BASE`) for `locate`, `fetch`, `export` and
+  `copy` reads archives mounted somewhere other than their registered roots.
+- `nbank fetch --verify` checks hashes, trying other locations, and `-@` reads
+  ids from stdin (#8). `fetch --tar` reads resources from a tar file or tape
+  without importing them (#65).
+- `copy --restore` and `archive import-tar --restore` restore files missing
+  from the destination archive (#65).
+- New locations record their key: deposit, `copy`, `archive import-tar`, `check
+  archive --fix`, and `archive register tape` (the tar member) (#60).
+- `nbank check archive` reports missing or wrong keys (`--fix` sets them,
+  `--fix --rename` renames files to the registry's `filename`), and checks each
+  file with its dtype's metadata reader unless `--no-hash`.
+- `nbank deposit --dry-run` checks each resource with the registry (#11).
+- `nbank modify --dtype` changes resources' datatype (#62).
+- `nbank verify --metadata` checks files' metadata against the registry.
+- `nbank check superseded` reports superseded and unregistered ids, exiting 1
+  if there are any; `nbank.admin supersede` marks resources superseded.
+- `nbank registry info` shows your username and permissions (#61).
+- `nbank dtype list` shows which package provides each metadata reader;
+  `deposit` warns without a dtype, and shows what the reader read with
+  `--debug`.
+- Windows as a client: commands that write or check archives refuse there.
+  Output is UTF-8, and credentials can be in `~/_netrc`.
+- `registry.check_resources`, `registry.field_messages` and
+  `script.ParseKeyVal` are public.
 
 ### Changed
 
-- When the registry has no archive for a directory (`deposit`, `copy`,
-  `archive import-tar`, `check archive`), the error says that an archive is
-  registered at its real path, and that a host reaching it through a symbolic
-  link needs a bind mount at the registered path instead (#65).
-- `nbank check archive PATH` checks against the registry given with `-r`, or
-  else the one in the archive's `nbank.json`, and needs neither `-r` nor
-  `NBANK_REGISTRY`. An archive whose `nbank.json` names a different registry
-  from the one checking it is a warning, not an error, in `check archive` and
-  `check all`, so archives can be checked against a copy of the registry.
-- Searches (`nbank search`, `core.search`) and `nbank check` get every result in
-  one streamed response (`util.query_registry_stream`), instead of a page at a
-  time, which is much faster for large archives. Registries that can't stream
-  are paged through as before. `nbank check archive` gets an archive's
-  resources, hashes and location keys in one streamed request to the
-  registry's `locations/` (`registry.find_locations`), instead of a search and
-  then a `bulk/locations/` request per 1,000 resources.
-- `nbank archive import-tar` ends with a summary line, as `copy` and `export`
-  do. When a resource's only copies are offline (on tape), `copy` and `export`
-  name those archives and say to read it with `nbank archive import-tar`.
+- Searches and `nbank check` get every result in one streamed response when the
+  registry can stream them, which is much faster for large archives.
+- `nbank check archive PATH` uses the registry in the archive's `nbank.json`
+  unless given `-r`. A different registry is a warning, so archives can be
+  checked against a copy.
+- When the registry has no archive for a directory, the error says archives
+  are registered at their real path, so a host reaching one through a symbolic
+  link needs a bind mount (#65).
+- `archive import-tar` ends with a summary; `copy` and `export` name the
+  offline archives holding a resource they can't read.
 
 ### Fixed
 
-- `nbank archive register tape` goes on to the other resources when one's
-  location can't be added, and exits with status 1 at the end; it stopped
-  there, leaving the archive registered with only some of its resources.
-- `nbank archive prune` reports a registry error whose response isn't JSON
-  instead of crashing. Its errors, and those of `fetch`, `search` and `check
-  superseded`, start with `error:` like the other commands'.
-- `core.describe_many` asks the registry for 500 resources at a time, so a long
-  list doesn't make one huge request, and asks nothing for no ids.
-- A `-k` argument without exactly one `=` is a usage error naming the option,
-  instead of a traceback. `ParseKeyVal` no longer changes the parser's default
-  dict, which carried values from one parse to the next.
-- `nbank registry info` reports an address that isn't a registry (no `info/`)
-  as an error instead of crashing.
-- The `repr` of an http(s) resource no longer raises `AttributeError`.
-- A command whose output goes to a reader that stops early (`nbank search ... |
-  head`) exits quietly with status 141, as if killed by SIGPIPE, instead of
-  printing a BrokenPipeError.
-- `nbank.admin` exits with status 1 when a resource can't be deleted, updated or
-  marked (including one that isn't in the registry, or for `update-hash` has no
-  copy on this host), and reports registry errors instead of a traceback.
-- `util.query_registry` and `query_registry_bulk` use the session's credentials;
-  they sent requests without them unless given `auth`.
-- A copy in an archive whose directories this user can't read is treated as not
-  on this host; before Python 3.14, `locate`, `fetch` and
-  `core.find_resources` stopped with a PermissionError.
+- `archive register tape` goes on past a location it can't add, exiting 1.
+- `archive prune` reports a registry error that isn't JSON instead of crashing.
+- `core.describe_many` asks for 500 resources at a time.
+- A `-k` without exactly one `=` is a usage error, and `ParseKeyVal` no longer
+  carries values from one parse to the next.
+- `nbank registry info` on an address that isn't a registry is an error, not a
+  crash.
+- The `repr` of an http(s) resource no longer raises.
+- Output to a reader that stops early (`| head`) exits quietly (status 141).
+- `nbank.admin` exits 1 when a resource can't be handled, and reports registry
+  errors without a traceback.
+- `util.query_registry` and `query_registry_bulk` use the session's credentials.
+- A copy in an archive this user can't read is not found, instead of a
+  `PermissionError` before Python 3.14.
 
 ## 0.13.0
 
