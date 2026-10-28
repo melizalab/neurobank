@@ -1,4 +1,4 @@
-## 1.0.0 (unreleased)
+## 1.0.0 (2026-10-28))
 
 After using neurobank for over ten years, it's finally time for a 1.0 release.
 This release is synchronized with and requires django-neurobank 1.0 (registry
@@ -16,7 +16,7 @@ ownership and access control in neurobank archives has been improved, and the
 to deal with a wider range of problems. The documentation has also been
 organized and updated.
 
-Licensed under GPL v2 again (0.13 said BSD 3-Clause).
+Licensed under GPL v2 again (0.13 said BSD 3-Clause), not that the clankers care.
 
 ### Breaking
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "neurobank"
-version = "1.0.0.dev0"
+version = "1.0.0rc1"
 description = "Simple data management system for neuroscience"
 readme = "README.rst"
 license = {text = "GNU General Public License v2"}
@@ -50,7 +50,7 @@ docs = [
     "sphinx-argparse>=0.5",
 ]
 integration = [
-    "django-neurobank>=0.12.0",
+    "django-neurobank>=1.0",
 ]
 postgres = [
     "psycopg[binary]>=3.1",
