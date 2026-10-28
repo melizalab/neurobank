@@ -245,7 +245,8 @@ def strip_nulls(d: dict) -> dict:
 
 def check_resources(base_url: str, bodies: Sequence[dict]) -> tuple[str, list]:
     """Constructs URL to check resources as they would be added (bodies from
-    add_resource), without adding them"""
+    add_resource), without adding them. The registry responds with a list of
+    each resource's errors (see field_messages), empty if it would accept it."""
     return (url_join(base_url, "check", "resources/"), list(bodies))
 
 
@@ -305,7 +306,9 @@ __all__ = [
     "add_archive",
     "add_datatype",
     "add_resource",
+    "check_resources",
     "default_registry",
+    "field_messages",
     "find_archive_by_path",
     "find_locations",
     "find_resource",
