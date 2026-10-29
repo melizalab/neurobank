@@ -537,7 +537,11 @@ def main(argv=None):
         help="don't delete any files or make any changes to the registry",
         action="store_true",
     )
-    pp.add_argument("archive_name", type=str, help="name of the archive to prune")
+    pp.add_argument(
+        "archive",
+        help="path of the archive to prune, or its name in the registry. "
+        "An existing directory is taken as a path",
+    )
     pp.add_argument("resources", type=Path, help="file with list of resources to prune")
 
     pp = ppsub.add_parser(
@@ -1334,31 +1338,62 @@ def register_tar(args):
 def prune_archive(args):
     """Remove files from a neurobank archive that are stored somewhere else.
 
-    Returns 1 if the archive can't be pruned or a resource can't be removed. Resources
-    not in the archive, or only in it, are skipped.
+    The archive is a path if it's an existing directory, and otherwise a name in the
+    registry. Returns 1 if the archive can't be pruned or a resource can't be removed.
+    Resources not in the archive, or only in it, are skipped.
     """
     n_failed = 0
     if args.dry_run:
         log.info("DRY RUN")
     log.info("registry: %s", args.registry_url)
+    path = Path(args.archive)
+    archive_cfg = None
+    if path.is_dir():
+        try:
+            archive_cfg = archive.get_config(path)
+        except FileNotFoundError:
+            log.error("error: %s is not a valid neurobank archive", path)
+            return 1
+        if archive_cfg["registry"].rstrip("/") != args.registry_url.rstrip("/"):
+            log.warning(
+                "warning: nbank.json points to a different registry (%s)",
+                archive_cfg["registry"],
+            )
+    elif "/" in args.archive:
+        log.error("error: %s is not a directory", args.archive)
+        return 1
     with open(args.resources) as fp, httpx.Client(auth=args.auth) as session:
+        if archive_cfg is None:
+            name = args.archive
+        else:
+            url, params = registry.find_archive_by_path(
+                args.registry_url, archive_cfg["path"]
+            )
+            info = util.query_registry_first(session, url, params)
+            if info is None:
+                log.error(
+                    "No archive associated with '%s' in the registry",
+                    archive_cfg["path"],
+                )
+                return 1
+            name = info["name"]
         # check that the archive is on the local machine
-        url, _ = registry.get_archive(args.registry_url, args.archive_name)
+        url, _ = registry.get_archive(args.registry_url, name)
         result = util.query_registry(session, url)
         if result is None:
-            log.error("No such archive '%s' in the registry", args.archive_name)
+            log.error("No such archive '%s' in the registry", name)
             return 1
         if result["scheme"] not in archive.Resource.schemes:
-            log.error("'%s' is not a neurobank archive ", args.archive_name)
+            log.error("'%s' is not a neurobank archive ", name)
             return 1
         if not Path(result["root"]).is_dir():
             log.error(
                 "The archive '%s' is not on this host (%s) ",
-                args.archive_name,
+                name,
                 result["root"],
             )
             return 1
-        log.info("pruning archive: %s (%s)", args.archive_name, result["root"])
+        log.info("pruning archive: %s (%s)", name, result["root"])
         for line in fp:
             resource_id = line.strip()
             if len(resource_id) == 0 or resource_id.startswith("#"):
@@ -1372,14 +1407,14 @@ def prune_archive(args):
                 continue
             locations = {loc["archive_name"]: loc for loc in response}
             locations.pop("registry", None)  # remove registry pseudo-location
-            if args.archive_name not in locations:
+            if name not in locations:
                 log.info("  ✗ not in this archive")
             elif len(locations) < 2:
                 log.info("  ✗ this archive is the only location for this resource")
             else:
                 # this can throw FileNotFound but that shouldn't happen unless
                 # something is really wrong
-                resource = util.parse_location(locations[args.archive_name])
+                resource = util.parse_location(locations[name])
                 if resource is None:
                     log.error("  ✗ resource is not actually present in archive")
                     n_failed += 1
@@ -1388,9 +1423,7 @@ def prune_archive(args):
                     log.info("  ✗ insufficient permissions to delete")
                     n_failed += 1
                     continue
-                url, query = registry.get_location(
-                    args.registry_url, resource_id, args.archive_name
-                )
+                url, query = registry.get_location(args.registry_url, resource_id, name)
                 req = session.build_request("DELETE", url)
                 if not args.dry_run:
                     r = session.send(req)

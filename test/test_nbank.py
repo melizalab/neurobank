@@ -1239,3 +1239,11 @@ def test_check_tar_truncated(mocked_api, tmp_path, caplog):
     assert "✗ res_2 -> unable to read; stopping" in caplog.text
     assert "ends partway through 'res_2'" in caplog.text
     assert "Resources checked: 2; failed: 1" in caplog.text
+
+
+def test_prune_path_not_a_directory(mocked_api, tmp_path, caplog):
+    listing = tmp_path / "prune.txt"
+    listing.write_text("res_1\n")
+    missing = str(tmp_path / "no_such_archive")
+    assert run_main("archive", "prune", missing, str(listing)) == 1
+    assert f"error: {missing} is not a directory" in caplog.text

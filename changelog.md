@@ -1,3 +1,10 @@
+## Unreleased
+
+### Fixed
+
+- `archive prune` takes the archive's path as well as its name, and says so if
+  given a path that isn't a directory, instead of crashing.
+
 ## 0.13.0
 
 This is a transitional release implementing the machinery to migrate
