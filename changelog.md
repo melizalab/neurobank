@@ -105,6 +105,8 @@ Licensed under GPL v2 again (0.13 said BSD 3-Clause), not that the clankers care
 - `nbank check archive PATH` uses the registry in the archive's `nbank.json`
   unless given `-r`. A different registry is a warning, so archives can be
   checked against a copy.
+- `archive prune` also takes the archive's path, which, like `check archive`,
+  uses the registry in its `nbank.json` unless given `-r`.
 - When the registry has no archive for a directory, the error says archives
   are registered at their real path, so a host reaching one through a symbolic
   link needs a bind mount (#65).
@@ -115,6 +117,8 @@ Licensed under GPL v2 again (0.13 said BSD 3-Clause), not that the clankers care
 
 - `archive register tape` goes on past a location it can't add, exiting 1.
 - `archive prune` reports a registry error that isn't JSON instead of crashing.
+- `archive prune` and `check archive` given a path that isn't a directory say
+  so, instead of crashing.
 - `core.describe_many` asks for 500 resources at a time.
 - A `-k` without exactly one `=` is a usage error, and `ParseKeyVal` no longer
   carries values from one parse to the next.

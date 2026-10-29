@@ -38,6 +38,15 @@ def archive_config(path: Path) -> archive.ArchiveConfig | None:
         return None
 
 
+def not_a_name(archive: str) -> bool:
+    """Returns True (logging an error) if archive, given as a path or a name, isn't a
+    directory but can't be an archive's name either."""
+    if "/" in archive:
+        log.error("error: %s is not a directory", archive)
+        return True
+    return False
+
+
 def warn_other_registry(archive_cfg: archive.ArchiveConfig, registry_url: str) -> None:
     """Logs a warning if the archive's nbank.json names a registry other than
     registry_url, the one it's being checked against."""

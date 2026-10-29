@@ -751,12 +751,16 @@ def listing(tmp_path, *names):
     return path
 
 
-def test_prune(cli, registry, two_archives, dtype, deposit_file, replicate, tmp_path):
+@pytest.mark.parametrize("by_path", [False, True])
+def test_prune(
+    cli, registry, two_archives, dtype, deposit_file, replicate, tmp_path, by_path
+):
     a, b = two_archives
     name = deposit_file(a, dtype)
     replicate(name, a, b)
     path_a = stored_path(a, name)
-    assert cli("archive", "prune", a.name, str(listing(tmp_path, name))) == 0
+    archive_arg = str(a.path) if by_path else a.name
+    assert cli("archive", "prune", archive_arg, str(listing(tmp_path, name))) == 0
     assert not path_a.exists()
     assert stored_path(b, name).exists()
     assert core.describe(registry.url, name)["locations"] == [b.name]

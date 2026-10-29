@@ -38,6 +38,8 @@ def check_archive(args):
     """
     path = Path(args.archive)
     if not path.is_dir():
+        if common.not_a_name(args.archive):
+            return 1
         return _check_archive_by_name(args, args.archive)
     archive_cfg = common.archive_config(path)
     if archive_cfg is None:

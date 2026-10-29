@@ -1539,6 +1539,50 @@ def test_prune_reports_a_registry_error_that_isnt_json(
     assert path.exists()
 
 
+@pytest.mark.parametrize("by_path", [False, True])
+def test_prune_by_name_or_path(mocked_api, tmp_archive, tmp_path, by_path):
+    from test import place_resource
+
+    path = place_resource(tmp_archive, "res_1", "res_1")
+    root = str(tmp_archive.path)
+    if by_path:
+        mocked_api.get(
+            archives_url, params={"scheme": "neurobank", "root": root}
+        ).respond(json=[{"name": "arch", "root": root}])
+    mocked_api.get(archives_url + "arch/").respond(
+        json={"name": "arch", "scheme": "neurobank", "root": root}
+    )
+    location = {
+        "scheme": "neurobank",
+        "root": root,
+        "resource_name": "res_1",
+        "key": "res_1",
+    }
+    mocked_api.get(resource_url + "res_1/locations/").respond(
+        json=[
+            {**location, "archive_name": "arch"},
+            {**location, "archive_name": "other", "root": "/elsewhere"},
+        ]
+    )
+    removed = mocked_api.delete(resource_url + "res_1/locations/arch/").respond(204)
+    listing = tmp_path / "prune.txt"
+    listing.write_text("res_1\n")
+    archive_arg = root if by_path else "arch"
+    assert not run_main("archive", "prune", archive_arg, str(listing))
+    assert removed.called
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("command", ["archive prune", "check archive"])
+def test_archive_arg_neither_directory_nor_name(mocked_api, tmp_path, caplog, command):
+    listing = tmp_path / "prune.txt"
+    listing.write_text("res_1\n")
+    missing = str(tmp_path / "no_such_archive")
+    extra = [str(listing)] if command == "archive prune" else []
+    assert run_main(*command.split(), missing, *extra) == 1
+    assert f"error: {missing} is not a directory" in caplog.text
+
+
 @pytest.mark.parametrize("with_archive", [False, True])
 def test_check_tar_read_error(mocked_api, failing_tar, caplog, with_archive):
     members = [("res_1", b"one"), ("res_2", b"x" * 50_000), ("res_3", b"three")]

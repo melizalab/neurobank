@@ -68,9 +68,10 @@ archive, and ``-y`` to check the resources without copying them. To move
 resources, copy them and then remove them from the old archive with ``nbank
 archive prune``.
 
-``nbank archive prune <archive_name> <list_of_identifiers>`` deletes files from
-a local archive and updates the records for the resources. It will only do this
-for resources that have another location registered.
+``nbank archive prune <archive> <list_of_identifiers>`` deletes files from a
+local archive, given by its path or its name in the registry, and updates the
+records for the resources. It will only do this for resources that have another
+location registered.
 
 Exporting resources
 -------------------
@@ -118,7 +119,7 @@ resources to cold storage is a multi-step process:
    command works on the temporary tar file from step 2, which you can delete
    after this step.
 6. To remove the tape-archived resources from live storage, run ``nbank archive
-   prune <live_archive_name> <list_of_identifiers>``.
+   prune <live_archive> <list_of_identifiers>``.
 
 To copy data back to live storage, run ``nbank archive import-tar <tar_file>
 <path_of_archive>``. The tar file can be read straight from the tape drive (e.g.

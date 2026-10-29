@@ -590,9 +590,15 @@ def make_parser() -> argparse.ArgumentParser:
         "prune",
         help="remove files from a neurobank archive that are stored somewhere else",
     )
-    pp.set_defaults(func=archives.prune_archive, posix_archive=True)
+    pp.set_defaults(
+        func=archives.prune_archive, registry_in_archive=True, posix_archive=True
+    )
     add_dry_run_arg(pp, "don't delete any files or make any changes to the registry")
-    pp.add_argument("archive_name", type=str, help="name of the archive to prune")
+    pp.add_argument(
+        "archive",
+        help="path of the archive to prune, or its name in the registry. "
+        "An existing directory is taken as a path",
+    )
     pp.add_argument("resources", type=Path, help="file with list of resources to prune")
 
     pp = ppsub.add_parser(
