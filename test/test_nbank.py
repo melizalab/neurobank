@@ -1583,6 +1583,7 @@ def test_prune_by_name_or_path(mocked_api, tmp_archive, tmp_path, by_path):
     assert not path.exists()
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize("command", ["archive prune", "check archive"])
 def test_archive_arg_neither_directory_nor_name(mocked_api, tmp_path, caplog, command):
     listing = tmp_path / "prune.txt"
