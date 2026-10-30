@@ -84,6 +84,8 @@ def main(argv=None) -> int | None:
         log.error("registry error: unable to contact server")
     except util.RegistryVersionError as err:
         log.error("error: %s", err)
+    except util.RegistryStreamError as err:
+        log.error("registry error: %s", err)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 403:
             log.error(

@@ -54,6 +54,11 @@ class RegistryVersionError(RuntimeError):
     """The registry doesn't support the API version this client needs."""
 
 
+class RegistryStreamError(ValueError):
+    """A streamed response from the registry has a line that isn't JSON, usually
+    because the server stopped partway through."""
+
+
 class _RegistryAuth(Auth):
     """Authenticates requests to the registry's host and port, and no others, so the
     registry's credentials aren't sent to hosts that its locations name."""
@@ -319,9 +324,7 @@ def query_registry_stream(
             if r.is_error:
                 r.read()  # the body can't be read once the stream is closed
             r.raise_for_status()
-            for line in r.iter_lines():
-                if line:
-                    yield json.loads(line)
+            yield from _ndjson_records(r)
             return
         if r.status_code != codes.NOT_ACCEPTABLE:
             r.read()
@@ -349,8 +352,31 @@ def query_registry_bulk(
         if r.is_error:
             r.read()  # the body can't be read once the stream is closed
         r.raise_for_status()
-        for line in r.iter_lines():
-            yield json.loads(line)
+        yield from _ndjson_records(r)
+
+
+def _ndjson_records(r: Response) -> Iterator[dict]:
+    """Yields the records in a line-delimited JSON response. Lines end only at \\n:
+    iter_lines() also ends them at characters like U+0085, which can be in a JSON
+    string."""
+    rest = b""
+    for chunk in r.iter_bytes():
+        *lines, rest = (rest + chunk).split(b"\n")
+        for line in lines:
+            if line.strip():
+                yield _ndjson_record(line)
+    if rest.strip():
+        yield _ndjson_record(rest)
+
+
+def _ndjson_record(line: bytes) -> dict:
+    try:
+        return json.loads(line)
+    except ValueError as err:
+        raise RegistryStreamError(
+            f"the response was cut off by something that isn't JSON: {line[:80]!r} "
+            "(the server may have timed out)"
+        ) from err
 
 
 def query_registry_bulk_batched(
@@ -427,6 +453,7 @@ class JSONEncoder(json.JSONEncoder):
 
 
 __all__ = [
+    "RegistryStreamError",
     "RegistryVersionError",
     "parse_location",
     "query_registry",

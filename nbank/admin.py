@@ -362,6 +362,8 @@ if __name__ == "__main__":
         status = args.func(args) or 0
     except util.RegistryVersionError as err:
         log.error("error: %s", err)
+    except util.RegistryStreamError as err:
+        log.error("registry error: %s", err)
     except httpx.RequestError:
         log.error("registry error: unable to contact server")
     except httpx.HTTPStatusError as err:

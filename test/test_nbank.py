@@ -1057,6 +1057,16 @@ def test_server_error_is_reported_without_a_traceback(mocked_api, caplog):
     assert "registry error: 500 Internal Server Error" in caplog.text
 
 
+def test_search_cut_off_is_reported_without_a_traceback(mocked_api, capsys, caplog):
+    text = json.dumps({"name": "res_1"}) + "\nHTTP/1.1 500 Internal Server Error\r\n"
+    mocked_api.get(resource_url, params={"dtype": "raw"}).respond(
+        200, headers={"Content-Type": util.NDJSON}, text=text
+    )
+    assert run_main("search", "-d", "raw") == 1
+    assert capsys.readouterr().out == "res_1\n"
+    assert "registry error: the response was cut off" in caplog.text
+
+
 def test_search_by_scheme(mocked_api, capsys):
     mocked_api.get(resource_url, params={"scheme": "tape", "dtype": "raw"}).respond(
         json=[{"name": "res_1"}, {"name": "res_2"}]

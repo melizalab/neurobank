@@ -117,6 +117,11 @@ Licensed under GPL v2 again (0.13 said BSD 3-Clause), not that the clankers care
 
 - `archive register tape` goes on past a location it can't add, exiting 1.
 - `archive prune` reports a registry error that isn't JSON instead of crashing.
+- Streamed searches and bulk lookups no longer fail on a record whose text has a
+  character such as U+0085, which httpx's `iter_lines` takes as a line break.
+- A streamed response that's cut off (as when the server times out) raises
+  `util.RegistryStreamError`, a `ValueError`; `nbank` and `nbank.admin` report
+  it as a registry error, exiting 1.
 - `archive prune` and `check archive` given a path that isn't a directory say
   so, instead of crashing.
 - `core.describe_many` asks for 500 resources at a time.

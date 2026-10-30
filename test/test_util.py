@@ -267,6 +267,18 @@ def test_query_stream(mocked_api):
     )
 
 
+# characters that str.splitlines() takes as line breaks but JSON leaves unescaped
+UNESCAPED_BREAKS = "\x85\u2028\u2029"
+
+
+def test_query_stream_splits_only_at_newlines(mocked_api):
+    data = [{"name": "res_1", "metadata": {"note": f"a{UNESCAPED_BREAKS}b"}}]
+    text = "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in data)
+    mocked_api.get(search_url).respond(200, headers=ndjson, text=text)
+    with util.registry_session() as session:
+        assert list(util.query_registry_stream(session, search_url)) == data
+
+
 def paged(mocked_api, first_response=None):
     """Mocks a search in two pages; first_response replaces the first request's."""
     page_2 = f"{search_url}?page=2"
@@ -301,6 +313,25 @@ def test_query_stream_uses_json_pages_given_instead(mocked_api):
     assert route.call_count == 1
 
 
+# what gunicorn writes into a stream when it kills a worker that ran too long
+CUT_OFF = (
+    "HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n"
+    "<html>\n  <head>\n    <title>Internal Server Error</title>\n"
+)
+
+
+def test_query_stream_cut_off(mocked_api):
+    text = ndjson_lines({"name": "res_1"}) + CUT_OFF
+    mocked_api.get(search_url).respond(200, headers=ndjson, text=text)
+    records = []
+    with (
+        util.registry_session() as session,
+        pytest.raises(util.RegistryStreamError, match="cut off"),
+    ):
+        records.extend(util.query_registry_stream(session, search_url))
+    assert records == [{"name": "res_1"}]
+
+
 def test_query_stream_error_is_readable(mocked_api):
     errors = {"metadata__animal": ["search it with ?animal="]}
     mocked_api.get(search_url).respond(400, headers=ndjson, text=ndjson_lines(errors))
@@ -327,6 +358,14 @@ def test_query_bulk(mocked_api):
     mocked_api.post(url).respond(200, stream=stream)
     result = list(util.query_registry_bulk(httpx, url, {"names": "one"}))
     assert result == data
+
+
+def test_query_bulk_splits_only_at_newlines(mocked_api):
+    url = "https://meliza.org/neurobank/bulk/resources"
+    data = [{"item": f"one{UNESCAPED_BREAKS}"}, {"item": "two"}]
+    stream = (json.dumps(item, ensure_ascii=False).encode() + b"\n" for item in data)
+    mocked_api.post(url).respond(200, stream=stream)
+    assert list(util.query_registry_bulk(httpx, url, {"names": "one"})) == data
 
 
 def test_query_bulk_error_body_is_readable(mocked_api):
