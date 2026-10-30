@@ -1,4 +1,4 @@
-## 1.0.0 (2026-10-28))
+## 1.0.0 (2026-10-28)
 
 After using neurobank for over ten years, it's finally time for a 1.0 release.
 This release is synchronized with and requires django-neurobank 1.0 (registry
