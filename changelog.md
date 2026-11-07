@@ -1,4 +1,4 @@
-## 1.0.0 (2026-10-28)
+## 1.0.0 (2026-11-07)
 
 After using neurobank for over ten years, it's finally time for a 1.0 release.
 This release is synchronized with and requires django-neurobank 1.0 (registry
@@ -20,21 +20,24 @@ Licensed under GPL v2 again (0.13 said BSD 3-Clause), not that the clankers care
 
 ### Breaking
 
-- Every request asks for registry API 2.0, and nbank checks once per registry
+- Requests all use registry API 2.0, and nbank checks once per registry
   that it's 2.x (`util.RegistryVersionError` otherwise; `nbank registry info`
   skips the check). Versions before 1.0 can still read from a 1.0 registry,
-  but it refuses their changes.
+  but can't make changes.
 - `util.registry_session()` is the registry's client: it asks for API 2.0 and
   checks the version (`check_version=False` skips it). Its `auth` goes only to
   the registry's host; netrc credentials go to each host that has an entry.
 - Files in neurobank archives are found by their location's key, the file's
-  name, without a glob (#60). A location without a key, or whose key names no
-  file, isn't found. django-neurobank 1.0's migration sets the keys; then run
-  `nbank check archive --fix --no-hash` on each archive.
-- Directory resources are gone (all are now zip files). A directory where a
-  resource should be is an error in `export`, `copy`, `archive import-tar`,
-  `check tar`, `check archive` (`DIRECTORY`), `archive register tape` and
-  `verify`. `transfer.receive_directory`, `util.DirectoryHasher` and
+  name, without a glob (#60). A location without a key, or whose key doesn't
+  match any files, isn't found. django-neurobank 1.0's migration will set the
+  keys based on the canonical extension for the resources' dtypes. When
+  upgrading, follow up by running `nbank check archive --fix --no-hash` on each
+  archive to fix any keys that didn't get set correctly.
+- Directory resources are gone, replaced by zip files. Make sure to migrate any
+  directory resources using nbank 0.13 before upgrading to 1.0. A directory
+  where a resource should be is an error in `export`, `copy`, `archive
+  import-tar`, `check tar`, `check archive` (`DIRECTORY`), `archive register
+  tape` and `verify`. `transfer.receive_directory`, `util.DirectoryHasher` and
   `util.hash_directory` are removed, `util.hash` and `archive.store_resource`
   take only files, and the `allow_directories` policy is ignored.
 - The `keep_extensions` policy is gone: files always keep their extensions.
@@ -48,14 +51,16 @@ Licensed under GPL v2 again (0.13 said BSD 3-Clause), not that the clankers care
   (`--only-superseded` or `superseded=True` for only them, `--with-superseded`
   or `superseded=None` for both).
 - `nbank search -n/--archive` matches the archive's name exactly.
-- Automatic ids are made by nbank: `auto_id_type` is `"base36"` (8 characters,
-  the default) or `"uuid"`, and deposit tries another if one is taken.
+- Automatic ids are made by nbank instead of asking the registry, which
+  simplifies sequencing deposit operations. `auto_id_type` can be `"base36"` (8
+  characters, the default) or `"uuid"`, and deposit tries another if one is
+  taken.
 - `nbank deposit --dry-run` needs permission to deposit, as the registry checks
   each resource.
-- `archive.get_config` is `archive.ArchiveConfig.load`. It and `archive.create`
-  return a frozen `ArchiveConfig` dataclass instead of a dict (`cfg.path`,
-  `cfg.policy.access.umask`), and `nbank.json` is validated when read. An
-  archive without `read_only_resources` is read-only.
+- `archive.get_config` is now `archive.ArchiveConfig.load`. It and
+  `archive.create` return a frozen `ArchiveConfig` dataclass instead of a dict
+  (`cfg.path`, `cfg.policy.access.umask`), and `nbank.json` is validated when
+  read. `read_only_resources` defaults to true.
 - `core.get`, `core.find` and `archive.iter_resources` are removed: use
   `core.find_resource(s)`, `nbank locate`, or `check.check_archive_contents`.
 - `core.verify(registry_url, file, id)` checks a file against one resource;
@@ -66,9 +71,9 @@ Licensed under GPL v2 again (0.13 said BSD 3-Clause), not that the clankers care
 
 ### New
 
-- Documentation at https://neurobank.readthedocs.io: guides, and references for
-  the API.
-- `core.find_resources` and `find_resource` (from melizalab-tools'
+- Documentation at https://neurobank.readthedocs.io added. Includes guides and
+  references for the API.
+- `core.find_resources` and `find_resource` (ported from melizalab-tools'
   `dlab.neurobank`) give a readable path for each resource: in `local_dir`, an
   archive on this host, or a cached download (`NBANK_CACHE`). `verify=True`
   checks hashes.
@@ -82,9 +87,10 @@ Licensed under GPL v2 again (0.13 said BSD 3-Clause), not that the clankers care
 - New locations record their key: deposit, `copy`, `archive import-tar`, `check
   archive --fix`, and `archive register tape` (the tar member) (#60).
 - `nbank check archive` reports missing or wrong keys (`--fix` sets them,
-  `--fix --rename` renames files to the registry's `filename`), and checks each
+  `--fix --rename` fixes the extension based on dtype), and checks each
   file with its dtype's metadata reader unless `--no-hash`.
-- `nbank deposit --dry-run` checks each resource with the registry (#11).
+- `nbank deposit --dry-run` checks each resource with the registry's dry run
+  endpoint (#11).
 - `nbank modify --dtype` changes resources' datatype (#62).
 - `nbank verify --metadata` checks files' metadata against the registry.
 - `nbank check superseded` reports superseded and unregistered ids, exiting 1
@@ -93,8 +99,9 @@ Licensed under GPL v2 again (0.13 said BSD 3-Clause), not that the clankers care
 - `nbank dtype list` shows which package provides each metadata reader;
   `deposit` warns without a dtype, and shows what the reader read with
   `--debug`.
-- Windows as a client: commands that write or check archives refuse there.
-  Output is UTF-8, and credentials can be in `~/_netrc`.
+- Added support for running on Windows as a client. No archive manipulation;
+  commands that write or check archives refuse there. Output is UTF-8, and
+  credentials can be in `~/_netrc`.
 - `registry.check_resources`, `registry.field_messages` and
   `script.ParseKeyVal` are public.
 
